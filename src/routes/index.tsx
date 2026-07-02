@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Play, TrendingUp } from "lucide-react";
+import { Disc3, Headphones, Play, TrendingUp } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Cover } from "@/components/Cover";
 import { TrackCard } from "@/components/TrackCard";
@@ -12,10 +12,12 @@ import {
   fetchTopTrack,
   fetchTrendingTracks,
   fetchRisingArtists,
+  fetchAlbumSpotlights,
   fetchChart,
   toPlayerTrack,
   type TrackRow,
   type ChartEntry,
+  type AlbumSummary,
 } from "@/lib/api";
 import { fmtCount } from "@/lib/format";
 
@@ -41,6 +43,7 @@ function HomePage() {
   const [newWeek, setNewWeek] = useState<TrackRow[]>([]);
   const [trending, setTrending] = useState<TrackRow[]>([]);
   const [rising, setRising] = useState<Array<{ id: string; display_name: string; slug: string; avatar_url: string | null; verified: boolean; country: string | null; monthly_listeners: number }>>([]);
+  const [albums, setAlbums] = useState<{ week: AlbumSummary[]; month: AlbumSummary[]; year: AlbumSummary[] }>({ week: [], month: [], year: [] });
   const [chart, setChart] = useState<ChartEntry[]>([]);
   const [chartTab, setChartTab] = useState<ChartTab>("World");
   const [loading, setLoading] = useState(true);
@@ -48,16 +51,18 @@ function HomePage() {
 
   useEffect(() => {
     (async () => {
-      const [t, n, tr, r] = await Promise.all([
+      const [t, n, tr, r, al] = await Promise.all([
         fetchTopTrack(),
         fetchNewThisWeek(12),
         fetchTrendingTracks(12),
         fetchRisingArtists(10),
+        fetchAlbumSpotlights(10),
       ]);
       setTop(t);
       setNewWeek(n);
       setTrending(tr);
       setRising(r);
+      setAlbums(al);
       setLoading(false);
     })();
   }, []);
@@ -162,6 +167,26 @@ function HomePage() {
         </HorizontalRow>
       )}
 
+      {(loading || albums.week.length > 0) && (
+        <HorizontalRow title="Album of the Week">
+          {loading
+            ? Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="w-[150px] h-[205px]" />)
+            : albums.week.map((album) => <AlbumSpotlightCard key={album.id} album={album} />)}
+        </HorizontalRow>
+      )}
+
+      {albums.month.length > 0 && (
+        <HorizontalRow title="Album of the Month">
+          {albums.month.map((album) => <AlbumSpotlightCard key={album.id} album={album} />)}
+        </HorizontalRow>
+      )}
+
+      {albums.year.length > 0 && (
+        <HorizontalRow title="Album of the Year">
+          {albums.year.map((album) => <AlbumSpotlightCard key={album.id} album={album} />)}
+        </HorizontalRow>
+      )}
+
       {/* Charts preview */}
       <section className="bg-surface hairline rounded-xl p-4 mb-8">
         <div className="flex items-center justify-between mb-3">
@@ -225,6 +250,43 @@ function HomePage() {
 function prettyGenre(g: string) {
   return g.charAt(0).toUpperCase() + g.slice(1).replace("hiphop", "Hip-Hop");
 }
+
+function AlbumSpotlightCard({ album }: { album: AlbumSummary }) {
+  const content = (
+    <>
+      <Cover src={album.cover_url} seed={album.id} className="w-full aspect-square" shape={album.artwork_shape ?? "circle"} glow />
+      <div className="mt-2 text-xs font-medium truncate">{album.title}</div>
+      <div className="text-[11px] text-muted-foreground truncate">
+        {album.artists?.display_name ?? "Unknown artist"}
+      </div>
+      <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
+        <span className="inline-flex items-center gap-1">
+          <Disc3 className="w-3 h-3" />
+          {album.track_count}
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Headphones className="w-3 h-3" />
+          {fmtCount(album.total_plays)}
+        </span>
+      </div>
+    </>
+  );
+
+  if (!album.artists?.slug) {
+    return <div className="flex-shrink-0 w-[150px]">{content}</div>;
+  }
+
+  return (
+    <Link
+      to="/artists/$slug"
+      params={{ slug: album.artists.slug }}
+      className="flex-shrink-0 w-[150px] rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+    >
+      {content}
+    </Link>
+  );
+}
+
 function prettyTool(t: string) {
   const map: Record<string, string> = { suno: "Suno", udio: "Udio", stable_audio: "Stable Audio", custom_model: "Custom Model", other: "Other" };
   return map[t] ?? t;

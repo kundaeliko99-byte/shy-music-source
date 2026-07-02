@@ -18,6 +18,7 @@ import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ChartsRouteImport } from './routes/charts'
 import { Route as BecomeArtistRouteImport } from './routes/become-artist'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as ArtistsRouteImport } from './routes/artists'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
@@ -71,6 +72,11 @@ const AuthRoute = AuthRouteImport.update({
   path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ArtistsRoute = ArtistsRouteImport.update({
+  id: '/artists',
+  path: '/artists',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -97,9 +103,9 @@ const BecomeArtistSubscribeRoute = BecomeArtistSubscribeRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const ArtistsSlugRoute = ArtistsSlugRouteImport.update({
-  id: '/artists/$slug',
-  path: '/artists/$slug',
-  getParentRoute: () => rootRouteImport,
+  id: '/$slug',
+  path: '/$slug',
+  getParentRoute: () => ArtistsRoute,
 } as any)
 const AdminSubscriptionsRoute = AdminSubscriptionsRouteImport.update({
   id: '/subscriptions',
@@ -110,6 +116,7 @@ const AdminSubscriptionsRoute = AdminSubscriptionsRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/artists': typeof ArtistsRouteWithChildren
   '/auth': typeof AuthRoute
   '/become-artist': typeof BecomeArtistRoute
   '/charts': typeof ChartsRoute
@@ -127,6 +134,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/artists': typeof ArtistsRouteWithChildren
   '/auth': typeof AuthRoute
   '/become-artist': typeof BecomeArtistRoute
   '/charts': typeof ChartsRoute
@@ -146,6 +154,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/artists': typeof ArtistsRouteWithChildren
   '/auth': typeof AuthRoute
   '/become-artist': typeof BecomeArtistRoute
   '/charts': typeof ChartsRoute
@@ -166,6 +175,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/artists'
     | '/auth'
     | '/become-artist'
     | '/charts'
@@ -183,6 +193,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/artists'
     | '/auth'
     | '/become-artist'
     | '/charts'
@@ -201,6 +212,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admin'
+    | '/artists'
     | '/auth'
     | '/become-artist'
     | '/charts'
@@ -220,6 +232,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
+  ArtistsRoute: typeof ArtistsRouteWithChildren
   AuthRoute: typeof AuthRoute
   BecomeArtistRoute: typeof BecomeArtistRoute
   ChartsRoute: typeof ChartsRoute
@@ -229,7 +242,6 @@ export interface RootRouteChildren {
   LibraryRoute: typeof LibraryRoute
   RadioRoute: typeof RadioRoute
   UploadRoute: typeof UploadRoute
-  ArtistsSlugRoute: typeof ArtistsSlugRoute
   BecomeArtistSubscribeRoute: typeof BecomeArtistSubscribeRoute
   TracksIdRoute: typeof TracksIdRoute
 }
@@ -299,6 +311,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/artists': {
+      id: '/artists'
+      path: '/artists'
+      fullPath: '/artists'
+      preLoaderRoute: typeof ArtistsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin': {
       id: '/admin'
       path: '/admin'
@@ -336,10 +355,10 @@ declare module '@tanstack/react-router' {
     }
     '/artists/$slug': {
       id: '/artists/$slug'
-      path: '/artists/$slug'
+      path: '/$slug'
       fullPath: '/artists/$slug'
       preLoaderRoute: typeof ArtistsSlugRouteImport
-      parentRoute: typeof rootRouteImport
+      parentRoute: typeof ArtistsRoute
     }
     '/admin/subscriptions': {
       id: '/admin/subscriptions'
@@ -363,9 +382,21 @@ const AdminRouteChildren: AdminRouteChildren = {
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
+interface ArtistsRouteChildren {
+  ArtistsSlugRoute: typeof ArtistsSlugRoute
+}
+
+const ArtistsRouteChildren: ArtistsRouteChildren = {
+  ArtistsSlugRoute: ArtistsSlugRoute,
+}
+
+const ArtistsRouteWithChildren =
+  ArtistsRoute._addFileChildren(ArtistsRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
+  ArtistsRoute: ArtistsRouteWithChildren,
   AuthRoute: AuthRoute,
   BecomeArtistRoute: BecomeArtistRoute,
   ChartsRoute: ChartsRoute,
@@ -375,7 +406,6 @@ const rootRouteChildren: RootRouteChildren = {
   LibraryRoute: LibraryRoute,
   RadioRoute: RadioRoute,
   UploadRoute: UploadRoute,
-  ArtistsSlugRoute: ArtistsSlugRoute,
   BecomeArtistSubscribeRoute: BecomeArtistSubscribeRoute,
   TracksIdRoute: TracksIdRoute,
 }

@@ -22,6 +22,31 @@ export interface TrackRow {
   albums?: { id: string; title: string; cover_url: string | null; artwork_shape?: ArtworkShape; release_type?: string } | null;
 }
 
+export interface ArtistSummary {
+  id: string;
+  display_name: string;
+  slug: string;
+  avatar_url: string | null;
+  banner_url?: string | null;
+  verified: boolean;
+  country: string | null;
+  monthly_listeners: number;
+  bio?: string | null;
+}
+
+export interface AlbumSummary {
+  id: string;
+  title: string;
+  cover_url: string | null;
+  release_type: string;
+  artwork_shape: ArtworkShape;
+  release_date: string;
+  artist_id: string;
+  artists: { display_name: string; slug: string; verified: boolean; avatar_url?: string | null } | null;
+  track_count: number;
+  total_plays: number;
+}
+
 export function toPlayerTrack(t: TrackRow): PlayerTrack {
   return {
     id: t.id,
@@ -136,6 +161,67 @@ export async function fetchRisingArtists(limit = 10) {
     .order("monthly_listeners", { ascending: false })
     .limit(limit);
   return data ?? [];
+}
+
+export async function fetchArtistsDirectory(limit = 48): Promise<ArtistSummary[]> {
+  const { data } = await supabase
+    .from("artists")
+    .select("id, display_name, slug, avatar_url, banner_url, verified, country, monthly_listeners, bio")
+    .order("monthly_listeners", { ascending: false })
+    .limit(limit);
+  return (data ?? []) as ArtistSummary[];
+}
+
+export async function fetchAlbumSpotlights(limit = 10): Promise<{
+  week: AlbumSummary[];
+  month: AlbumSummary[];
+  year: AlbumSummary[];
+}> {
+  const { data } = await supabase
+    .from("albums")
+    .select(`
+      id, title, cover_url, release_type, artwork_shape, release_date, artist_id,
+      artists ( display_name, slug, verified, avatar_url ),
+      tracks ( id, plays_count )
+    `)
+    .order("release_date", { ascending: false })
+    .limit(100);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const albums = ((data ?? []) as any[]).map((al) => {
+    const tracks = Array.isArray(al.tracks) ? al.tracks : [];
+    return {
+      id: al.id,
+      title: al.title,
+      cover_url: al.cover_url,
+      release_type: al.release_type ?? "album",
+      artwork_shape: al.artwork_shape ?? "circle",
+      release_date: al.release_date,
+      artist_id: al.artist_id,
+      artists: al.artists ?? null,
+      track_count: tracks.length,
+      total_plays: tracks.reduce((sum: number, t: { plays_count?: number | null }) => sum + (t.plays_count ?? 0), 0),
+    } satisfies AlbumSummary;
+  });
+
+  const now = Date.now();
+  const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10);
+
+  const pick = (since: string) => {
+    const eligible = albums.filter((al) => al.release_date >= since);
+    const pool = eligible.length > 0 ? eligible : albums;
+    return [...pool]
+      .sort((a, b) => (b.total_plays - a.total_plays) || b.release_date.localeCompare(a.release_date))
+      .slice(0, limit);
+  };
+
+  return {
+    week: pick(sevenDaysAgo),
+    month: pick(thirtyDaysAgo),
+    year: pick(yearStart),
+  };
 }
 
 export async function fetchArtistBySlug(slug: string) {
