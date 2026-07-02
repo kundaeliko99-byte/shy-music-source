@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { BadgeCheck, CalendarDays, Disc3, Headphones } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { CDCaseAlbumCover } from "@/components/CDCaseAlbumCover";
 import { Cover } from "@/components/Cover";
 import { HoverPlayIcon } from "@/components/HoverPlayIcon";
 import { BuySongButton } from "@/components/BuySongButton";
@@ -59,8 +60,7 @@ function AlbumDetailPage() {
   return (
     <AppShell>
       <section className="mb-8 grid gap-6 md:grid-cols-[240px_1fr] md:items-end">
-        <div className="relative group mx-auto w-full max-w-[240px]">
-          <Cover src={album.cover_url} seed={album.id} shape={album.artwork_shape ?? "circle"} glow className="w-full aspect-square" />
+        <CDCaseAlbumCover src={album.cover_url} seed={album.id} className="mx-auto w-full max-w-[250px]">
           {tracks[0] && (
             <HoverPlayIcon
               label={`Play album ${album.title}`}
@@ -72,7 +72,7 @@ function AlbumDetailPage() {
               }}
             />
           )}
-        </div>
+        </CDCaseAlbumCover>
 
         <div className="min-w-0">
           <div className="mb-2 text-[10px] font-medium tracking-[0.25em] text-primary-glow">

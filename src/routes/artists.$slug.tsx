@@ -156,7 +156,7 @@ function ArtistPage() {
   return (
     <AppShell>
       {/* Banner */}
-      <div className="relative bg-gradient-hero hairline rounded-2xl overflow-hidden mb-6">
+      <div className="relative bg-gradient-hero hairline rounded-2xl overflow-hidden mb-6 min-h-[300px]">
         {artist.banner_url ? (
           <img src={artist.banner_url} alt="" className="absolute inset-0 w-full h-full object-cover opacity-60" />
         ) : (
@@ -178,7 +178,7 @@ function ArtistPage() {
           className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadArtistImage("banner", f); }}
         />
-        <div className="relative p-5 sm:p-7 flex flex-col sm:flex-row items-start sm:items-end gap-5">
+        <div className="relative min-h-[300px] p-5 sm:p-8 flex flex-col sm:flex-row items-start sm:items-end gap-5">
           <div className="relative shrink-0">
             <Cover src={artist.avatar_url} seed={artist.id} size={120} shape="circle" glow />
             {isOwner && (
@@ -205,7 +205,7 @@ function ArtistPage() {
               ARTIST
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-3xl sm:text-4xl font-semibold">{artist.display_name}</h1>
+              <h1 className="text-4xl sm:text-6xl font-semibold tracking-tight">{artist.display_name}</h1>
               {artist.verified && (
                 <span
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/40"
@@ -284,12 +284,12 @@ function ArtistPage() {
         </div>
       </div>
 
-      <ArtistAboutSection artist={artist} isOwner={isOwner} onUpdate={(patch) => setArtist({ ...artist, ...patch } as Artist)} />
-
-
       {tracks.length > 0 && (
         <section className="mb-8">
-          <h2 className="text-base font-semibold mb-3">Songs</h2>
+          <div className="mb-3 flex items-baseline justify-between">
+            <h2 className="text-lg font-semibold">Popular</h2>
+            <span className="text-xs text-muted-foreground">{tracks.length} {tracks.length === 1 ? "song" : "songs"}</span>
+          </div>
           <div className="bg-surface hairline rounded-xl overflow-hidden">
             {tracks.map((t, i) => (
               <div
@@ -339,7 +339,10 @@ function ArtistPage() {
 
       {albums.length > 0 && (
         <section className="mb-8">
-          <h2 className="text-base font-semibold mb-3">Albums</h2>
+          <div className="mb-3 flex items-baseline justify-between">
+            <h2 className="text-lg font-semibold">Discography</h2>
+            <span className="text-xs text-muted-foreground">{albums.length} {albums.length === 1 ? "album" : "albums"}</span>
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {albums.map((al) => (
               <div key={al.id} className="group relative">
@@ -368,6 +371,8 @@ function ArtistPage() {
           </div>
         </section>
       )}
+
+      <ArtistAboutSection artist={artist} isOwner={isOwner} onUpdate={(patch) => setArtist({ ...artist, ...patch } as Artist)} />
 
       {tracks.length === 0 && albums.length === 0 && (
         <div className="text-sm text-muted-foreground py-8 text-center bg-surface hairline rounded-xl mb-8">

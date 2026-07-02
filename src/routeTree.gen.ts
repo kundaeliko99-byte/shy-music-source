@@ -21,6 +21,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as ArtistsRouteImport } from './routes/artists'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ArtistsIndexRouteImport } from './routes/artists.index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as TracksIdRouteImport } from './routes/tracks.$id'
 import { Route as BecomeArtistSubscribeRouteImport } from './routes/become-artist_.subscribe'
@@ -88,6 +89,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ArtistsIndexRoute = ArtistsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ArtistsRoute,
+} as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -138,10 +144,10 @@ export interface FileRoutesByFullPath {
   '/become-artist/subscribe': typeof BecomeArtistSubscribeRoute
   '/tracks/$id': typeof TracksIdRoute
   '/admin/': typeof AdminIndexRoute
+  '/artists/': typeof ArtistsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/artists': typeof ArtistsRouteWithChildren
   '/auth': typeof AuthRoute
   '/become-artist': typeof BecomeArtistRoute
   '/charts': typeof ChartsRoute
@@ -157,6 +163,7 @@ export interface FileRoutesByTo {
   '/become-artist/subscribe': typeof BecomeArtistSubscribeRoute
   '/tracks/$id': typeof TracksIdRoute
   '/admin': typeof AdminIndexRoute
+  '/artists': typeof ArtistsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -178,6 +185,7 @@ export interface FileRoutesById {
   '/become-artist_/subscribe': typeof BecomeArtistSubscribeRoute
   '/tracks/$id': typeof TracksIdRoute
   '/admin/': typeof AdminIndexRoute
+  '/artists/': typeof ArtistsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -200,10 +208,10 @@ export interface FileRouteTypes {
     | '/become-artist/subscribe'
     | '/tracks/$id'
     | '/admin/'
+    | '/artists/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/artists'
     | '/auth'
     | '/become-artist'
     | '/charts'
@@ -219,6 +227,7 @@ export interface FileRouteTypes {
     | '/become-artist/subscribe'
     | '/tracks/$id'
     | '/admin'
+    | '/artists'
   id:
     | '__root__'
     | '/'
@@ -239,6 +248,7 @@ export interface FileRouteTypes {
     | '/become-artist_/subscribe'
     | '/tracks/$id'
     | '/admin/'
+    | '/artists/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -345,6 +355,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/artists/': {
+      id: '/artists/'
+      path: '/'
+      fullPath: '/artists/'
+      preLoaderRoute: typeof ArtistsIndexRouteImport
+      parentRoute: typeof ArtistsRoute
+    }
     '/admin/': {
       id: '/admin/'
       path: '/'
@@ -404,10 +421,12 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
 interface ArtistsRouteChildren {
   ArtistsSlugRoute: typeof ArtistsSlugRoute
+  ArtistsIndexRoute: typeof ArtistsIndexRoute
 }
 
 const ArtistsRouteChildren: ArtistsRouteChildren = {
   ArtistsSlugRoute: ArtistsSlugRoute,
+  ArtistsIndexRoute: ArtistsIndexRoute,
 }
 
 const ArtistsRouteWithChildren =

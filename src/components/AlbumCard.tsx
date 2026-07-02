@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { Disc3, Headphones } from "lucide-react";
 import { toast } from "sonner";
-import { Cover } from "./Cover";
+import { CDCaseAlbumCover } from "./CDCaseAlbumCover";
 import { HoverPlayIcon } from "./HoverPlayIcon";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { fetchAlbumTracks, toPlayerTrack, type AlbumSummary } from "@/lib/api";
@@ -40,7 +40,7 @@ export function AlbumCard({ album, className = "w-[150px]" }: AlbumCardProps) {
           aria-label={`Open album ${album.title}`}
           className="block rounded-[3px] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
         >
-          <Cover src={album.cover_url} seed={album.id} shape="circle" glow className="w-full aspect-square" />
+          <CDCaseAlbumCover src={album.cover_url} seed={album.id} className="w-full" />
         </Link>
         <HoverPlayIcon
           label={`Play album ${album.title}`}
