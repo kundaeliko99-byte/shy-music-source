@@ -24,11 +24,17 @@ export function TrackCard({ track, queue }: TrackCardProps) {
   return (
     <div className="group flex-shrink-0 w-[140px] sm:w-[160px]">
       <div className="relative">
-        <Link to="/tracks/$id" params={{ id: track.id }} aria-label={`Open song ${track.title}`}>
+        <Link
+          to="/tracks/$id"
+          params={{ id: track.id }}
+          aria-label={`Open song page for ${track.title}`}
+          className="block rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+        >
           <SketchArtwork src={track.cover_url} seed={track.id} variant="song" className="w-full aspect-square" />
         </Link>
         <HoverPlayIcon
-          label={`Play ${track.title}`}
+          label={`Play song ${track.title}`}
+          text="Play song"
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -36,7 +42,12 @@ export function TrackCard({ track, queue }: TrackCardProps) {
           }}
         />
       </div>
-      <Link to="/tracks/$id" params={{ id: track.id }} className="block mt-2">
+      <Link
+        to="/tracks/$id"
+        params={{ id: track.id }}
+        aria-label={`Open song page for ${track.title}`}
+        className="block mt-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+      >
         <div className={`text-xs font-medium truncate ${isCurrent && isPlaying ? "text-primary-glow" : ""}`}>
           {track.title}
         </div>
@@ -45,7 +56,8 @@ export function TrackCard({ track, queue }: TrackCardProps) {
         <Link
           to="/artists/$slug"
           params={{ slug: track.artists.slug }}
-          className="text-[11px] text-muted-foreground truncate hover:text-foreground block"
+          aria-label={`Open artist profile for ${track.artists.display_name}`}
+          className="text-[11px] text-muted-foreground truncate hover:text-foreground hover:underline block focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
         >
           {track.artists.display_name}
         </Link>

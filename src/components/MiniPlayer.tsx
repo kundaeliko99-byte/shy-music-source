@@ -75,12 +75,21 @@ export function MiniPlayer() {
             )}
 
             <div className="text-center">
-              <h2 className="text-2xl font-semibold">{current.title}</h2>
+              <Link
+                to="/tracks/$id"
+                params={{ id: current.id }}
+                onClick={() => setExpanded(false)}
+                aria-label={`Open song page for ${current.title}`}
+                className="block text-2xl font-semibold hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+              >
+                {current.title}
+              </Link>
               <Link
                 to="/artists/$slug"
                 params={{ slug: current.artist_slug }}
                 onClick={() => setExpanded(false)}
-                className="text-sm text-muted-foreground hover:text-primary-glow"
+                aria-label={`Open artist profile for ${current.artist_name}`}
+                className="text-sm text-muted-foreground hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
               >
                 {current.artist_name}
               </Link>
@@ -134,13 +143,22 @@ export function MiniPlayer() {
             >
               <Cover src={current.cover_url} seed={current.id} size={40} shape={current.artwork_shape ?? "circle"} />
               <div className="min-w-0 text-left flex-1">
-                <div className="text-xs font-medium truncate">{current.title}</div>
+                <Link
+                  to="/tracks/$id"
+                  params={{ id: current.id }}
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label={`Open song page for ${current.title}`}
+                  className="text-xs font-medium truncate hover:text-primary-glow hover:underline block focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                >
+                  {current.title}
+                </Link>
                 {current.artist_slug ? (
                   <Link
                     to="/artists/$slug"
                     params={{ slug: current.artist_slug }}
                     onClick={(e) => e.stopPropagation()}
-                    className="text-[11px] text-muted-foreground truncate hover:text-primary-glow block"
+                    aria-label={`Open artist profile for ${current.artist_name}`}
+                    className="text-[11px] text-muted-foreground truncate hover:text-primary-glow hover:underline block focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                   >
                     {current.artist_name}
                   </Link>
@@ -304,4 +322,3 @@ function LyricsView({
     </div>
   );
 }
-

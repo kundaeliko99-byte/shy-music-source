@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { BadgeCheck, CalendarDays, Disc3, Headphones } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { CDCaseAlbumCover } from "@/components/CDCaseAlbumCover";
 import { HoverPlayIcon } from "@/components/HoverPlayIcon";
 import { SketchArtwork } from "@/components/SketchArtwork";
 import { BuySongButton } from "@/components/BuySongButton";
@@ -59,17 +60,19 @@ function AlbumDetailPage() {
   return (
     <AppShell>
       <section className="mb-8 grid gap-6 md:grid-cols-[240px_1fr] md:items-end">
-        <SketchArtwork src={album.cover_url} seed={album.id} variant="album" className="mx-auto aspect-square w-full max-w-[240px]">
+        <CDCaseAlbumCover src={album.cover_url} seed={album.id} className="mx-auto w-full max-w-[240px]">
           {tracks[0] && (
             <HoverPlayIcon
-              label={`Play ${album.title}`}
+              label={`Play album ${album.title}`}
+              text="Play album"
               onClick={(event) => {
                 event.preventDefault();
+                event.stopPropagation();
                 playTrack(toPlayerTrack(tracks[0]), playerQueue);
               }}
             />
           )}
-        </SketchArtwork>
+        </CDCaseAlbumCover>
 
         <div className="min-w-0">
           <div className="mb-2 text-[10px] font-medium tracking-[0.25em] text-primary-glow">
@@ -80,7 +83,8 @@ function AlbumDetailPage() {
             <Link
               to="/artists/$slug"
               params={{ slug: album.artists.slug }}
-              className="mt-3 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary-glow"
+              aria-label={`Open artist profile for ${album.artists.display_name}`}
+              className="mt-3 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             >
               {album.artists.avatar_url && <img src={album.artists.avatar_url} alt="" className="h-7 w-7 rounded-full object-cover" />}
               <span>{album.artists.display_name}</span>
@@ -107,7 +111,7 @@ function AlbumDetailPage() {
       <section className="mb-8">
         <h2 className="mb-3 text-base font-semibold">Songs inside this album</h2>
         {tracks.length === 0 ? (
-          <EmptyState title="No songs in this album yet" hint="Songs will appear here when the artist adds them." />
+          <EmptyState title="No songs have been added to this album yet." hint="Songs will appear here when the artist adds them." />
         ) : (
           <div className="grid gap-3">
             {tracks.map((track, index) => (
@@ -146,21 +150,29 @@ function AlbumSongRow({
         </Link>
         <HoverPlayIcon
           label={`Play ${track.title}`}
+          text="Play song"
           onClick={(event) => {
             event.preventDefault();
+            event.stopPropagation();
             onPlay();
           }}
         />
       </div>
       <div className="min-w-0">
-        <Link to="/tracks/$id" params={{ id: track.id }} className="block truncate text-sm font-medium hover:text-primary-glow">
+        <Link
+          to="/tracks/$id"
+          params={{ id: track.id }}
+          aria-label={`Open song page for ${track.title}`}
+          className="block truncate text-sm font-medium hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+        >
           {track.title}
         </Link>
         {track.artists && (
           <Link
             to="/artists/$slug"
             params={{ slug: track.artists.slug }}
-            className="block truncate text-xs text-muted-foreground hover:text-foreground"
+            aria-label={`Open artist profile for ${track.artists.display_name}`}
+            className="block truncate text-xs text-muted-foreground hover:text-foreground hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
           >
             {track.artists.display_name}
           </Link>

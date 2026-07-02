@@ -86,10 +86,22 @@ function HomePage() {
               <div className="text-[10px] tracking-[0.25em] text-primary-glow font-medium mb-2">
                 TRACK OF THE WEEK
               </div>
-              <h1 className="text-xl sm:text-2xl font-semibold truncate">{top.title}</h1>
+              <Link
+                to="/tracks/$id"
+                params={{ id: top.id }}
+                aria-label={`Open song page for ${top.title}`}
+                className="block text-xl sm:text-2xl font-semibold truncate hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+              >
+                {top.title}
+              </Link>
               <p className="text-sm text-muted-foreground mt-1 truncate">
                 by {top.artists ? (
-                  <Link to="/artists/$slug" params={{ slug: top.artists.slug }} className="hover:text-primary-glow">
+                  <Link
+                    to="/artists/$slug"
+                    params={{ slug: top.artists.slug }}
+                    aria-label={`Open artist profile for ${top.artists.display_name}`}
+                    className="hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                  >
                     {top.artists.display_name}
                   </Link>
                 ) : "Unknown"} · Made with {prettyTool(top.ai_tool)} · {prettyGenre(top.genre)}

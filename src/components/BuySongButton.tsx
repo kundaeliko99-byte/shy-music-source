@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Link } from "@tanstack/react-router";
 import { Copy, Download, Mail, MessageCircle, Phone, ShoppingBag } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -128,8 +129,30 @@ export function BuySongButton({ track, size = "md" }: BuySongButtonProps) {
 
           <div className="mt-5 grid gap-4 md:grid-cols-[1fr_1.2fr]">
             <section className="space-y-3">
-              <Info label="Song" value={track.title} />
-              <Info label="Writer / Seller" value={seller?.display_name ?? artistName} />
+              <InfoBox label="Song">
+                <Link
+                  to="/tracks/$id"
+                  params={{ id: track.id }}
+                  aria-label={`Open song page for ${track.title}`}
+                  className="hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                >
+                  {track.title}
+                </Link>
+              </InfoBox>
+              <InfoBox label="Writer / Seller">
+                {track.artists?.slug ? (
+                  <Link
+                    to="/artists/$slug"
+                    params={{ slug: track.artists.slug }}
+                    aria-label={`Open artist profile for ${seller?.display_name ?? artistName}`}
+                    className="hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                  >
+                    {seller?.display_name ?? artistName}
+                  </Link>
+                ) : (
+                  seller?.display_name ?? artistName
+                )}
+              </InfoBox>
               <Info label="Price" value={priceLabel} />
               <Info label="Rights" value={terms ? saleTypeLabel(terms.sale_type) : "Negotiable Rights Agreement"} />
 
@@ -230,9 +253,17 @@ export function BuySongButton({ track, size = "md" }: BuySongButtonProps) {
 
 function Info({ label, value }: { label: string; value: string }) {
   return (
+    <InfoBox label={label}>
+      {value}
+    </InfoBox>
+  );
+}
+
+function InfoBox({ label, children }: { label: string; children: ReactNode }) {
+  return (
     <div className="rounded-xl hairline bg-background/50 p-3">
       <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
-      <div className="mt-1 text-sm font-medium">{value}</div>
+      <div className="mt-1 text-sm font-medium">{children}</div>
     </div>
   );
 }

@@ -158,12 +158,13 @@ function LibraryPage() {
               <button
                 key={t.id}
                 onClick={() => playTrack(toPlayerTrack(t), liked.map(toPlayerTrack))}
+                aria-label={`Play song ${t.title}`}
                 className="group w-full flex items-center gap-3 px-3 py-2.5 hairline-b last:border-b-0 hover:bg-surface-elevated text-left"
               >
                 <div className="w-5 text-xs text-center text-muted-foreground">{i + 1}</div>
                 <div className="relative h-12 w-12 shrink-0">
                   <SketchArtwork src={t.cover_url} seed={t.id} variant="song" className="h-12 w-12" />
-                  <HoverPlayIcon label={`Play ${t.title}`} />
+                  <HoverPlayIcon label={`Play song ${t.title}`} text="Play song" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium truncate">{t.title}</div>
@@ -217,11 +218,12 @@ function LibraryPage() {
             <button
               key={`${t.id}-${i}`}
               onClick={() => playTrack(toPlayerTrack(t), history.map(toPlayerTrack))}
+              aria-label={`Play song ${t.title}`}
               className="group w-full flex items-center gap-3 px-3 py-2.5 hairline-b last:border-b-0 hover:bg-surface-elevated text-left"
             >
               <div className="relative h-12 w-12 shrink-0">
                 <SketchArtwork src={t.cover_url} seed={t.id} variant="song" className="h-12 w-12" />
-                <HoverPlayIcon label={`Play ${t.title}`} />
+                <HoverPlayIcon label={`Play song ${t.title}`} text="Play song" />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium truncate">{t.title}</div>

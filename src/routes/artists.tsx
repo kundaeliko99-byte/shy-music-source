@@ -73,6 +73,7 @@ function ArtistsPage() {
               key={artist.id}
               to="/artists/$slug"
               params={{ slug: artist.slug }}
+              aria-label={`Open artist profile for ${artist.display_name}`}
               className="group rounded-lg bg-surface p-3 hairline transition-colors hover:bg-surface-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             >
               <Cover src={artist.avatar_url} seed={artist.id} className="mx-auto aspect-square w-full max-w-[150px]" shape="circle" glow />

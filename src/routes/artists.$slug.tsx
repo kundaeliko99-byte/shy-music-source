@@ -299,19 +299,31 @@ function ArtistPage() {
               >
                 <div className="w-5 text-center text-xs text-muted-foreground">{i + 1}</div>
                 <div className="relative h-12 w-12 shrink-0">
-                  <Link to="/tracks/$id" params={{ id: t.id }} aria-label={`Open song ${t.title}`}>
+                  <Link
+                    to="/tracks/$id"
+                    params={{ id: t.id }}
+                    aria-label={`Open song page for ${t.title}`}
+                    className="block rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                  >
                     <SketchArtwork src={t.cover_url} seed={t.id} variant="song" className="h-12 w-12" />
                   </Link>
                   <HoverPlayIcon
-                    label={`Play ${t.title}`}
+                    label={`Play song ${t.title}`}
+                    text="Play song"
                     onClick={(event) => {
                       event.preventDefault();
+                      event.stopPropagation();
                       playTrack(toPlayerTrack(t), tracks.map(toPlayerTrack));
                     }}
                   />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <Link to="/tracks/$id" params={{ id: t.id }} className="text-sm font-medium truncate block hover:text-primary-glow">
+                  <Link
+                    to="/tracks/$id"
+                    params={{ id: t.id }}
+                    aria-label={`Open song page for ${t.title}`}
+                    className="text-sm font-medium truncate block hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                  >
                     {t.title}
                   </Link>
                   <div className="text-[11px] text-muted-foreground flex items-center gap-3">
