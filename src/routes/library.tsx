@@ -5,7 +5,6 @@ import { AppShell } from "@/components/AppShell";
 import { AlbumCard } from "@/components/AlbumCard";
 import { Cover } from "@/components/Cover";
 import { HoverPlayIcon } from "@/components/HoverPlayIcon";
-import { SketchArtwork } from "@/components/SketchArtwork";
 import { EmptyState, Skeleton } from "@/components/HorizontalRow";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePlayer } from "@/contexts/PlayerContext";
@@ -163,7 +162,7 @@ function LibraryPage() {
               >
                 <div className="w-5 text-xs text-center text-muted-foreground">{i + 1}</div>
                 <div className="relative h-12 w-12 shrink-0">
-                  <SketchArtwork src={t.cover_url} seed={t.id} variant="song" className="h-12 w-12" />
+                  <Cover src={t.cover_url} seed={t.id} size={48} shape={t.artwork_shape ?? "circle"} />
                   <HoverPlayIcon label={`Play song ${t.title}`} text="Play song" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -222,7 +221,7 @@ function LibraryPage() {
               className="group w-full flex items-center gap-3 px-3 py-2.5 hairline-b last:border-b-0 hover:bg-surface-elevated text-left"
             >
               <div className="relative h-12 w-12 shrink-0">
-                <SketchArtwork src={t.cover_url} seed={t.id} variant="song" className="h-12 w-12" />
+                <Cover src={t.cover_url} seed={t.id} size={48} shape={t.artwork_shape ?? "circle"} />
                 <HoverPlayIcon label={`Play song ${t.title}`} text="Play song" />
               </div>
               <div className="flex-1 min-w-0">

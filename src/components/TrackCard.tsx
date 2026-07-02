@@ -1,9 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import { Headphones } from "lucide-react";
 import { BuySongButton } from "./BuySongButton";
+import { Cover } from "./Cover";
 import { HoverPlayIcon } from "./HoverPlayIcon";
 import { MotivateButton } from "./MotivateButton";
-import { SketchArtwork } from "./SketchArtwork";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { toPlayerTrack, type TrackRow } from "@/lib/api";
 import { fmtCount } from "@/lib/format";
@@ -18,6 +18,7 @@ interface TrackCardProps {
 export function TrackCard({ track, queue }: TrackCardProps) {
   const { playTrack, current, isPlaying } = usePlayer();
   const isCurrent = current?.id === track.id;
+  const shape = track.artwork_shape ?? "circle";
   const liveStreams = useLiveStreamCount(track.id, track.plays_count);
   const motivateArtist = useMotivateArtist(track.artist_id);
 
@@ -30,7 +31,7 @@ export function TrackCard({ track, queue }: TrackCardProps) {
           aria-label={`Open song page for ${track.title}`}
           className="block rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
         >
-          <SketchArtwork src={track.cover_url} seed={track.id} variant="song" className="w-full aspect-square" />
+          <Cover src={track.cover_url} seed={track.id} shape={shape} glow className="w-full aspect-square" />
         </Link>
         <HoverPlayIcon
           label={`Play song ${track.title}`}

@@ -2,9 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { BadgeCheck, CalendarDays, Disc3, Headphones } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
-import { CDCaseAlbumCover } from "@/components/CDCaseAlbumCover";
+import { Cover } from "@/components/Cover";
 import { HoverPlayIcon } from "@/components/HoverPlayIcon";
-import { SketchArtwork } from "@/components/SketchArtwork";
 import { BuySongButton } from "@/components/BuySongButton";
 import { DownloadButton } from "@/components/DownloadButton";
 import { EmptyState, Skeleton } from "@/components/HorizontalRow";
@@ -60,7 +59,8 @@ function AlbumDetailPage() {
   return (
     <AppShell>
       <section className="mb-8 grid gap-6 md:grid-cols-[240px_1fr] md:items-end">
-        <CDCaseAlbumCover src={album.cover_url} seed={album.id} className="mx-auto w-full max-w-[240px]">
+        <div className="relative group mx-auto w-full max-w-[240px]">
+          <Cover src={album.cover_url} seed={album.id} shape={album.artwork_shape ?? "circle"} glow className="w-full aspect-square" />
           {tracks[0] && (
             <HoverPlayIcon
               label={`Play album ${album.title}`}
@@ -72,7 +72,7 @@ function AlbumDetailPage() {
               }}
             />
           )}
-        </CDCaseAlbumCover>
+        </div>
 
         <div className="min-w-0">
           <div className="mb-2 text-[10px] font-medium tracking-[0.25em] text-primary-glow">
@@ -146,7 +146,7 @@ function AlbumSongRow({
       <div className="text-center text-xs text-muted-foreground">{index + 1}</div>
       <div className="relative">
         <Link to="/tracks/$id" params={{ id: track.id }} aria-label={`Open song ${track.title}`}>
-          <SketchArtwork src={track.cover_url} seed={track.id} variant="song" className="aspect-square w-full" />
+          <Cover src={track.cover_url} seed={track.id} shape={track.artwork_shape ?? "circle"} className="aspect-square w-full" />
         </Link>
         <HoverPlayIcon
           label={`Play ${track.title}`}

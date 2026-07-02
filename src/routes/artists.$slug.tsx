@@ -8,7 +8,6 @@ import { AppShell } from "@/components/AppShell";
 import { AlbumCard } from "@/components/AlbumCard";
 import { Cover } from "@/components/Cover";
 import { HoverPlayIcon } from "@/components/HoverPlayIcon";
-import { SketchArtwork } from "@/components/SketchArtwork";
 
 import { Skeleton } from "@/components/HorizontalRow";
 import { MotivateButton, networkLabel } from "@/components/MotivateButton";
@@ -305,7 +304,7 @@ function ArtistPage() {
                     aria-label={`Open song page for ${t.title}`}
                     className="block rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
                   >
-                    <SketchArtwork src={t.cover_url} seed={t.id} variant="song" className="h-12 w-12" />
+                    <Cover src={t.cover_url} seed={t.id} size={48} shape={t.artwork_shape ?? "circle"} />
                   </Link>
                   <HoverPlayIcon
                     label={`Play song ${t.title}`}
