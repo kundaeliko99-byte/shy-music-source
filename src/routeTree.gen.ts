@@ -25,6 +25,7 @@ import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as TracksIdRouteImport } from './routes/tracks.$id'
 import { Route as BecomeArtistSubscribeRouteImport } from './routes/become-artist_.subscribe'
 import { Route as ArtistsSlugRouteImport } from './routes/artists.$slug'
+import { Route as AlbumsIdRouteImport } from './routes/albums.$id'
 import { Route as AdminSubscriptionsRouteImport } from './routes/admin.subscriptions'
 
 const UploadRoute = UploadRouteImport.update({
@@ -107,6 +108,11 @@ const ArtistsSlugRoute = ArtistsSlugRouteImport.update({
   path: '/$slug',
   getParentRoute: () => ArtistsRoute,
 } as any)
+const AlbumsIdRoute = AlbumsIdRouteImport.update({
+  id: '/albums/$id',
+  path: '/albums/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminSubscriptionsRoute = AdminSubscriptionsRouteImport.update({
   id: '/subscriptions',
   path: '/subscriptions',
@@ -127,6 +133,7 @@ export interface FileRoutesByFullPath {
   '/radio': typeof RadioRoute
   '/upload': typeof UploadRoute
   '/admin/subscriptions': typeof AdminSubscriptionsRoute
+  '/albums/$id': typeof AlbumsIdRoute
   '/artists/$slug': typeof ArtistsSlugRoute
   '/become-artist/subscribe': typeof BecomeArtistSubscribeRoute
   '/tracks/$id': typeof TracksIdRoute
@@ -145,6 +152,7 @@ export interface FileRoutesByTo {
   '/radio': typeof RadioRoute
   '/upload': typeof UploadRoute
   '/admin/subscriptions': typeof AdminSubscriptionsRoute
+  '/albums/$id': typeof AlbumsIdRoute
   '/artists/$slug': typeof ArtistsSlugRoute
   '/become-artist/subscribe': typeof BecomeArtistSubscribeRoute
   '/tracks/$id': typeof TracksIdRoute
@@ -165,6 +173,7 @@ export interface FileRoutesById {
   '/radio': typeof RadioRoute
   '/upload': typeof UploadRoute
   '/admin/subscriptions': typeof AdminSubscriptionsRoute
+  '/albums/$id': typeof AlbumsIdRoute
   '/artists/$slug': typeof ArtistsSlugRoute
   '/become-artist_/subscribe': typeof BecomeArtistSubscribeRoute
   '/tracks/$id': typeof TracksIdRoute
@@ -186,6 +195,7 @@ export interface FileRouteTypes {
     | '/radio'
     | '/upload'
     | '/admin/subscriptions'
+    | '/albums/$id'
     | '/artists/$slug'
     | '/become-artist/subscribe'
     | '/tracks/$id'
@@ -204,6 +214,7 @@ export interface FileRouteTypes {
     | '/radio'
     | '/upload'
     | '/admin/subscriptions'
+    | '/albums/$id'
     | '/artists/$slug'
     | '/become-artist/subscribe'
     | '/tracks/$id'
@@ -223,6 +234,7 @@ export interface FileRouteTypes {
     | '/radio'
     | '/upload'
     | '/admin/subscriptions'
+    | '/albums/$id'
     | '/artists/$slug'
     | '/become-artist_/subscribe'
     | '/tracks/$id'
@@ -242,6 +254,7 @@ export interface RootRouteChildren {
   LibraryRoute: typeof LibraryRoute
   RadioRoute: typeof RadioRoute
   UploadRoute: typeof UploadRoute
+  AlbumsIdRoute: typeof AlbumsIdRoute
   BecomeArtistSubscribeRoute: typeof BecomeArtistSubscribeRoute
   TracksIdRoute: typeof TracksIdRoute
 }
@@ -360,6 +373,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ArtistsSlugRouteImport
       parentRoute: typeof ArtistsRoute
     }
+    '/albums/$id': {
+      id: '/albums/$id'
+      path: '/albums/$id'
+      fullPath: '/albums/$id'
+      preLoaderRoute: typeof AlbumsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/subscriptions': {
       id: '/admin/subscriptions'
       path: '/subscriptions'
@@ -406,6 +426,7 @@ const rootRouteChildren: RootRouteChildren = {
   LibraryRoute: LibraryRoute,
   RadioRoute: RadioRoute,
   UploadRoute: UploadRoute,
+  AlbumsIdRoute: AlbumsIdRoute,
   BecomeArtistSubscribeRoute: BecomeArtistSubscribeRoute,
   TracksIdRoute: TracksIdRoute,
 }

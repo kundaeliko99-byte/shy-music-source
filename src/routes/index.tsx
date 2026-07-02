@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Disc3, Headphones, Play, TrendingUp } from "lucide-react";
+import { Play, TrendingUp } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { AlbumCard } from "@/components/AlbumCard";
 import { Cover } from "@/components/Cover";
 import { TrackCard } from "@/components/TrackCard";
 import { ShyLogo } from "@/components/ShyLogo";
@@ -17,7 +18,6 @@ import {
   toPlayerTrack,
   type TrackRow,
   type ChartEntry,
-  type AlbumSummary,
 } from "@/lib/api";
 import { fmtCount } from "@/lib/format";
 
@@ -171,19 +171,19 @@ function HomePage() {
         <HorizontalRow title="Album of the Week">
           {loading
             ? Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="w-[150px] h-[205px]" />)
-            : albums.week.map((album) => <AlbumSpotlightCard key={album.id} album={album} />)}
+            : albums.week.map((album) => <AlbumCard key={album.id} album={album} />)}
         </HorizontalRow>
       )}
 
       {albums.month.length > 0 && (
         <HorizontalRow title="Album of the Month">
-          {albums.month.map((album) => <AlbumSpotlightCard key={album.id} album={album} />)}
+          {albums.month.map((album) => <AlbumCard key={album.id} album={album} />)}
         </HorizontalRow>
       )}
 
       {albums.year.length > 0 && (
         <HorizontalRow title="Album of the Year">
-          {albums.year.map((album) => <AlbumSpotlightCard key={album.id} album={album} />)}
+          {albums.year.map((album) => <AlbumCard key={album.id} album={album} />)}
         </HorizontalRow>
       )}
 
@@ -249,42 +249,6 @@ function HomePage() {
 
 function prettyGenre(g: string) {
   return g.charAt(0).toUpperCase() + g.slice(1).replace("hiphop", "Hip-Hop");
-}
-
-function AlbumSpotlightCard({ album }: { album: AlbumSummary }) {
-  const content = (
-    <>
-      <Cover src={album.cover_url} seed={album.id} className="w-full aspect-square" shape={album.artwork_shape ?? "circle"} glow />
-      <div className="mt-2 text-xs font-medium truncate">{album.title}</div>
-      <div className="text-[11px] text-muted-foreground truncate">
-        {album.artists?.display_name ?? "Unknown artist"}
-      </div>
-      <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
-        <span className="inline-flex items-center gap-1">
-          <Disc3 className="w-3 h-3" />
-          {album.track_count}
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <Headphones className="w-3 h-3" />
-          {fmtCount(album.total_plays)}
-        </span>
-      </div>
-    </>
-  );
-
-  if (!album.artists?.slug) {
-    return <div className="flex-shrink-0 w-[150px]">{content}</div>;
-  }
-
-  return (
-    <Link
-      to="/artists/$slug"
-      params={{ slug: album.artists.slug }}
-      className="flex-shrink-0 w-[150px] rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-    >
-      {content}
-    </Link>
-  );
 }
 
 function prettyTool(t: string) {

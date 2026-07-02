@@ -5,7 +5,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
+import { AlbumCard } from "@/components/AlbumCard";
 import { Cover } from "@/components/Cover";
+import { HoverPlayIcon } from "@/components/HoverPlayIcon";
+import { SketchArtwork } from "@/components/SketchArtwork";
 
 import { Skeleton } from "@/components/HorizontalRow";
 import { MotivateButton, networkLabel } from "@/components/MotivateButton";
@@ -295,9 +298,18 @@ function ArtistPage() {
                 className="flex items-center gap-3 px-3 py-2.5 hairline-b last:border-b-0 hover:bg-surface-elevated transition-colors group"
               >
                 <div className="w-5 text-center text-xs text-muted-foreground">{i + 1}</div>
-                <Link to="/tracks/$id" params={{ id: t.id }} className="shrink-0">
-                  <Cover src={t.cover_url} seed={t.id} size={40} shape={t.artwork_shape ?? "circle"} />
-                </Link>
+                <div className="relative h-12 w-12 shrink-0">
+                  <Link to="/tracks/$id" params={{ id: t.id }} aria-label={`Open song ${t.title}`}>
+                    <SketchArtwork src={t.cover_url} seed={t.id} variant="song" className="h-12 w-12" />
+                  </Link>
+                  <HoverPlayIcon
+                    label={`Play ${t.title}`}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      playTrack(toPlayerTrack(t), tracks.map(toPlayerTrack));
+                    }}
+                  />
+                </div>
                 <div className="flex-1 min-w-0">
                   <Link to="/tracks/$id" params={{ id: t.id }} className="text-sm font-medium truncate block hover:text-primary-glow">
                     {t.title}
@@ -308,13 +320,6 @@ function ArtistPage() {
                   </div>
                 </div>
                 <DownloadButton trackId={t.id} title={t.title} audioUrl={t.audio_url} artistId={t.artist_id} size="sm" />
-                <button
-                  onClick={() => playTrack(toPlayerTrack(t), tracks.map(toPlayerTrack))}
-                  className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-glow-soft opacity-80 group-hover:opacity-100"
-                  aria-label={`Play ${t.title}`}
-                >
-                  <Play className="w-4 h-4 ml-0.5" />
-                </button>
               </div>
             ))}
           </div>
@@ -327,42 +332,26 @@ function ArtistPage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {albums.map((al) => (
               <div key={al.id} className="group relative">
-                <div className="relative">
-                  <Cover src={al.cover_url} seed={al.id} className="w-full aspect-square" shape={al.artwork_shape} glow />
-                  <button
-                    onClick={async () => {
-                      const { data } = await supabase
-                        .from("tracks")
-                        .select("id, title, cover_url, audio_url, duration_seconds, artwork_shape, lyrics, album_id, genre, artists ( display_name, slug )")
-                        .eq("album_id", al.id)
-                        .order("position_in_album", { ascending: true });
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      const list = ((data ?? []) as any[]).map((t) => ({
-                        id: t.id, title: t.title, cover_url: t.cover_url, audio_url: t.audio_url,
-                        duration_seconds: t.duration_seconds, artwork_shape: t.artwork_shape ?? "circle",
-                        artist_name: t.artists?.display_name ?? artist.display_name,
-                        artist_slug: t.artists?.slug ?? artist.slug,
-                        lyrics: t.lyrics, album_id: t.album_id, genre: t.genre,
-                      }));
-                      if (list.length > 0) playTrack(list[0], list);
-                    }}
-                    className="absolute inset-0 m-auto w-12 h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-glow opacity-0 group-hover:opacity-100 transition-opacity"
-                    aria-label={`Play ${al.title}`}
-                  >
-                    <Play className="w-5 h-5 ml-0.5" />
-                  </button>
-                  {isOwner && (
-                    <AlbumCoverEditor
-                      album={al}
-                      userId={user!.id}
-                      onUpdated={(url) => setAlbums((prev) => prev.map((x) => x.id === al.id ? { ...x, cover_url: url } : x))}
-                    />
-                  )}
-                </div>
-                <div className="text-xs font-medium mt-2 truncate">{al.title}</div>
-                <div className="text-[11px] text-muted-foreground truncate">
-                  {al.release_type === "ep" ? "EP" : al.release_type === "mixtape" ? "Mixtape" : "Album"} · {al.track_count} tracks · {new Date(al.release_date).getFullYear()}
-                </div>
+                <AlbumCard
+                  album={{
+                    ...al,
+                    artists: {
+                      display_name: artist.display_name,
+                      slug: artist.slug,
+                      verified: artist.verified,
+                      avatar_url: artist.avatar_url,
+                    },
+                    total_plays: 0,
+                  }}
+                  className="w-full"
+                />
+                {isOwner && (
+                  <AlbumCoverEditor
+                    album={al}
+                    userId={user!.id}
+                    onUpdated={(url) => setAlbums((prev) => prev.map((x) => x.id === al.id ? { ...x, cover_url: url } : x))}
+                  />
+                )}
               </div>
             ))}
           </div>
@@ -675,4 +664,3 @@ function AlbumCoverEditor({ album, userId, onUpdated }: { album: { id: string; t
     </>
   );
 }
-

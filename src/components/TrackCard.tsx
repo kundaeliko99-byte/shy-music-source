@@ -1,8 +1,9 @@
 import { Link } from "@tanstack/react-router";
-import { Play, Headphones } from "lucide-react";
-import { Cover } from "./Cover";
+import { Headphones } from "lucide-react";
 import { BuySongButton } from "./BuySongButton";
+import { HoverPlayIcon } from "./HoverPlayIcon";
 import { MotivateButton } from "./MotivateButton";
+import { SketchArtwork } from "./SketchArtwork";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { toPlayerTrack, type TrackRow } from "@/lib/api";
 import { fmtCount } from "@/lib/format";
@@ -17,32 +18,23 @@ interface TrackCardProps {
 export function TrackCard({ track, queue }: TrackCardProps) {
   const { playTrack, current, isPlaying } = usePlayer();
   const isCurrent = current?.id === track.id;
-  const shape = track.artwork_shape ?? "circle";
   const liveStreams = useLiveStreamCount(track.id, track.plays_count);
   const motivateArtist = useMotivateArtist(track.artist_id);
 
   return (
     <div className="group flex-shrink-0 w-[140px] sm:w-[160px]">
       <div className="relative">
-        <Link to="/tracks/$id" params={{ id: track.id }}>
-          <Cover
-            src={track.cover_url}
-            seed={track.id}
-            shape={shape}
-            glow
-            className="w-full aspect-square"
-          />
+        <Link to="/tracks/$id" params={{ id: track.id }} aria-label={`Open song ${track.title}`}>
+          <SketchArtwork src={track.cover_url} seed={track.id} variant="song" className="w-full aspect-square" />
         </Link>
-        <button
+        <HoverPlayIcon
+          label={`Play ${track.title}`}
           onClick={(e) => {
             e.preventDefault();
+            e.stopPropagation();
             playTrack(toPlayerTrack(track), (queue ?? [track]).map(toPlayerTrack));
           }}
-          className="absolute bottom-2 right-2 w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-glow opacity-0 group-hover:opacity-100 transition-all translate-y-1 group-hover:translate-y-0 active:scale-90 hover:scale-110"
-          aria-label="Play"
-        >
-          <Play className="w-4 h-4 ml-0.5" />
-        </button>
+        />
       </div>
       <Link to="/tracks/$id" params={{ id: track.id }} className="block mt-2">
         <div className={`text-xs font-medium truncate ${isCurrent && isPlaying ? "text-primary-glow" : ""}`}>

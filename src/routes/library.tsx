@@ -2,7 +2,10 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { Heart, Disc3, Users, History as HistoryIcon, Trophy } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { AlbumCard } from "@/components/AlbumCard";
 import { Cover } from "@/components/Cover";
+import { HoverPlayIcon } from "@/components/HoverPlayIcon";
+import { SketchArtwork } from "@/components/SketchArtwork";
 import { EmptyState, Skeleton } from "@/components/HorizontalRow";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePlayer } from "@/contexts/PlayerContext";
@@ -35,7 +38,7 @@ function LibraryPage() {
 
   const [liked, setLiked] = useState<TrackRow[]>([]);
   const [artists, setArtists] = useState<Array<{ id: string; display_name: string; slug: string; avatar_url: string | null; monthly_listeners: number }>>([]);
-  const [albums, setAlbums] = useState<Array<{ id: string; title: string; cover_url: string | null; artist_id: string }>>([]);
+  const [albums, setAlbums] = useState<Array<{ id: string; title: string; cover_url: string | null; artist_id: string; release_type?: string; artwork_shape?: string }>>([]);
   const [history, setHistory] = useState<TrackRow[]>([]);
   const [playsByArtist, setPlaysByArtist] = useState<Record<string, number>>({});
   const [bestFanArtists, setBestFanArtists] = useState<Array<{ id: string; display_name: string; slug: string; avatar_url: string | null; plays: number }>>([]);
@@ -53,7 +56,7 @@ function LibraryPage() {
       const [likedRes, followsRes, savedRes, historyRes, allHistoryRes] = await Promise.all([
         supabase.from("likes").select(`track_id, tracks ( ${TRACK_SELECT} )`).eq("user_id", user.id).order("created_at", { ascending: false }),
         supabase.from("follows").select(`artist_id, artists ( id, display_name, slug, avatar_url, monthly_listeners )`).eq("follower_id", user.id).order("created_at", { ascending: false }),
-        supabase.from("saved_albums").select(`album_id, albums ( id, title, cover_url, artist_id )`).eq("user_id", user.id).order("created_at", { ascending: false }),
+        supabase.from("saved_albums").select(`album_id, albums ( id, title, cover_url, artist_id, release_type, artwork_shape )`).eq("user_id", user.id).order("created_at", { ascending: false }),
         supabase.from("listening_history").select(`played_at, tracks ( ${TRACK_SELECT} )`).eq("user_id", user.id).order("played_at", { ascending: false }).limit(50),
         // Aggregate ALL plays (artist_id only) to compute Best Fan badges
         supabase.from("listening_history").select(`tracks ( artist_id )`).eq("user_id", user.id).limit(1000),
@@ -155,10 +158,13 @@ function LibraryPage() {
               <button
                 key={t.id}
                 onClick={() => playTrack(toPlayerTrack(t), liked.map(toPlayerTrack))}
-                className="w-full flex items-center gap-3 px-3 py-2.5 hairline-b last:border-b-0 hover:bg-surface-elevated text-left"
+                className="group w-full flex items-center gap-3 px-3 py-2.5 hairline-b last:border-b-0 hover:bg-surface-elevated text-left"
               >
                 <div className="w-5 text-xs text-center text-muted-foreground">{i + 1}</div>
-                <Cover src={t.cover_url} seed={t.id} size={40} shape={t.artwork_shape ?? "circle"} />
+                <div className="relative h-12 w-12 shrink-0">
+                  <SketchArtwork src={t.cover_url} seed={t.id} variant="song" className="h-12 w-12" />
+                  <HoverPlayIcon label={`Play ${t.title}`} />
+                </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium truncate">{t.title}</div>
                   {t.artists ? (
@@ -199,10 +205,7 @@ function LibraryPage() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {albums.map((al) => (
-              <div key={al.id} className="group">
-                <Cover src={al.cover_url} seed={al.id} className="w-full aspect-square" shape="circle" />
-                <div className="text-xs font-medium mt-2 truncate">{al.title}</div>
-              </div>
+              <AlbumCard key={al.id} album={{ ...al, track_count: 0, total_plays: 0 }} className="w-full" />
             ))}
           </div>
         )
@@ -214,9 +217,12 @@ function LibraryPage() {
             <button
               key={`${t.id}-${i}`}
               onClick={() => playTrack(toPlayerTrack(t), history.map(toPlayerTrack))}
-              className="w-full flex items-center gap-3 px-3 py-2.5 hairline-b last:border-b-0 hover:bg-surface-elevated text-left"
+              className="group w-full flex items-center gap-3 px-3 py-2.5 hairline-b last:border-b-0 hover:bg-surface-elevated text-left"
             >
-              <Cover src={t.cover_url} seed={t.id} size={40} shape={t.artwork_shape ?? "circle"} />
+              <div className="relative h-12 w-12 shrink-0">
+                <SketchArtwork src={t.cover_url} seed={t.id} variant="song" className="h-12 w-12" />
+                <HoverPlayIcon label={`Play ${t.title}`} />
+              </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium truncate">{t.title}</div>
                 {t.artists ? (

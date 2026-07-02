@@ -47,6 +47,11 @@ export interface AlbumSummary {
   total_plays: number;
 }
 
+export interface AlbumDetail extends Omit<AlbumSummary, "track_count" | "total_plays"> {
+  producer: string | null;
+  ai_tool: string | null;
+}
+
 export function toPlayerTrack(t: TrackRow): PlayerTrack {
   return {
     id: t.id,
@@ -222,6 +227,27 @@ export async function fetchAlbumSpotlights(limit = 10): Promise<{
     month: pick(thirtyDaysAgo),
     year: pick(yearStart),
   };
+}
+
+export async function fetchAlbumById(id: string): Promise<AlbumDetail | null> {
+  const { data } = await supabase
+    .from("albums")
+    .select(`
+      id, title, cover_url, release_type, artwork_shape, release_date, artist_id, producer, ai_tool,
+      artists ( display_name, slug, verified, avatar_url )
+    `)
+    .eq("id", id)
+    .maybeSingle();
+  return (data as unknown as AlbumDetail) ?? null;
+}
+
+export async function fetchAlbumTracks(albumId: string): Promise<TrackRow[]> {
+  const { data } = await supabase
+    .from("tracks")
+    .select(TRACK_SELECT)
+    .eq("album_id", albumId)
+    .order("position_in_album", { ascending: true });
+  return (data ?? []) as unknown as TrackRow[];
 }
 
 export async function fetchArtistBySlug(slug: string) {
