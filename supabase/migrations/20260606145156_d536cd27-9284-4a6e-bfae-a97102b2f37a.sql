@@ -1,0 +1,10 @@
+ALTER TYPE public.genre ADD VALUE IF NOT EXISTS 'kalindula';
+ALTER TYPE public.genre ADD VALUE IF NOT EXISTS 'traditional';
+ALTER TYPE public.genre ADD VALUE IF NOT EXISTS 'zed_hiphop';
+ALTER TYPE public.genre ADD VALUE IF NOT EXISTS 'dancehall';
+ALTER TYPE public.genre ADD VALUE IF NOT EXISTS 'amapiano';
+ALTER TYPE public.genre ADD VALUE IF NOT EXISTS 'afrobeat';
+ALTER TYPE public.genre ADD VALUE IF NOT EXISTS 'afropop';
+ALTER TYPE public.genre ADD VALUE IF NOT EXISTS 'rnb';
+ALTER TYPE public.genre ADD VALUE IF NOT EXISTS 'gospel';
+ALTER TYPE public.genre ADD VALUE IF NOT EXISTS 'folk';
