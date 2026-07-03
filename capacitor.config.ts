@@ -7,7 +7,9 @@ const config: CapacitorConfig = {
   server: {
     // Capacitor wraps the deployed SHY web app so Android and web share
     // the same Supabase backend, accounts, songs, purchases, and updates.
-    url: process.env.CAPACITOR_SERVER_URL || "https://shymusic.lovable.app",
+    url:
+      process.env.CAPACITOR_SERVER_URL ||
+      "https://kundaeliko99-byte.github.io/shy-music-source/",
     cleartext: false,
   },
   android: {

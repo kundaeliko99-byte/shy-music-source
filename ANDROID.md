@@ -14,10 +14,10 @@ SHY uses Capacitor for Android. The Android app wraps the deployed SHY web app s
 Set this to your deployed SHY website before building a test APK:
 
 ```powershell
-$env:CAPACITOR_SERVER_URL="https://your-deployed-shy-domain.example"
+$env:CAPACITOR_SERVER_URL="https://kundaeliko99-byte.github.io/shy-music-source/"
 ```
 
-If you do not set it, the current default is `https://shymusic.lovable.app`.
+If you do not set it, the current default is `https://kundaeliko99-byte.github.io/shy-music-source/`.
 
 ## Build and Sync
 
