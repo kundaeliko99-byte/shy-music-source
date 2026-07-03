@@ -141,9 +141,9 @@ function HomePage() {
         </section>
       )}
 
-      {/* New This Week */}
+      {/* Fresh Drops */}
       <HorizontalRow
-        title="New This Week"
+        title="Fresh Drops"
         action={<Link to="/discover" search={{ q: "", genre: "", mood: "", ai_tool: "" }} className="text-xs text-muted-foreground hover:text-foreground">See all</Link>}
       >
         {loading
