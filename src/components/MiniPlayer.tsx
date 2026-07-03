@@ -69,7 +69,6 @@ export function MiniPlayer() {
                     size={240}
                     shape={current.artwork_shape ?? "circle"}
                     glow
-                    spinning={isPlaying}
                   />
                   <div className="w-full max-w-md">
                     <Visualizer isPlaying={isPlaying} height={70} />

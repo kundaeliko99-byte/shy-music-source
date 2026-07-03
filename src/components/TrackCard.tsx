@@ -16,7 +16,7 @@ interface TrackCardProps {
 }
 
 export function TrackCard({ track, queue }: TrackCardProps) {
-  const { playTrack, togglePlay, current, isPlaying, setExpanded } = usePlayer();
+  const { playTrack, togglePlay, current, isPlaying } = usePlayer();
   const isCurrent = current?.id === track.id;
   const shape = track.artwork_shape ?? "circle";
   const liveStreams = useLiveStreamCount(track.id, track.plays_count);
@@ -43,7 +43,6 @@ export function TrackCard({ track, queue }: TrackCardProps) {
             e.stopPropagation();
             if (isCurrent) togglePlay();
             else playTrack(toPlayerTrack(track), (queue ?? [track]).map(toPlayerTrack));
-            setExpanded(true);
           }}
         />
       </div>

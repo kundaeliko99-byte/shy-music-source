@@ -47,7 +47,7 @@ function HomePage() {
   const [chart, setChart] = useState<ChartEntry[]>([]);
   const [chartTab, setChartTab] = useState<ChartTab>("World");
   const [loading, setLoading] = useState(true);
-  const { playTrack, setExpanded } = usePlayer();
+  const { playTrack } = usePlayer();
 
   useEffect(() => {
     (async () => {
@@ -109,7 +109,6 @@ function HomePage() {
               <button
                 onClick={() => {
                   playTrack(toPlayerTrack(top));
-                  setExpanded(true);
                 }}
                 className="mt-4 inline-flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2 rounded-full text-sm font-medium shadow-glow-soft hover:opacity-90"
               >

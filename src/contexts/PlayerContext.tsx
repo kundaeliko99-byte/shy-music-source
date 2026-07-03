@@ -336,7 +336,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const idx = q.findIndex((t) => t.id === track.id);
       setQueue(q);
       setQueueIndex(idx >= 0 ? idx : 0);
-      setExpanded(true);
       playTrackInternal(track);
     },
     [playTrackInternal]
