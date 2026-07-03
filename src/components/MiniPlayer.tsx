@@ -1,10 +1,13 @@
-import { Play, Pause, SkipBack, SkipForward, Volume2, ChevronUp, ChevronDown, Mic2, Disc3, Repeat, Repeat1 } from "lucide-react";
-import { Link } from "@tanstack/react-router";
+import { Play, Pause, SkipBack, SkipForward, Volume2, ChevronUp, ChevronDown, Mic2, Disc3, Repeat, Repeat1, Heart, Shuffle } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { usePlayer, type PlayerTrack } from "@/contexts/PlayerContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { Cover } from "./Cover";
 import { Visualizer } from "./Visualizer";
 import { fmtTime } from "@/lib/format";
+import { toast } from "sonner";
 
 export function MiniPlayer() {
   const {
@@ -16,6 +19,7 @@ export function MiniPlayer() {
     volume,
     expanded,
     repeatMode,
+    shuffleMode,
     togglePlay,
     next,
     prev,
@@ -23,14 +27,59 @@ export function MiniPlayer() {
     setVolume,
     setExpanded,
     cycleRepeatMode,
+    toggleShuffleMode,
     reorderQueue,
   } = usePlayer();
+  const { user } = useAuth();
+  const navigate = useNavigate();
 
   const [lyricMode, setLyricMode] = useState(false);
+  const [liked, setLiked] = useState(false);
+
+  useEffect(() => {
+    if (!current || !user) {
+      setLiked(false);
+      return;
+    }
+
+    supabase
+      .from("likes")
+      .select("track_id")
+      .eq("user_id", user.id)
+      .eq("track_id", current.id)
+      .maybeSingle()
+      .then(({ data }) => setLiked(!!data));
+  }, [current?.id, user]);
 
   if (!current) return null;
 
   const pct = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+  const toggleLike = async () => {
+    if (!user) {
+      setExpanded(false);
+      navigate({ to: "/auth" });
+      return;
+    }
+
+    if (liked) {
+      const { error } = await supabase.from("likes").delete().eq("user_id", user.id).eq("track_id", current.id);
+      if (error) {
+        toast.error("Couldn't remove like.");
+        return;
+      }
+      setLiked(false);
+      return;
+    }
+
+    const { error } = await supabase.from("likes").insert({ user_id: user.id, track_id: current.id });
+    if (error) {
+      toast.error("Couldn't like this song.");
+      return;
+    }
+    setLiked(true);
+    toast.success("Added to liked songs");
+  };
 
   return (
     <>
@@ -95,6 +144,19 @@ export function MiniPlayer() {
                 >
                   {current.artist_name}
                 </Link>
+                <div className="mt-4 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={toggleLike}
+                    aria-label={liked ? "Unlike this song" : "Like this song"}
+                    aria-pressed={liked}
+                    className={`inline-flex h-10 w-10 items-center justify-center rounded-full hairline transition active:scale-90 ${
+                      liked ? "border-primary/50 bg-primary/15 text-primary" : "bg-surface text-muted-foreground hover:bg-surface-elevated hover:text-foreground"
+                    }`}
+                  >
+                    <Heart className={`h-5 w-5 ${liked ? "fill-current" : ""}`} />
+                  </button>
+                </div>
               </div>
 
               <div className="w-full max-w-md flex flex-col gap-2">
@@ -113,6 +175,7 @@ export function MiniPlayer() {
               </div>
 
               <div className="flex items-center gap-6">
+                <ShuffleButton active={shuffleMode} onClick={toggleShuffleMode} />
                 <RepeatButton mode={repeatMode} onClick={cycleRepeatMode} />
                 <button onClick={prev} className="text-muted-foreground hover:text-foreground transition-transform active:scale-90" aria-label="Previous">
                   <SkipBack className="w-7 h-7" />
@@ -309,6 +372,23 @@ function RepeatButton({
       <Icon className={sizeCls} />
       {active && (
         <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-primary" />
+      )}
+    </button>
+  );
+}
+
+function ShuffleButton({ active, onClick }: { active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={active ? "Shuffle on" : "Shuffle off"}
+      title={active ? "Shuffle on" : "Shuffle off"}
+      aria-pressed={active}
+      className={`relative ${active ? "text-primary" : "text-muted-foreground"} hover:text-foreground transition-colors active:scale-90`}
+    >
+      <Shuffle className="h-5 w-5" />
+      {active && (
+        <span className="absolute -bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-primary" />
       )}
     </button>
   );

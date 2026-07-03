@@ -39,6 +39,7 @@ interface PlayerContextValue {
   volume: number;
   expanded: boolean;
   repeatMode: RepeatMode;
+  shuffleMode: boolean;
   playTrack: (track: PlayerTrack, queue?: PlayerTrack[]) => void;
   togglePlay: () => void;
   next: () => void;
@@ -47,6 +48,7 @@ interface PlayerContextValue {
   setVolume: (v: number) => void;
   setExpanded: (b: boolean) => void;
   cycleRepeatMode: () => void;
+  toggleShuffleMode: () => void;
   addToQueue: (track: PlayerTrack) => void;
   reorderQueue: (fromIndex: number, toIndex: number) => void;
 }
@@ -101,16 +103,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [volume, setVolumeState] = useState(0.8);
   const [expanded, setExpanded] = useState(false);
   const [repeatMode, setRepeatMode] = useState<RepeatMode>("off");
+  const [shuffleMode, setShuffleMode] = useState(false);
 
   // Refs mirror state so audio event listeners (registered once) see latest values
   const queueRef = useRef<PlayerTrack[]>([]);
   const queueIndexRef = useRef(0);
   const currentRef = useRef<PlayerTrack | null>(null);
   const repeatModeRef = useRef<RepeatMode>("off");
+  const shuffleModeRef = useRef(false);
   useEffect(() => { queueRef.current = queue; }, [queue]);
   useEffect(() => { queueIndexRef.current = queueIndex; }, [queueIndex]);
   useEffect(() => { currentRef.current = current; }, [current]);
   useEffect(() => { repeatModeRef.current = repeatMode; }, [repeatMode]);
+  useEffect(() => { shuffleModeRef.current = shuffleMode; }, [shuffleMode]);
 
   const playCountedRef = useRef(false);
   const historyLoggedRef = useRef(false);
@@ -194,6 +199,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (mode === "one") {
       a.currentTime = 0;
       a.play().catch(() => {});
+      return;
+    }
+
+    if (shuffleModeRef.current && q.length > 1) {
+      let shuffledIdx = idx;
+      while (shuffledIdx === idx) {
+        shuffledIdx = Math.floor(Math.random() * q.length);
+      }
+      setQueueIndex(shuffledIdx);
+      playTrackInternal(q[shuffledIdx]);
       return;
     }
 
@@ -406,6 +421,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setRepeatMode((m) => (m === "off" ? "all" : m === "all" ? "one" : "off"));
   }, []);
 
+  const toggleShuffleMode = useCallback(() => {
+    setShuffleMode((enabled) => !enabled);
+  }, []);
+
   const value = useMemo<PlayerContextValue>(
     () => ({
       current,
@@ -416,6 +435,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       volume,
       expanded,
       repeatMode,
+      shuffleMode,
       playTrack,
       togglePlay,
       next: handleNext,
@@ -424,10 +444,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setVolume,
       setExpanded,
       cycleRepeatMode,
+      toggleShuffleMode,
       addToQueue,
       reorderQueue,
     }),
-    [current, queue, isPlaying, currentTime, duration, volume, expanded, repeatMode, playTrack, togglePlay, handleNext, handlePrev, seek, setVolume, cycleRepeatMode, addToQueue, reorderQueue]
+    [current, queue, isPlaying, currentTime, duration, volume, expanded, repeatMode, shuffleMode, playTrack, togglePlay, handleNext, handlePrev, seek, setVolume, cycleRepeatMode, toggleShuffleMode, addToQueue, reorderQueue]
   );
 
   return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>;
