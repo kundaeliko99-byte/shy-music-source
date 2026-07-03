@@ -9,7 +9,6 @@ import {
   type ReactNode,
 } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "./AuthContext";
 import { bumpStreamCount } from "@/hooks/useTrackStreams";
 import { resolveAudioUrl } from "@/lib/media";
 
@@ -93,7 +92,6 @@ function rawToPlayer(t: RawTrack): PlayerTrack {
 }
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [current, setCurrent] = useState<PlayerTrack | null>(null);
   const [queue, setQueue] = useState<PlayerTrack[]>([]);
@@ -128,7 +126,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         typeof navigator !== "undefined"
           ? (navigator.language?.split("-")[1] ?? null)
           : null;
-      if (!user?.id) return;
       const { data, error } = await (supabase as any).rpc("record_track_play", {
         p_track_id: trackId,
         p_country: country,
