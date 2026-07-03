@@ -43,9 +43,6 @@ function ArtistsPage() {
         <div>
           <div className="mb-2 text-[10px] font-medium tracking-[0.25em] text-primary-glow">ARTISTS</div>
           <h1 className="text-2xl font-semibold">Artists</h1>
-          <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-            Choose an artist to open their profile, songs, albums, and marketplace details.
-          </p>
         </div>
         <div className="relative w-full sm:w-72">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

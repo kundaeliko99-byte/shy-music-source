@@ -11,6 +11,7 @@ interface RowProps {
 export function HorizontalRow({ title, action, children, controls = true }: RowProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const drag = useRef({ active: false, x: 0, left: 0 });
+  const [hasOverflow, setHasOverflow] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
 
@@ -18,6 +19,7 @@ export function HorizontalRow({ title, action, children, controls = true }: RowP
     const el = scroller.current;
     if (!el) return;
     const maxScrollLeft = el.scrollWidth - el.clientWidth;
+    setHasOverflow(maxScrollLeft > 4);
     setCanScrollLeft(el.scrollLeft > 4);
     setCanScrollRight(el.scrollLeft < maxScrollLeft - 4);
   }, []);
@@ -84,25 +86,27 @@ export function HorizontalRow({ title, action, children, controls = true }: RowP
       <div className="group/row relative">
         {controls && (
           <>
-            {canScrollLeft && (
+            {hasOverflow && (
               <div className="group/left-edge absolute inset-y-0 left-0 z-10 hidden w-14 items-center sm:flex">
                 <button
                   type="button"
                   onClick={() => scrollByPage(-1)}
+                  disabled={!canScrollLeft}
                   aria-label={`Scroll ${title} left`}
-                  className="ml-1 inline-flex h-10 w-10 items-center justify-center rounded-full hairline bg-background/75 text-foreground/70 opacity-0 backdrop-blur-md transition hover:bg-background/95 hover:text-foreground group-hover/left-edge:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                  className="ml-1 inline-flex h-10 w-10 items-center justify-center rounded-full hairline bg-background/75 text-foreground/70 opacity-0 backdrop-blur-md transition hover:bg-background/95 hover:text-foreground group-hover/left-edge:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:pointer-events-none disabled:text-muted-foreground/35 disabled:opacity-0 group-hover/left-edge:disabled:opacity-45"
                 >
                   <ChevronLeft className="h-5 w-5" />
                 </button>
               </div>
             )}
-            {canScrollRight && (
+            {hasOverflow && (
               <div className="group/right-edge absolute inset-y-0 right-0 z-10 hidden w-14 items-center justify-end sm:flex">
                 <button
                   type="button"
                   onClick={() => scrollByPage(1)}
+                  disabled={!canScrollRight}
                   aria-label={`Scroll ${title} right`}
-                  className="mr-1 inline-flex h-10 w-10 items-center justify-center rounded-full hairline bg-background/75 text-foreground/70 opacity-0 backdrop-blur-md transition hover:bg-background/95 hover:text-foreground group-hover/right-edge:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                  className="mr-1 inline-flex h-10 w-10 items-center justify-center rounded-full hairline bg-background/75 text-foreground/70 opacity-0 backdrop-blur-md transition hover:bg-background/95 hover:text-foreground group-hover/right-edge:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:pointer-events-none disabled:text-muted-foreground/35 disabled:opacity-0 group-hover/right-edge:disabled:opacity-45"
                 >
                   <ChevronRight className="h-5 w-5" />
                 </button>
