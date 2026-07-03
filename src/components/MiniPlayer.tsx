@@ -1,7 +1,7 @@
 import { Play, Pause, SkipBack, SkipForward, Volume2, ChevronUp, ChevronDown, Mic2, Disc3, Repeat, Repeat1 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useState, useMemo, useEffect, useRef } from "react";
-import { usePlayer } from "@/contexts/PlayerContext";
+import { usePlayer, type PlayerTrack } from "@/contexts/PlayerContext";
 import { Cover } from "./Cover";
 import { Visualizer } from "./Visualizer";
 import { fmtTime } from "@/lib/format";
@@ -9,6 +9,7 @@ import { fmtTime } from "@/lib/format";
 export function MiniPlayer() {
   const {
     current,
+    queue,
     isPlaying,
     currentTime,
     duration,
@@ -22,6 +23,7 @@ export function MiniPlayer() {
     setVolume,
     setExpanded,
     cycleRepeatMode,
+    reorderQueue,
   } = usePlayer();
 
   const [lyricMode, setLyricMode] = useState(false);
@@ -55,79 +57,82 @@ export function MiniPlayer() {
             </button>
           </div>
 
-          <div className="flex-1 flex flex-col items-center justify-center px-6 gap-5 min-h-0">
-            {lyricMode ? (
-              <LyricsView lyrics={current.lyrics ?? null} currentTime={currentTime} duration={duration} />
-            ) : (
-              <>
-                <Cover
-                  src={current.cover_url}
-                  seed={current.id}
-                  size={240}
-                  shape={current.artwork_shape ?? "circle"}
-                  glow
-                  spinning={isPlaying}
+          <div className="grid flex-1 min-h-0 gap-5 px-6 py-4 md:grid-cols-[1fr_320px]">
+            <div className="flex min-h-0 flex-col items-center justify-center gap-5">
+              {lyricMode ? (
+                <LyricsView lyrics={current.lyrics ?? null} currentTime={currentTime} duration={duration} />
+              ) : (
+                <>
+                  <Cover
+                    src={current.cover_url}
+                    seed={current.id}
+                    size={240}
+                    shape={current.artwork_shape ?? "circle"}
+                    glow
+                    spinning={isPlaying}
+                  />
+                  <div className="w-full max-w-md">
+                    <Visualizer isPlaying={isPlaying} height={70} />
+                  </div>
+                </>
+              )}
+
+              <div className="text-center">
+                <Link
+                  to="/tracks/$id"
+                  params={{ id: current.id }}
+                  onClick={() => setExpanded(false)}
+                  aria-label={`Open song page for ${current.title}`}
+                  className="block text-2xl font-semibold hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                >
+                  {current.title}
+                </Link>
+                <Link
+                  to="/artists/$slug"
+                  params={{ slug: current.artist_slug }}
+                  onClick={() => setExpanded(false)}
+                  aria-label={`Open artist profile for ${current.artist_name}`}
+                  className="text-sm text-muted-foreground hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                >
+                  {current.artist_name}
+                </Link>
+              </div>
+
+              <div className="w-full max-w-md flex flex-col gap-2">
+                <input
+                  type="range"
+                  min={0}
+                  max={duration || 0}
+                  value={currentTime}
+                  onChange={(e) => seek(Number(e.target.value))}
+                  className="w-full accent-primary"
                 />
-                <div className="w-full max-w-md">
-                  <Visualizer isPlaying={isPlaying} height={70} />
+                <div className="flex justify-between text-[10px] text-muted-foreground">
+                  <span>{fmtTime(currentTime)}</span>
+                  <span>{fmtTime(duration)}</span>
                 </div>
-              </>
-            )}
+              </div>
 
-            <div className="text-center">
-              <Link
-                to="/tracks/$id"
-                params={{ id: current.id }}
-                onClick={() => setExpanded(false)}
-                aria-label={`Open song page for ${current.title}`}
-                className="block text-2xl font-semibold hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-              >
-                {current.title}
-              </Link>
-              <Link
-                to="/artists/$slug"
-                params={{ slug: current.artist_slug }}
-                onClick={() => setExpanded(false)}
-                aria-label={`Open artist profile for ${current.artist_name}`}
-                className="text-sm text-muted-foreground hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-              >
-                {current.artist_name}
-              </Link>
-            </div>
-
-            <div className="w-full max-w-md flex flex-col gap-2">
-              <input
-                type="range"
-                min={0}
-                max={duration || 0}
-                value={currentTime}
-                onChange={(e) => seek(Number(e.target.value))}
-                className="w-full accent-primary"
-              />
-              <div className="flex justify-between text-[10px] text-muted-foreground">
-                <span>{fmtTime(currentTime)}</span>
-                <span>{fmtTime(duration)}</span>
+              <div className="flex items-center gap-6">
+                <RepeatButton mode={repeatMode} onClick={cycleRepeatMode} />
+                <button onClick={prev} className="text-muted-foreground hover:text-foreground transition-transform active:scale-90" aria-label="Previous">
+                  <SkipBack className="w-7 h-7" />
+                </button>
+                <button
+                  onClick={togglePlay}
+                  className="w-16 h-16 rounded-full bg-gradient-primary flex items-center justify-center shadow-glow transition-transform active:scale-95 hover:scale-105"
+                  aria-label={isPlaying ? "Pause" : "Play"}
+                >
+                  {isPlaying ? <Pause className="w-7 h-7" /> : <Play className="w-7 h-7 ml-1" />}
+                </button>
+                <button onClick={next} className="text-muted-foreground hover:text-foreground transition-transform active:scale-90" aria-label="Next">
+                  <SkipForward className="w-7 h-7" />
+                </button>
+                <div className="w-7" />
               </div>
             </div>
 
-            <div className="flex items-center gap-6">
-              <RepeatButton mode={repeatMode} onClick={cycleRepeatMode} />
-              <button onClick={prev} className="text-muted-foreground hover:text-foreground transition-transform active:scale-90" aria-label="Previous">
-                <SkipBack className="w-7 h-7" />
-              </button>
-              <button
-                onClick={togglePlay}
-                className="w-16 h-16 rounded-full bg-gradient-primary flex items-center justify-center shadow-glow transition-transform active:scale-95 hover:scale-105"
-                aria-label={isPlaying ? "Pause" : "Play"}
-              >
-                {isPlaying ? <Pause className="w-7 h-7" /> : <Play className="w-7 h-7 ml-1" />}
-              </button>
-              <button onClick={next} className="text-muted-foreground hover:text-foreground transition-transform active:scale-90" aria-label="Next">
-                <SkipForward className="w-7 h-7" />
-              </button>
-              <div className="w-7" />
-            </div>
-
+            <QueueSidebar queue={queue} currentId={current.id} onReorder={reorderQueue} />
           </div>
         </div>
       )}
@@ -228,6 +233,56 @@ export function MiniPlayer() {
         </div>
       </div>
     </>
+  );
+}
+
+function QueueSidebar({
+  queue,
+  currentId,
+  onReorder,
+}: {
+  queue: PlayerTrack[];
+  currentId: string;
+  onReorder: (fromIndex: number, toIndex: number) => void;
+}) {
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+
+  return (
+    <aside className="hidden min-h-0 flex-col rounded-2xl bg-surface/70 p-4 hairline backdrop-blur-md md:flex">
+      <div className="mb-3 flex items-baseline justify-between">
+        <h2 className="text-sm font-semibold">Now Playing</h2>
+        <span className="text-[11px] text-muted-foreground">{queue.length} queued</span>
+      </div>
+      <div className="min-h-0 space-y-2 overflow-y-auto pr-1">
+        {queue.map((track, index) => {
+          const active = track.id === currentId;
+          const dragging = dragIndex === index;
+          return (
+            <div
+              key={`${track.id}-${index}`}
+              draggable
+              onDragStart={() => setDragIndex(index)}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={() => {
+                if (dragIndex !== null) onReorder(dragIndex, index);
+                setDragIndex(null);
+              }}
+              onDragEnd={() => setDragIndex(null)}
+              className={`flex cursor-grab items-center gap-3 rounded-lg p-2 transition active:cursor-grabbing ${
+                active ? "bg-primary/15 text-foreground ring-1 ring-primary/35" : "bg-surface hover:bg-surface-elevated"
+              } ${dragging ? "scale-[0.98] opacity-70 ring-1 ring-primary/50" : ""}`}
+            >
+              <Cover src={track.cover_url} seed={track.id} size={40} shape={track.artwork_shape ?? "circle"} />
+              <div className="min-w-0 flex-1">
+                <div className={`truncate text-xs font-medium ${active ? "text-primary-glow" : "text-foreground"}`}>{track.title}</div>
+                <div className="truncate text-[11px] text-muted-foreground">{track.artist_name}</div>
+              </div>
+              <span className="text-[10px] text-muted-foreground">{index + 1}</span>
+            </div>
+          );
+        })}
+      </div>
+    </aside>
   );
 }
 

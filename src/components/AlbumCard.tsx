@@ -19,9 +19,14 @@ interface AlbumCardProps {
 }
 
 export function AlbumCard({ album, className = "w-[150px]" }: AlbumCardProps) {
-  const { playTrack } = usePlayer();
+  const { current, isPlaying, playTrack, togglePlay } = usePlayer();
+  const isActiveAlbum = current?.album_id === album.id;
 
   const playAlbum = async () => {
+    if (isActiveAlbum) {
+      togglePlay();
+      return;
+    }
     const tracks = await fetchAlbumTracks(album.id);
     if (tracks.length === 0) {
       toast.info("No songs have been added to this album yet.");
@@ -32,7 +37,7 @@ export function AlbumCard({ album, className = "w-[150px]" }: AlbumCardProps) {
   };
 
   return (
-    <div className={`group flex-shrink-0 rounded-lg ${className}`}>
+    <div className={`group flex-shrink-0 rounded-lg p-2 -m-2 transition duration-200 hover:-translate-y-1 hover:bg-surface-elevated hover:shadow-[0_18px_48px_-30px_var(--color-primary-glow)] ${className}`}>
       <div className="relative">
         <Link
           to="/albums/$id"
@@ -45,6 +50,8 @@ export function AlbumCard({ album, className = "w-[150px]" }: AlbumCardProps) {
         <HoverPlayIcon
           label={`Play album ${album.title}`}
           text="Play album"
+          active={isActiveAlbum}
+          playing={isPlaying}
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -56,7 +63,7 @@ export function AlbumCard({ album, className = "w-[150px]" }: AlbumCardProps) {
         to="/albums/$id"
         params={{ id: album.id }}
         aria-label={`Open album ${album.title}`}
-        className="mt-2 block truncate text-xs font-medium hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+        className="mt-2 block truncate text-xs font-medium text-foreground/90 transition-colors group-hover:text-foreground hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
       >
         {album.title}
       </Link>

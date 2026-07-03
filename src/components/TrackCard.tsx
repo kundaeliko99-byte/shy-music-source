@@ -16,14 +16,14 @@ interface TrackCardProps {
 }
 
 export function TrackCard({ track, queue }: TrackCardProps) {
-  const { playTrack, current, isPlaying } = usePlayer();
+  const { playTrack, togglePlay, current, isPlaying } = usePlayer();
   const isCurrent = current?.id === track.id;
   const shape = track.artwork_shape ?? "circle";
   const liveStreams = useLiveStreamCount(track.id, track.plays_count);
   const motivateArtist = useMotivateArtist(track.artist_id);
 
   return (
-    <div className="group flex-shrink-0 w-[140px] sm:w-[160px]">
+    <div className="group flex-shrink-0 w-[140px] rounded-lg p-2 -m-2 transition duration-200 hover:-translate-y-1 hover:bg-surface-elevated hover:shadow-[0_18px_48px_-30px_var(--color-primary-glow)] sm:w-[160px]">
       <div className="relative">
         <Link
           to="/tracks/$id"
@@ -36,10 +36,13 @@ export function TrackCard({ track, queue }: TrackCardProps) {
         <HoverPlayIcon
           label={`Play song ${track.title}`}
           text="Play song"
+          active={isCurrent}
+          playing={isPlaying}
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            playTrack(toPlayerTrack(track), (queue ?? [track]).map(toPlayerTrack));
+            if (isCurrent) togglePlay();
+            else playTrack(toPlayerTrack(track), (queue ?? [track]).map(toPlayerTrack));
           }}
         />
       </div>
@@ -49,7 +52,7 @@ export function TrackCard({ track, queue }: TrackCardProps) {
         aria-label={`Open song page for ${track.title}`}
         className="block mt-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
       >
-        <div className={`text-xs font-medium truncate ${isCurrent && isPlaying ? "text-primary-glow" : ""}`}>
+        <div className={`text-xs font-medium truncate transition-colors group-hover:text-foreground ${isCurrent && isPlaying ? "text-primary-glow" : "text-foreground/90"}`}>
           {track.title}
         </div>
       </Link>

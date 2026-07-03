@@ -262,7 +262,7 @@ function ArtistPage() {
             )}
             <button
               onClick={toggleFollow}
-              className={`px-4 py-2 rounded-full text-xs font-medium hairline inline-flex items-center gap-1.5 ${
+              className={`px-4 py-2 rounded-full text-xs font-medium hairline inline-flex items-center gap-1.5 transition-transform active:scale-95 ${
                 following ? "bg-primary/20 text-primary-glow border-primary/40" : "text-foreground"
               }`}
             >

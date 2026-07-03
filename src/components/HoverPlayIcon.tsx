@@ -1,37 +1,42 @@
-import { Play } from "lucide-react";
+import { Pause, Play } from "lucide-react";
 import type { MouseEvent } from "react";
 
 interface HoverPlayIconProps {
   label: string;
   text?: string;
+  active?: boolean;
+  playing?: boolean;
   onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
 }
 
 const iconClass =
-  "inline-flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-2 text-[#7C3AED] shadow-[0_0_18px_rgba(124,58,237,0.35)] backdrop-blur-sm opacity-45 scale-95 transition duration-200 sm:opacity-0 sm:scale-90 sm:group-hover:opacity-100 sm:group-hover:scale-100 sm:group-focus-within:opacity-100 sm:group-focus-within:scale-100";
+  "inline-flex h-11 w-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[0_12px_32px_-14px_var(--color-primary),0_0_24px_-10px_var(--color-primary-glow)] opacity-0 translate-y-2 scale-95 transition duration-200 hover:scale-105 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 group-focus-within:opacity-100 group-focus-within:translate-y-0 group-focus-within:scale-100";
 
-export function HoverPlayIcon({ label, text = "Play", onClick }: HoverPlayIconProps) {
+export function HoverPlayIcon({ label, text = "Play", active = false, playing = false, onClick }: HoverPlayIconProps) {
+  const Icon = active && playing ? Pause : Play;
+  const visibleClass = active ? "opacity-100 translate-y-0 scale-100" : "";
+
   if (onClick) {
     return (
       <button
         type="button"
         onClick={onClick}
         aria-label={label}
-        className="absolute inset-0 z-10 flex items-center justify-center focus:outline-none"
+        className="absolute bottom-2 right-2 z-10 focus:outline-none"
       >
-        <span className={iconClass.replace("pointer-events-none", "")}>
-          <Play className="h-5 w-5 fill-current drop-shadow-[0_0_12px_rgba(124,58,237,0.55)]" />
-          <span className="text-xs font-semibold text-violet-100">{text}</span>
+        <span className={`${iconClass} ${visibleClass}`}>
+          <Icon className={`h-5 w-5 ${active && playing ? "" : "ml-0.5 fill-current"}`} />
+          <span className="sr-only">{text}</span>
         </span>
       </button>
     );
   }
 
   return (
-    <span aria-hidden="true" className="absolute inset-0 z-10 flex items-center justify-center">
-      <span className={`pointer-events-none ${iconClass}`}>
-        <Play className="h-5 w-5 fill-current drop-shadow-[0_0_12px_rgba(124,58,237,0.55)]" />
-        <span className="text-xs font-semibold text-violet-100">{text}</span>
+    <span aria-hidden="true" className="absolute bottom-2 right-2 z-10">
+      <span className={`pointer-events-none ${iconClass} ${visibleClass}`}>
+        <Icon className={`h-5 w-5 ${active && playing ? "" : "ml-0.5 fill-current"}`} />
+        <span className="sr-only">{text}</span>
       </span>
     </span>
   );

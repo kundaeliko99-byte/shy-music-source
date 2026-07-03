@@ -47,6 +47,8 @@ interface PlayerContextValue {
   setVolume: (v: number) => void;
   setExpanded: (b: boolean) => void;
   cycleRepeatMode: () => void;
+  addToQueue: (track: PlayerTrack) => void;
+  reorderQueue: (fromIndex: number, toIndex: number) => void;
 }
 
 const PlayerContext = createContext<PlayerContextValue | undefined>(undefined);
@@ -339,6 +341,26 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     [playTrackInternal]
   );
 
+  const addToQueue = useCallback((track: PlayerTrack) => {
+    setQueue((q) => (q.some((item) => item.id === track.id) ? q : [...q, track]));
+  }, []);
+
+  const reorderQueue = useCallback((fromIndex: number, toIndex: number) => {
+    setQueue((q) => {
+      if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= q.length || toIndex >= q.length) return q;
+      const next = [...q];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      const currentId = currentRef.current?.id;
+      const nextCurrentIndex = currentId ? next.findIndex((track) => track.id === currentId) : -1;
+      if (nextCurrentIndex >= 0) {
+        queueIndexRef.current = nextCurrentIndex;
+        setQueueIndex(nextCurrentIndex);
+      }
+      return next;
+    });
+  }, []);
+
   const togglePlay = useCallback(() => {
     const a = audioRef.current;
     if (!a || !current) return;
@@ -402,8 +424,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setVolume,
       setExpanded,
       cycleRepeatMode,
+      addToQueue,
+      reorderQueue,
     }),
-    [current, queue, isPlaying, currentTime, duration, volume, expanded, repeatMode, playTrack, togglePlay, handleNext, handlePrev, seek, setVolume, cycleRepeatMode]
+    [current, queue, isPlaying, currentTime, duration, volume, expanded, repeatMode, playTrack, togglePlay, handleNext, handlePrev, seek, setVolume, cycleRepeatMode, addToQueue, reorderQueue]
   );
 
   return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>;

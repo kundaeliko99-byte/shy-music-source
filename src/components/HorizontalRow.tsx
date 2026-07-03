@@ -1,4 +1,4 @@
-import { useRef, type KeyboardEvent, type ReactNode } from "react";
+import { useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface RowProps {
@@ -10,6 +10,7 @@ interface RowProps {
 
 export function HorizontalRow({ title, action, children, controls = true }: RowProps) {
   const scroller = useRef<HTMLDivElement>(null);
+  const drag = useRef({ active: false, x: 0, left: 0 });
 
   const scrollByPage = (direction: -1 | 1) => {
     const el = scroller.current;
@@ -31,6 +32,25 @@ export function HorizontalRow({ title, action, children, controls = true }: RowP
       event.preventDefault();
       window.scrollBy({ top: 240, behavior: "smooth" });
     }
+  };
+
+  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    const el = scroller.current;
+    if (!el || event.pointerType === "touch") return;
+    drag.current = { active: true, x: event.clientX, left: el.scrollLeft };
+    el.setPointerCapture(event.pointerId);
+  };
+
+  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const el = scroller.current;
+    if (!el || !drag.current.active) return;
+    el.scrollLeft = drag.current.left - (event.clientX - drag.current.x);
+  };
+
+  const endDrag = (event: PointerEvent<HTMLDivElement>) => {
+    const el = scroller.current;
+    drag.current.active = false;
+    if (el?.hasPointerCapture(event.pointerId)) el.releasePointerCapture(event.pointerId);
   };
 
   return (
@@ -64,7 +84,11 @@ export function HorizontalRow({ title, action, children, controls = true }: RowP
           ref={scroller}
           tabIndex={0}
           onKeyDown={onKeyDown}
-          className="flex gap-3 overflow-x-auto scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0 pb-2 scroll-smooth focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          className="flex cursor-grab gap-3 overflow-x-auto scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0 pb-2 scroll-smooth active:cursor-grabbing focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
           {children}
         </div>

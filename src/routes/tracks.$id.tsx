@@ -165,19 +165,19 @@ function TrackPage() {
           <div className="flex items-center gap-2 mt-5">
             <button
               onClick={() => isCurrent ? togglePlay() : playTrack(toPlayerTrack(track))}
-              className="bg-gradient-primary text-primary-foreground px-5 py-2 rounded-full text-sm font-medium inline-flex items-center gap-2 shadow-glow-soft hover:opacity-90"
+              className="bg-gradient-primary text-primary-foreground px-5 py-2 rounded-full text-sm font-medium inline-flex items-center gap-2 shadow-glow-soft hover:opacity-90 transition-transform active:scale-95"
             >
               {isCurrent && isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
               {isCurrent && isPlaying ? "Pause" : "Play"}
             </button>
             <button
               onClick={toggleLike}
-              className={`w-10 h-10 rounded-full hairline flex items-center justify-center hover:bg-surface-elevated transition-colors ${liked ? "text-primary-glow" : "text-muted-foreground"}`}
+              className={`w-10 h-10 rounded-full hairline flex items-center justify-center hover:bg-surface-elevated transition active:scale-90 ${liked ? "text-primary-glow" : "text-muted-foreground"}`}
               aria-label="Like"
             >
               <Heart className={`w-4 h-4 ${liked ? "fill-current" : ""}`} />
             </button>
-            <button className="w-10 h-10 rounded-full hairline flex items-center justify-center text-muted-foreground hover:bg-surface-elevated" aria-label="Add to playlist">
+            <button className="w-10 h-10 rounded-full hairline flex items-center justify-center text-muted-foreground hover:bg-surface-elevated transition-transform active:scale-90" aria-label="Add to playlist">
               <Plus className="w-4 h-4" />
             </button>
             <ShareMenu
