@@ -176,10 +176,54 @@ function HomePage() {
 
       {/* Trending */}
       {trending.length > 0 && (
-        <HorizontalRow title="Trending Now">
-          {trending.map((t) => <TrackCard key={t.id} track={t} queue={trending} />)}
-        </HorizontalRow>
+        <div id="trending-now" className="scroll-mt-24">
+          <HorizontalRow title="Trending Now">
+            {trending.map((t) => <TrackCard key={t.id} track={t} queue={trending} />)}
+          </HorizontalRow>
+        </div>
       )}
+
+      <section id="fans-love" className="scroll-mt-24">
+        <HorizontalRow title="Fans Love">
+          {loading
+            ? Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="w-[140px] h-[180px]" />)
+            : trending.length
+            ? trending.map((t) => <TrackCard key={t.id} track={t} queue={trending} />)
+            : <EmptyState title="No fan favorites yet" hint="Songs fans play the most will appear here." />
+          }
+        </HorizontalRow>
+
+        <div id="fan-of-the-week" className="scroll-mt-24 mb-8 rounded-xl bg-surface p-4 hairline">
+          <div className="mb-3 text-[10px] font-medium tracking-[0.25em] text-primary-glow">FAN OF THE WEEK</div>
+          {top ? (
+            <div className="flex items-center gap-4">
+              <Cover src={top.cover_url} seed={top.id} size={64} shape={top.artwork_shape ?? "circle"} glow />
+              <div className="min-w-0 flex-1">
+                <Link
+                  to="/tracks/$id"
+                  params={{ id: top.id }}
+                  className="block truncate text-sm font-semibold hover:text-primary-glow hover:underline"
+                >
+                  {top.title}
+                </Link>
+                <div className="truncate text-xs text-muted-foreground">
+                  {top.artists?.display_name ?? "Unknown artist"} - {fmtCount(top.plays_count)} fan plays
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => playTrack(toPlayerTrack(top))}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-glow-soft transition-transform active:scale-90"
+                aria-label={`Play ${top.title}`}
+              >
+                <Play className="h-4 w-4 fill-current" />
+              </button>
+            </div>
+          ) : (
+            <EmptyState title="Fan of the Week will appear soon" hint="Once plays come in, SHY will highlight the strongest fan-loved song here." />
+          )}
+        </div>
+      </section>
 
       {(loading || albums.week.length > 0) && (
         <HorizontalRow title="Album of the Week">
@@ -202,7 +246,7 @@ function HomePage() {
       )}
 
       {/* Charts preview */}
-      <section className="bg-surface hairline rounded-xl p-4 mb-8">
+      <section id="charts-preview" className="bg-surface hairline rounded-xl p-4 mb-8 scroll-mt-24">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-semibold flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-primary-glow" /> Charts

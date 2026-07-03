@@ -5,6 +5,7 @@ import { usePlayer, type PlayerTrack } from "@/contexts/PlayerContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Cover } from "./Cover";
+import { ShyLogo } from "./ShyLogo";
 import { Visualizer } from "./Visualizer";
 import { fmtTime } from "@/lib/format";
 import { toast } from "sonner";
@@ -200,98 +201,93 @@ export function MiniPlayer() {
       )}
 
       {/* Persistent mini bar */}
-      <div className="fixed bottom-0 inset-x-0 z-40 bg-surface/95 backdrop-blur-xl hairline-t">
-        <div className="mx-auto max-w-7xl px-3 sm:px-6 py-2 flex items-center gap-3">
-          <div className="flex items-center gap-2 min-w-0 flex-1 sm:flex-none sm:w-64">
-            <button
-              onClick={() => setExpanded(true)}
-              className="flex items-center gap-2 min-w-0 flex-1 hover:opacity-80 text-left"
-              aria-label="Expand player"
-            >
-              <Cover src={current.cover_url} seed={current.id} size={40} shape={current.artwork_shape ?? "circle"} />
-              <div className="min-w-0 text-left flex-1">
-                <Link
-                  to="/tracks/$id"
-                  params={{ id: current.id }}
-                  onClick={(e) => e.stopPropagation()}
-                  aria-label={`Open song page for ${current.title}`}
-                  className="text-xs font-medium truncate hover:text-primary-glow hover:underline block focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-                >
-                  {current.title}
-                </Link>
-                {current.artist_slug ? (
-                  <Link
-                    to="/artists/$slug"
-                    params={{ slug: current.artist_slug }}
-                    onClick={(e) => e.stopPropagation()}
-                    aria-label={`Open artist profile for ${current.artist_name}`}
-                    className="text-[11px] text-muted-foreground truncate hover:text-primary-glow hover:underline block focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-                  >
-                    {current.artist_name}
-                  </Link>
-                ) : (
-                  <div className="text-[11px] text-muted-foreground truncate">{current.artist_name}</div>
-                )}
-              </div>
-              <ChevronUp className="w-4 h-4 text-muted-foreground hidden sm:block ml-1" />
-            </button>
+      <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 px-3">
+        <div
+          onClick={() => setExpanded(true)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              setExpanded(true);
+            }
+          }}
+          role="button"
+          tabIndex={0}
+          className="pointer-events-auto relative mx-auto flex h-16 max-w-[860px] cursor-pointer items-center justify-between gap-3 rounded-full bg-surface/95 px-5 shadow-[0_18px_60px_-34px_var(--color-primary-glow)] hairline backdrop-blur-xl"
+          aria-label="Open player"
+        >
+          <div className="absolute inset-x-6 bottom-0 h-0.5 overflow-hidden rounded-full bg-muted">
+            <div className="h-full bg-primary transition-all" style={{ width: `${pct}%` }} />
           </div>
 
-          <div className="hidden sm:flex flex-1 items-center gap-2">
-            <button onClick={prev} className="text-muted-foreground hover:text-foreground transition-transform active:scale-90" aria-label="Previous">
-              <SkipBack className="w-4 h-4" />
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                toggleShuffleMode();
+              }}
+              className={`hidden text-muted-foreground transition active:scale-90 hover:text-foreground sm:inline-flex ${shuffleMode ? "text-primary" : ""}`}
+              aria-label={shuffleMode ? "Shuffle on" : "Shuffle off"}
+              aria-pressed={shuffleMode}
+            >
+              <Shuffle className="h-4 w-4" />
             </button>
             <button
-              onClick={togglePlay}
-              className="w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:opacity-90 transition-transform active:scale-90"
+              onClick={(event) => {
+                event.stopPropagation();
+                prev();
+              }}
+              className="text-muted-foreground transition active:scale-90 hover:text-foreground"
+              aria-label="Previous"
+            >
+              <SkipBack className="h-5 w-5" />
+            </button>
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                togglePlay();
+              }}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-glow-soft transition-transform active:scale-90"
               aria-label={isPlaying ? "Pause" : "Play"}
             >
-              {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+              {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="ml-0.5 h-5 w-5 fill-current" />}
             </button>
-            <button onClick={next} className="text-muted-foreground hover:text-foreground transition-transform active:scale-90" aria-label="Next">
-              <SkipForward className="w-4 h-4" />
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                next();
+              }}
+              className="text-muted-foreground transition active:scale-90 hover:text-foreground"
+              aria-label="Next"
+            >
+              <SkipForward className="h-5 w-5" />
             </button>
-
-            <div className="flex-1 mx-2">
-              <input
-                type="range"
-                min={0}
-                max={duration || 0}
-                value={currentTime}
-                onChange={(e) => seek(Number(e.target.value))}
-                className="w-full h-1 accent-primary"
-              />
-              <div className="flex justify-between text-[10px] text-muted-foreground mt-0.5">
-                <span>{fmtTime(currentTime)}</span>
-                <span>{fmtTime(duration)}</span>
-              </div>
-            </div>
             <RepeatButton mode={repeatMode} onClick={cycleRepeatMode} small />
-            <Volume2 className="w-4 h-4 text-muted-foreground" />
+          </div>
+
+          <div className="absolute left-1/2 hidden -translate-x-1/2 items-center justify-center sm:flex">
+            <ShyLogo size={28} />
+          </div>
+
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
+            <div className="hidden min-w-0 text-right md:block">
+              <div className="truncate text-xs font-medium">{current.title}</div>
+              <div className="truncate text-[11px] text-muted-foreground">{current.artist_name}</div>
+            </div>
+            <Cover src={current.cover_url} seed={current.id} size={34} shape={current.artwork_shape ?? "circle"} />
+            <Volume2 className="hidden h-4 w-4 text-muted-foreground sm:block" />
             <input
               type="range"
               min={0}
               max={1}
               step={0.01}
               value={volume}
+              onClick={(event) => event.stopPropagation()}
               onChange={(e) => setVolume(Number(e.target.value))}
-              className="w-20 accent-primary"
+              className="hidden w-20 accent-primary lg:block"
+              aria-label="Volume"
             />
+            <ChevronUp className="h-4 w-4 text-muted-foreground" />
           </div>
-
-          {/* Mobile: just play/pause */}
-          <button
-            onClick={togglePlay}
-            className="sm:hidden w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center transition-transform active:scale-90"
-            aria-label={isPlaying ? "Pause" : "Play"}
-          >
-            {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
-          </button>
-
-        </div>
-        {/* Mobile progress strip */}
-        <div className="sm:hidden h-0.5 bg-muted">
-          <div className="h-0.5 bg-primary transition-all" style={{ width: `${pct}%` }} />
         </div>
       </div>
     </>
@@ -364,7 +360,10 @@ function RepeatButton({
     mode === "off" ? "Repeat off" : mode === "all" ? "Repeat all" : "Repeat one";
   return (
     <button
-      onClick={onClick}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
       aria-label={label}
       title={label}
       className={`relative ${active ? "text-primary" : "text-muted-foreground"} hover:text-foreground transition-colors`}
@@ -380,7 +379,10 @@ function RepeatButton({
 function ShuffleButton({ active, onClick }: { active: boolean; onClick: () => void }) {
   return (
     <button
-      onClick={onClick}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
       aria-label={active ? "Shuffle on" : "Shuffle off"}
       title={active ? "Shuffle on" : "Shuffle off"}
       aria-pressed={active}

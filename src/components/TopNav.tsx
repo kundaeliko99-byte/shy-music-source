@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { Search, Upload, LogIn, User as UserIcon, BarChart3, Shield } from "lucide-react";
+import { Search, Upload, LogIn, User as UserIcon, BarChart3, Shield, Music2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { ShyLogo } from "./ShyLogo";
 import { NotificationsBell } from "./NotificationsBell";
@@ -15,11 +15,15 @@ import {
 const NAV = [
   { to: "/", label: "Home" },
   { to: "/artists", label: "Artists" },
-  { to: "/discover", label: "Discover" },
-  { to: "/radio", label: "Radio" },
-  { to: "/fresh-ink", label: "Fresh Ink" },
-  { to: "/charts", label: "Charts" },
-  { to: "/library", label: "Library" },
+];
+
+const MUSIC_NAV = [
+  { href: "/#trending-now", label: "Trending" },
+  { href: "/charts", label: "Charts" },
+  { href: "/discover?q=&genre=&mood=&ai_tool=", label: "Discover" },
+  { href: "/library", label: "Playlists" },
+  { href: "/#fans-love", label: "Fans Love" },
+  { href: "/#fan-of-the-week", label: "Fan of the Week" },
 ];
 
 export function TopNav() {
@@ -59,6 +63,25 @@ export function TopNav() {
               </Link>
             );
           })}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors ${
+                ["/discover", "/charts", "/library"].some((path) => location.pathname.startsWith(path))
+                  ? "bg-surface-elevated text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Music2 className="h-3.5 w-3.5" />
+              Music
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48 bg-surface text-foreground hairline">
+              {MUSIC_NAV.map((item) => (
+                <DropdownMenuItem key={item.href} asChild>
+                  <a href={item.href}>{item.label}</a>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </nav>
 
         <form onSubmit={onSearch} className="flex-1 max-w-md ml-auto md:ml-4">
@@ -145,6 +168,19 @@ export function TopNav() {
             </Link>
           );
         })}
+        <DropdownMenu>
+          <DropdownMenuTrigger className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs text-muted-foreground whitespace-nowrap">
+            <Music2 className="h-3 w-3" />
+            Music
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-48 bg-surface text-foreground hairline">
+            {MUSIC_NAV.map((item) => (
+              <DropdownMenuItem key={item.href} asChild>
+                <a href={item.href}>{item.label}</a>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </nav>
     </header>
   );
