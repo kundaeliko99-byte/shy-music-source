@@ -1,4 +1,4 @@
-import { fallbackCover } from "@/lib/format";
+import { AtmosphericCoverArt } from "./AtmosphericCoverArt";
 
 export type ArtworkShape = "circle" | "rounded" | "diamond" | "hexagon";
 
@@ -48,7 +48,6 @@ export function Cover({
   const clipPath = !rounded ? SHAPE_CLIP[s] : undefined;
 
   const sizeStyle: React.CSSProperties = size ? { width: size, height: size } : {};
-  const bgStyle: React.CSSProperties = { background: fallbackCover(seed) };
   const glowStyle: React.CSSProperties = glow
     ? { boxShadow: "0 0 40px -10px var(--color-primary), 0 0 80px -30px var(--color-primary)" }
     : {};
@@ -64,9 +63,7 @@ export function Cover({
           {src ? (
             <img src={src} alt="" loading="lazy" className="w-full h-full object-cover" />
           ) : (
-            <div className="w-full h-full flex items-center justify-center" style={bgStyle}>
-              <NoteIcon />
-            </div>
+            <AtmosphericCoverArt seed={seed} />
           )}
         </div>
       </div>
@@ -92,20 +89,10 @@ export function Cover({
   }
   return (
     <div
-      className={`${shapeCls} hairline flex items-center justify-center ${className} ${spinning ? "shy-spin" : ""}`}
-      style={{ ...wrapperStyle, ...bgStyle }}
+      className={`${shapeCls} hairline overflow-hidden ${className} ${spinning ? "shy-spin" : ""}`}
+      style={wrapperStyle}
     >
-      <NoteIcon />
+      <AtmosphericCoverArt seed={seed} />
     </div>
-  );
-}
-
-function NoteIcon() {
-  return (
-    <svg width="40%" height="40%" viewBox="0 0 24 24" fill="none" className="opacity-60">
-      <path d="M9 18V5l12-2v13" stroke="oklch(0.96 0.012 285)" strokeWidth="1.5" strokeLinecap="round" />
-      <circle cx="6" cy="18" r="3" stroke="oklch(0.96 0.012 285)" strokeWidth="1.5" />
-      <circle cx="18" cy="16" r="3" stroke="oklch(0.96 0.012 285)" strokeWidth="1.5" />
-    </svg>
   );
 }

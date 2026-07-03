@@ -1,5 +1,5 @@
-import { fallbackCover } from "@/lib/format";
 import type { ReactNode } from "react";
+import { AtmosphericCoverArt } from "./AtmosphericCoverArt";
 
 interface CDCaseAlbumCoverProps {
   src?: string | null;
@@ -9,8 +9,6 @@ interface CDCaseAlbumCoverProps {
 }
 
 export function CDCaseAlbumCover({ src, seed, className = "", children }: CDCaseAlbumCoverProps) {
-  const bgStyle = src ? undefined : { background: fallbackCover(seed) };
-
   return (
     <div className={`group relative aspect-square ${className}`}>
       <div className="absolute -inset-4 rounded-2xl bg-primary/35 blur-2xl" />
@@ -22,9 +20,7 @@ export function CDCaseAlbumCover({ src, seed, className = "", children }: CDCase
           {src ? (
             <img src={src} alt="" loading="lazy" className="h-full w-full object-cover" />
           ) : (
-            <div className="flex h-full w-full items-center justify-center" style={bgStyle}>
-              <DiscGlyph />
-            </div>
+            <AtmosphericCoverArt seed={seed} kind="album" />
           )}
         </div>
         <div className="absolute inset-0 z-[5] bg-[linear-gradient(112deg,rgba(255,255,255,0.42)_0%,rgba(255,255,255,0.1)_24%,transparent_38%,rgba(255,255,255,0.14)_57%,transparent_74%)] opacity-75" />
@@ -37,15 +33,5 @@ export function CDCaseAlbumCover({ src, seed, className = "", children }: CDCase
         {children}
       </div>
     </div>
-  );
-}
-
-function DiscGlyph() {
-  return (
-    <svg width="46%" height="46%" viewBox="0 0 48 48" fill="none" className="text-zinc-300/60">
-      <circle cx="24" cy="24" r="18" stroke="currentColor" strokeWidth="1.5" />
-      <circle cx="24" cy="24" r="5" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M24 6v8M42 24h-8M24 42v-8M6 24h8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity=".65" />
-    </svg>
   );
 }
