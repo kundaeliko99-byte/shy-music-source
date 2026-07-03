@@ -81,10 +81,9 @@ function SubscribePage() {
     if (!artist) return toast.error("Create your artist profile first.");
     if (foundingRemaining <= 0) return toast.error("Founding Artist slots are full.");
     setSubmitting(true);
-    const { error } = await supabase.from("subscriptions").insert({
-      artist_id: artist.id,
-      plan_id: plan.id,
-      is_founding: true,
+    const { error } = await (supabase as any).rpc("claim_founding_subscription", {
+      p_artist_id: artist.id,
+      p_plan_id: plan.id,
     });
     setSubmitting(false);
     if (error) return toast.error(error.message);

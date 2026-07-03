@@ -152,7 +152,7 @@ function AuthPage() {
         password: parsed.password,
         options: {
           emailRedirectTo: `${window.location.origin}/`,
-          data: { display_name: parsed.display_name, role: parsed.role },
+          data: { display_name: parsed.display_name },
         },
       });
       if (error) throw error;

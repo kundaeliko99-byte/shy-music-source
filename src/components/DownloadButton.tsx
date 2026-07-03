@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDownloadQuota } from "@/hooks/useDownloadQuota";
 import { useMotivateArtist } from "@/hooks/useMotivate";
+import { resolveAudioUrl } from "@/lib/media";
 import { MotivateButton } from "./MotivateButton";
 
 interface Props {
@@ -31,7 +32,16 @@ export function DownloadButton({ trackId, title, audioUrl, artistId, size = "md"
   async function doDownload() {
     setBusy(true);
     try {
-      const res = await fetch(audioUrl);
+      const { error: claimError } = await (supabase as any).rpc("claim_download", {
+        p_track_id: trackId,
+      });
+      if (claimError) {
+        setShowUpsell(true);
+        return;
+      }
+
+      const signedUrl = await resolveAudioUrl(audioUrl, 300);
+      const res = await fetch(signedUrl);
       if (!res.ok) throw new Error("fetch failed");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -42,7 +52,6 @@ export function DownloadButton({ trackId, title, audioUrl, artistId, size = "md"
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      await supabase.from("downloads").insert({ user_id: user!.id, track_id: trackId });
       await refresh();
       toast.success(`Downloaded — ${Math.max(0, remaining - 1)} downloads left`);
     } catch {
@@ -110,7 +119,7 @@ export function DownloadButton({ trackId, title, audioUrl, artistId, size = "md"
                   artist={motivateArtist}
                   onMotivated={() => {
                     refresh();
-                    toast.success("Thanks for motivating! 20 more downloads unlocked.");
+                    toast.success("Motivation recorded. Extra downloads unlock after verification.");
                   }}
                 />
               ) : (

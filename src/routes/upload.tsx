@@ -9,6 +9,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 
 import { prettyGenre } from "@/lib/vibes";
+import { assertAudioFile, assertImageFile, safeMediaExtension } from "@/lib/media";
 
 const GENRES = [
   "ambient","electronic","hiphop","afrobeats","classical","pop","lofi","experimental","cinematic","world",
@@ -168,18 +169,20 @@ async function getDuration(file: File): Promise<number> {
 }
 
 async function uploadAudio(userId: string, file: File): Promise<string> {
-  const ext = file.name.split(".").pop() || "mp3";
+  assertAudioFile(file);
+  const ext = safeMediaExtension(file, "mp3");
   const path = `${userId}/${crypto.randomUUID()}.${ext}`;
   const { error } = await supabase.storage.from("audio").upload(path, file, {
     cacheControl: "31536000",
     contentType: file.type || "audio/mpeg",
   });
   if (error) throw error;
-  return supabase.storage.from("audio").getPublicUrl(path).data.publicUrl;
+  return path;
 }
 
 async function uploadCover(userId: string, file: File): Promise<string> {
-  const ext = file.name.split(".").pop() || "jpg";
+  assertImageFile(file);
+  const ext = safeMediaExtension(file, "jpg");
   const path = `${userId}/${crypto.randomUUID()}.${ext}`;
   const { error } = await supabase.storage.from("covers").upload(path, file, {
     cacheControl: "31536000",
@@ -208,6 +211,12 @@ function SingleUpload({ artistId, userId, onBack }: { artistId: string; userId: 
   function onCover(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
+    try {
+      assertImageFile(f);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Unsupported image file.");
+      return;
+    }
     setCoverFile(f);
     setCoverPreview(URL.createObjectURL(f));
   }
@@ -312,7 +321,20 @@ function SingleUpload({ artistId, userId, onBack }: { artistId: string; userId: 
             <input
               type="file"
               accept="audio/mpeg,audio/wav,audio/mp4,audio/*"
-              onChange={(e) => setAudioFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null;
+                if (!f) {
+                  setAudioFile(null);
+                  return;
+                }
+                try {
+                  assertAudioFile(f);
+                  setAudioFile(f);
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "Unsupported audio file.");
+                  e.currentTarget.value = "";
+                }
+              }}
               className="hidden"
             />
             <div className="border-2 border-dashed border-border rounded-lg py-8 text-center hover:bg-surface-elevated transition-colors">
@@ -405,6 +427,12 @@ function AlbumUpload({ artistId, userId, onBack }: { artistId: string; userId: s
   function onCover(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
+    try {
+      assertImageFile(f);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Unsupported image file.");
+      return;
+    }
     setCoverFile(f);
     setCoverPreview(URL.createObjectURL(f));
   }
@@ -592,7 +620,20 @@ function AlbumUpload({ artistId, userId, onBack }: { artistId: string; userId: s
                 <input
                   type="file"
                   accept="audio/mpeg,audio/wav,audio/mp4,audio/*"
-                  onChange={(e) => updateTrack(t.id, { audioFile: e.target.files?.[0] ?? null })}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] ?? null;
+                    if (!f) {
+                      updateTrack(t.id, { audioFile: null });
+                      return;
+                    }
+                    try {
+                      assertAudioFile(f);
+                      updateTrack(t.id, { audioFile: f });
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : "Unsupported audio file.");
+                      e.currentTarget.value = "";
+                    }
+                  }}
                   className="hidden"
                 />
                 <div className="border border-dashed border-border rounded-lg py-3 text-center text-xs hover:bg-surface-elevated transition-colors">

@@ -11,6 +11,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./AuthContext";
 import { bumpStreamCount } from "@/hooks/useTrackStreams";
+import { resolveAudioUrl } from "@/lib/media";
 
 import type { ArtworkShape } from "@/components/Cover";
 
@@ -119,6 +120,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const playCountedRef = useRef(false);
   const historyLoggedRef = useRef(false);
+  const playbackRequestRef = useRef(0);
 
   async function recordPlay(trackId: string) {
     try {
@@ -126,20 +128,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         typeof navigator !== "undefined"
           ? (navigator.language?.split("-")[1] ?? null)
           : null;
-      await supabase.from("plays").insert({
-        track_id: trackId,
-        user_id: user?.id ?? null,
-        country,
+      if (!user?.id) return;
+      const { data, error } = await (supabase as any).rpc("record_track_play", {
+        p_track_id: trackId,
+        p_country: country,
       });
+      if (error || !data) return;
       // Optimistic local bump so the UI reflects the new stream count immediately
       bumpStreamCount(trackId, 1);
-      if (user?.id && !historyLoggedRef.current) {
-        historyLoggedRef.current = true;
-        await supabase.from("listening_history").insert({
-          user_id: user.id,
-          track_id: trackId,
-        });
-      }
+      historyLoggedRef.current = true;
     } catch (e) {
       console.warn("[player] failed to record play", e);
     }
@@ -172,16 +169,26 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return null;
   }
 
-  const playTrackInternal = useCallback((t: PlayerTrack) => {
+  const playTrackInternal = useCallback(async (t: PlayerTrack) => {
     const a = audioRef.current;
     if (!a) return;
+    const requestId = playbackRequestRef.current + 1;
+    playbackRequestRef.current = requestId;
     setCurrent(t);
     setCurrentTime(0);
     playCountedRef.current = false;
     historyLoggedRef.current = false;
+    let signedSrc: string;
+    try {
+      signedSrc = await resolveAudioUrl(t.audio_url);
+    } catch (error) {
+      console.warn("[player] failed to resolve audio URL", error);
+      return;
+    }
+    if (playbackRequestRef.current !== requestId) return;
     // Only reload src if it actually changed — avoids needless re-buffering
-    if (a.src !== t.audio_url) {
-      a.src = t.audio_url;
+    if (a.src !== signedSrc) {
+      a.src = signedSrc;
       a.load();
     }
     a.play().catch(() => {});
@@ -295,12 +302,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (typeof window === "undefined") return;
     const nextTrack = queue[queueIndex + 1];
     if (!nextTrack?.audio_url) return;
+    let cancelled = false;
     const link = document.createElement("link");
     link.rel = "prefetch";
     link.as = "audio";
-    link.href = nextTrack.audio_url;
-    document.head.appendChild(link);
+    resolveAudioUrl(nextTrack.audio_url, 1800)
+      .then((url) => {
+        if (cancelled) return;
+        link.href = url;
+        document.head.appendChild(link);
+      })
+      .catch(() => {});
     return () => {
+      cancelled = true;
       link.remove();
     };
   }, [queue, queueIndex]);

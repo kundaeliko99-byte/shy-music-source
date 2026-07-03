@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { Copy, Download, Mail, MessageCircle, Phone, ShoppingBag } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -10,6 +10,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import type { TrackRow } from "@/lib/api";
 import {
@@ -30,6 +31,8 @@ interface BuySongButtonProps {
 }
 
 export function BuySongButton({ track, size = "md" }: BuySongButtonProps) {
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [terms, setTerms] = useState<SongSaleTerms | null>(null);
   const [seller, setSeller] = useState<SellerContact | null>(null);
@@ -78,9 +81,16 @@ export function BuySongButton({ track, size = "md" }: BuySongButtonProps) {
   }
 
   async function requestPurchase() {
+    if (!user) {
+      toast.error("Sign in to request a song purchase.");
+      navigate({ to: "/auth" });
+      return;
+    }
+
     const { error } = await (supabase as any).from("song_purchase_requests").insert({
       track_id: track.id,
       artist_id: track.artist_id,
+      buyer_id: user.id,
       buyer_name: buyerName || null,
       buyer_contact: buyerContact || null,
       requested_payment_method: paymentMethod,

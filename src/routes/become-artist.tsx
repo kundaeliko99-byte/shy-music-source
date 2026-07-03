@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { slugify } from "@/lib/format";
+import { assertImageFile, safeMediaExtension } from "@/lib/media";
 
 const schema = z.object({
   display_name: z.string().trim().min(1).max(50),
@@ -34,7 +34,7 @@ export const Route = createFileRoute("/become-artist")({
 
 function BecomeArtistPage() {
   const navigate = useNavigate();
-  const { user, isArtist, loading: authLoading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
   const [country, setCountry] = useState("");
@@ -57,7 +57,8 @@ function BecomeArtistPage() {
 
   async function uploadImage(bucket: "avatars" | "banners", file: File): Promise<string | null> {
     if (!user) return null;
-    const ext = file.name.split(".").pop() || "jpg";
+    assertImageFile(file);
+    const ext = safeMediaExtension(file, "jpg");
     const path = `${user.id}/${Date.now()}.${ext}`;
     const { error } = await supabase.storage.from(bucket).upload(path, file, { upsert: true });
     if (error) { toast.error(`Image upload failed: ${error.message}`); return null; }
@@ -71,28 +72,20 @@ function BecomeArtistPage() {
     try {
       const parsed = schema.parse({ display_name: displayName, bio, country, ai_tools: tools as never });
 
-      // Make sure user has the artist role (in case they signed up as listener)
-      if (!isArtist) {
-        await supabase.from("user_roles").insert({ user_id: user.id, role: "artist" });
-      }
-
-      const baseSlug = slugify(parsed.display_name);
-      const slug = `${baseSlug}-${user.id.slice(0, 4)}`;
-
       const avatar_url = avatarFile ? await uploadImage("avatars", avatarFile) : null;
       const banner_url = bannerFile ? await uploadImage("banners", bannerFile) : null;
 
-      const { error } = await supabase.from("artists").insert({
-        user_id: user.id,
-        display_name: parsed.display_name,
-        slug,
-        bio: parsed.bio || null,
-        country: parsed.country || null,
-        ai_tools_used: parsed.ai_tools as never,
-        avatar_url,
-        banner_url,
+      const { data, error } = await (supabase as any).rpc("create_artist_profile", {
+        p_display_name: parsed.display_name,
+        p_bio: parsed.bio || null,
+        p_country: parsed.country || null,
+        p_ai_tools: parsed.ai_tools,
+        p_avatar_url: avatar_url,
+        p_banner_url: banner_url,
       });
       if (error) throw error;
+      const slug = Array.isArray(data) ? data[0]?.slug : data?.slug;
+      if (!slug) throw new Error("Artist profile created, but slug was not returned.");
 
       toast.success("Artist profile created!");
       // Hard reload to refresh roles in auth context
@@ -143,11 +136,47 @@ function BecomeArtistPage() {
           </div>
 
           <Field label="Profile photo (avatar)">
-            <input type="file" accept="image/*" onChange={(e) => setAvatarFile(e.target.files?.[0] ?? null)} className="text-xs text-muted-foreground" />
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null;
+                if (!f) {
+                  setAvatarFile(null);
+                  return;
+                }
+                try {
+                  assertImageFile(f);
+                  setAvatarFile(f);
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "Unsupported image file.");
+                  e.currentTarget.value = "";
+                }
+              }}
+              className="text-xs text-muted-foreground"
+            />
             {avatarFile && <div className="text-[11px] text-primary-glow mt-1">✓ {avatarFile.name}</div>}
           </Field>
           <Field label="Background banner image">
-            <input type="file" accept="image/*" onChange={(e) => setBannerFile(e.target.files?.[0] ?? null)} className="text-xs text-muted-foreground" />
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null;
+                if (!f) {
+                  setBannerFile(null);
+                  return;
+                }
+                try {
+                  assertImageFile(f);
+                  setBannerFile(f);
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "Unsupported image file.");
+                  e.currentTarget.value = "";
+                }
+              }}
+              className="text-xs text-muted-foreground"
+            />
             {bannerFile && <div className="text-[11px] text-primary-glow mt-1">✓ {bannerFile.name}</div>}
           </Field>
 

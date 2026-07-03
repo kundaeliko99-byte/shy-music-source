@@ -21,7 +21,7 @@ export function useDownloadQuota() {
     setLoading(true);
     const [{ count: dl }, { count: mv }] = await Promise.all([
       supabase.from("downloads").select("id", { count: "exact", head: true }).eq("user_id", user.id),
-      supabase.from("motivations").select("id", { count: "exact", head: true }).eq("fan_id", user.id),
+      (supabase as any).from("motivations").select("id", { count: "exact", head: true }).eq("fan_id", user.id).eq("verified", true),
     ]);
     setUsed(dl ?? 0);
     setMotivations(mv ?? 0);
