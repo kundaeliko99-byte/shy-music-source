@@ -58,6 +58,7 @@ export function HorizontalRow({ title, action, children, controls = true }: RowP
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     const el = scroller.current;
     if (!el || event.pointerType === "touch") return;
+    if (event.target instanceof Element && event.target.closest("a, button, input, textarea, select, [role='button']")) return;
     drag.current = { active: true, x: event.clientX, left: el.scrollLeft };
     el.setPointerCapture(event.pointerId);
   };
