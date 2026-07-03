@@ -147,7 +147,6 @@ function AlbumDetailPage() {
       </section>
 
       <section className="mb-8">
-        <h2 className="mb-3 text-base font-semibold">Songs inside this album</h2>
         {tracks.length === 0 ? (
           <EmptyState title="No songs have been added to this album yet." hint="Songs will appear here when the artist adds them." />
         ) : (
