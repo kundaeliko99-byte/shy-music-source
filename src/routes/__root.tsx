@@ -5,6 +5,7 @@ import appCss from "../styles.css?url";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { PlayerProvider } from "@/contexts/PlayerContext";
 import { Toaster } from "@/components/ui/sonner";
+import { withBasePath } from "@/lib/assets";
 
 function NotFoundComponent() {
   return (
@@ -44,11 +45,11 @@ export const Route = createRootRoute({
       { property: "og:title", content: "SHY - Songwriter Marketplace" },
       { property: "og:description", content: "SHY is a marketplace and creative platform for songwriters, song discovery, rights management, fan support, and music buyer opportunities." },
       { property: "og:type", content: "website" },
-      { property: "og:image", content: "/assets/brand/shy-logo.png" },
+      { property: "og:image", content: withBasePath("/assets/brand/shy-logo.png") },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: "SHY - Songwriter Marketplace" },
       { name: "twitter:description", content: "SHY is a marketplace and creative platform for songwriters, song discovery, rights management, fan support, and music buyer opportunities." },
-      { name: "twitter:image", content: "/assets/brand/shy-logo.png" },
+      { name: "twitter:image", content: withBasePath("/assets/brand/shy-logo.png") },
     ],
     links: [
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -57,11 +58,11 @@ export const Route = createRootRoute({
         rel: "stylesheet",
         href: "https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap",
       },
-      { rel: "icon", type: "image/png", sizes: "16x16", href: "/assets/brand/icon-16.png" },
-      { rel: "icon", type: "image/png", sizes: "32x32", href: "/assets/brand/icon-32.png" },
-      { rel: "icon", type: "image/png", sizes: "48x48", href: "/assets/brand/icon-48.png" },
-      { rel: "apple-touch-icon", sizes: "180x180", href: "/assets/brand/icon-180.png" },
-      { rel: "manifest", href: "/manifest.webmanifest" },
+      { rel: "icon", type: "image/png", sizes: "16x16", href: withBasePath("/assets/brand/icon-16.png") },
+      { rel: "icon", type: "image/png", sizes: "32x32", href: withBasePath("/assets/brand/icon-32.png") },
+      { rel: "icon", type: "image/png", sizes: "48x48", href: withBasePath("/assets/brand/icon-48.png") },
+      { rel: "apple-touch-icon", sizes: "180x180", href: withBasePath("/assets/brand/icon-180.png") },
+      { rel: "manifest", href: withBasePath("/manifest.webmanifest") },
       { rel: "stylesheet", href: appCss },
     ],
   }),

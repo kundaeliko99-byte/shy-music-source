@@ -1,5 +1,7 @@
-const BRAND_MARK = "/assets/brand/shy-logo-mark.png";
-const BRAND_LOCKUP = "/assets/brand/shy-logo-lockup.png";
+import { withBasePath } from "@/lib/assets";
+
+const BRAND_MARK = withBasePath("/assets/brand/shy-logo-mark.png");
+const BRAND_LOCKUP = withBasePath("/assets/brand/shy-logo-lockup.png");
 
 interface ShyLogoProps {
   size?: number;
