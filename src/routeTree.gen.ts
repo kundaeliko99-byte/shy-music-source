@@ -10,16 +10,22 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UploadRouteImport } from './routes/upload'
+import { Route as SafetyPrivacyRouteImport } from './routes/safety-privacy'
 import { Route as RadioRouteImport } from './routes/radio'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as LibraryRouteImport } from './routes/library'
+import { Route as LegalRouteImport } from './routes/legal'
 import { Route as FreshInkRouteImport } from './routes/fresh-ink'
 import { Route as DiscoverRouteImport } from './routes/discover'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as CookiesRouteImport } from './routes/cookies'
 import { Route as ChartsRouteImport } from './routes/charts'
 import { Route as BecomeArtistRouteImport } from './routes/become-artist'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as ArtistsRouteImport } from './routes/artists'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as AccessibilityRouteImport } from './routes/accessibility'
+import { Route as AboutAdsRouteImport } from './routes/about-ads'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ArtistsIndexRouteImport } from './routes/artists.index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
@@ -34,14 +40,29 @@ const UploadRoute = UploadRouteImport.update({
   path: '/upload',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SafetyPrivacyRoute = SafetyPrivacyRouteImport.update({
+  id: '/safety-privacy',
+  path: '/safety-privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RadioRoute = RadioRouteImport.update({
   id: '/radio',
   path: '/radio',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LibraryRoute = LibraryRouteImport.update({
   id: '/library',
   path: '/library',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LegalRoute = LegalRouteImport.update({
+  id: '/legal',
+  path: '/legal',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FreshInkRoute = FreshInkRouteImport.update({
@@ -57,6 +78,11 @@ const DiscoverRoute = DiscoverRouteImport.update({
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CookiesRoute = CookiesRouteImport.update({
+  id: '/cookies',
+  path: '/cookies',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChartsRoute = ChartsRouteImport.update({
@@ -82,6 +108,16 @@ const ArtistsRoute = ArtistsRouteImport.update({
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccessibilityRoute = AccessibilityRouteImport.update({
+  id: '/accessibility',
+  path: '/accessibility',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AboutAdsRoute = AboutAdsRouteImport.update({
+  id: '/about-ads',
+  path: '/about-ads',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -127,16 +163,22 @@ const AdminSubscriptionsRoute = AdminSubscriptionsRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/about-ads': typeof AboutAdsRoute
+  '/accessibility': typeof AccessibilityRoute
   '/admin': typeof AdminRouteWithChildren
   '/artists': typeof ArtistsRouteWithChildren
   '/auth': typeof AuthRoute
   '/become-artist': typeof BecomeArtistRoute
   '/charts': typeof ChartsRoute
+  '/cookies': typeof CookiesRoute
   '/dashboard': typeof DashboardRoute
   '/discover': typeof DiscoverRoute
   '/fresh-ink': typeof FreshInkRoute
+  '/legal': typeof LegalRoute
   '/library': typeof LibraryRoute
+  '/privacy': typeof PrivacyRoute
   '/radio': typeof RadioRoute
+  '/safety-privacy': typeof SafetyPrivacyRoute
   '/upload': typeof UploadRoute
   '/admin/subscriptions': typeof AdminSubscriptionsRoute
   '/albums/$id': typeof AlbumsIdRoute
@@ -148,14 +190,20 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/about-ads': typeof AboutAdsRoute
+  '/accessibility': typeof AccessibilityRoute
   '/auth': typeof AuthRoute
   '/become-artist': typeof BecomeArtistRoute
   '/charts': typeof ChartsRoute
+  '/cookies': typeof CookiesRoute
   '/dashboard': typeof DashboardRoute
   '/discover': typeof DiscoverRoute
   '/fresh-ink': typeof FreshInkRoute
+  '/legal': typeof LegalRoute
   '/library': typeof LibraryRoute
+  '/privacy': typeof PrivacyRoute
   '/radio': typeof RadioRoute
+  '/safety-privacy': typeof SafetyPrivacyRoute
   '/upload': typeof UploadRoute
   '/admin/subscriptions': typeof AdminSubscriptionsRoute
   '/albums/$id': typeof AlbumsIdRoute
@@ -168,16 +216,22 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/about-ads': typeof AboutAdsRoute
+  '/accessibility': typeof AccessibilityRoute
   '/admin': typeof AdminRouteWithChildren
   '/artists': typeof ArtistsRouteWithChildren
   '/auth': typeof AuthRoute
   '/become-artist': typeof BecomeArtistRoute
   '/charts': typeof ChartsRoute
+  '/cookies': typeof CookiesRoute
   '/dashboard': typeof DashboardRoute
   '/discover': typeof DiscoverRoute
   '/fresh-ink': typeof FreshInkRoute
+  '/legal': typeof LegalRoute
   '/library': typeof LibraryRoute
+  '/privacy': typeof PrivacyRoute
   '/radio': typeof RadioRoute
+  '/safety-privacy': typeof SafetyPrivacyRoute
   '/upload': typeof UploadRoute
   '/admin/subscriptions': typeof AdminSubscriptionsRoute
   '/albums/$id': typeof AlbumsIdRoute
@@ -191,16 +245,22 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/about-ads'
+    | '/accessibility'
     | '/admin'
     | '/artists'
     | '/auth'
     | '/become-artist'
     | '/charts'
+    | '/cookies'
     | '/dashboard'
     | '/discover'
     | '/fresh-ink'
+    | '/legal'
     | '/library'
+    | '/privacy'
     | '/radio'
+    | '/safety-privacy'
     | '/upload'
     | '/admin/subscriptions'
     | '/albums/$id'
@@ -212,14 +272,20 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/about-ads'
+    | '/accessibility'
     | '/auth'
     | '/become-artist'
     | '/charts'
+    | '/cookies'
     | '/dashboard'
     | '/discover'
     | '/fresh-ink'
+    | '/legal'
     | '/library'
+    | '/privacy'
     | '/radio'
+    | '/safety-privacy'
     | '/upload'
     | '/admin/subscriptions'
     | '/albums/$id'
@@ -231,16 +297,22 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/about-ads'
+    | '/accessibility'
     | '/admin'
     | '/artists'
     | '/auth'
     | '/become-artist'
     | '/charts'
+    | '/cookies'
     | '/dashboard'
     | '/discover'
     | '/fresh-ink'
+    | '/legal'
     | '/library'
+    | '/privacy'
     | '/radio'
+    | '/safety-privacy'
     | '/upload'
     | '/admin/subscriptions'
     | '/albums/$id'
@@ -253,16 +325,22 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AboutAdsRoute: typeof AboutAdsRoute
+  AccessibilityRoute: typeof AccessibilityRoute
   AdminRoute: typeof AdminRouteWithChildren
   ArtistsRoute: typeof ArtistsRouteWithChildren
   AuthRoute: typeof AuthRoute
   BecomeArtistRoute: typeof BecomeArtistRoute
   ChartsRoute: typeof ChartsRoute
+  CookiesRoute: typeof CookiesRoute
   DashboardRoute: typeof DashboardRoute
   DiscoverRoute: typeof DiscoverRoute
   FreshInkRoute: typeof FreshInkRoute
+  LegalRoute: typeof LegalRoute
   LibraryRoute: typeof LibraryRoute
+  PrivacyRoute: typeof PrivacyRoute
   RadioRoute: typeof RadioRoute
+  SafetyPrivacyRoute: typeof SafetyPrivacyRoute
   UploadRoute: typeof UploadRoute
   AlbumsIdRoute: typeof AlbumsIdRoute
   BecomeArtistSubscribeRoute: typeof BecomeArtistSubscribeRoute
@@ -278,6 +356,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UploadRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/safety-privacy': {
+      id: '/safety-privacy'
+      path: '/safety-privacy'
+      fullPath: '/safety-privacy'
+      preLoaderRoute: typeof SafetyPrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/radio': {
       id: '/radio'
       path: '/radio'
@@ -285,11 +370,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RadioRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/library': {
       id: '/library'
       path: '/library'
       fullPath: '/library'
       preLoaderRoute: typeof LibraryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/legal': {
+      id: '/legal'
+      path: '/legal'
+      fullPath: '/legal'
+      preLoaderRoute: typeof LegalRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/fresh-ink': {
@@ -311,6 +410,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cookies': {
+      id: '/cookies'
+      path: '/cookies'
+      fullPath: '/cookies'
+      preLoaderRoute: typeof CookiesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/charts': {
@@ -346,6 +452,20 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/accessibility': {
+      id: '/accessibility'
+      path: '/accessibility'
+      fullPath: '/accessibility'
+      preLoaderRoute: typeof AccessibilityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/about-ads': {
+      id: '/about-ads'
+      path: '/about-ads'
+      fullPath: '/about-ads'
+      preLoaderRoute: typeof AboutAdsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -434,16 +554,22 @@ const ArtistsRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AboutAdsRoute: AboutAdsRoute,
+  AccessibilityRoute: AccessibilityRoute,
   AdminRoute: AdminRouteWithChildren,
   ArtistsRoute: ArtistsRouteWithChildren,
   AuthRoute: AuthRoute,
   BecomeArtistRoute: BecomeArtistRoute,
   ChartsRoute: ChartsRoute,
+  CookiesRoute: CookiesRoute,
   DashboardRoute: DashboardRoute,
   DiscoverRoute: DiscoverRoute,
   FreshInkRoute: FreshInkRoute,
+  LegalRoute: LegalRoute,
   LibraryRoute: LibraryRoute,
+  PrivacyRoute: PrivacyRoute,
   RadioRoute: RadioRoute,
+  SafetyPrivacyRoute: SafetyPrivacyRoute,
   UploadRoute: UploadRoute,
   AlbumsIdRoute: AlbumsIdRoute,
   BecomeArtistSubscribeRoute: BecomeArtistSubscribeRoute,
