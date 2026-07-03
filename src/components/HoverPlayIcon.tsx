@@ -14,7 +14,6 @@ const iconClass =
 
 export function HoverPlayIcon({ label, text = "Play", active = false, playing = false, onClick }: HoverPlayIconProps) {
   const Icon = active && playing ? Pause : Play;
-  const visibleClass = active ? "opacity-100 translate-y-0 scale-100" : "";
 
   if (onClick) {
     return (
@@ -24,7 +23,7 @@ export function HoverPlayIcon({ label, text = "Play", active = false, playing = 
         aria-label={label}
         className="absolute bottom-2 right-2 z-10 focus:outline-none"
       >
-        <span className={`${iconClass} ${visibleClass}`}>
+        <span className={iconClass}>
           <Icon className={`h-5 w-5 ${active && playing ? "" : "ml-0.5 fill-current"}`} />
           <span className="sr-only">{text}</span>
         </span>
@@ -34,7 +33,7 @@ export function HoverPlayIcon({ label, text = "Play", active = false, playing = 
 
   return (
     <span aria-hidden="true" className="absolute bottom-2 right-2 z-10">
-      <span className={`pointer-events-none ${iconClass} ${visibleClass}`}>
+      <span className={`pointer-events-none ${iconClass}`}>
         <Icon className={`h-5 w-5 ${active && playing ? "" : "ml-0.5 fill-current"}`} />
         <span className="sr-only">{text}</span>
       </span>

@@ -19,12 +19,13 @@ interface AlbumCardProps {
 }
 
 export function AlbumCard({ album, className = "w-[150px]" }: AlbumCardProps) {
-  const { current, isPlaying, playTrack, togglePlay } = usePlayer();
+  const { current, isPlaying, playTrack, togglePlay, setExpanded } = usePlayer();
   const isActiveAlbum = current?.album_id === album.id;
 
   const playAlbum = async () => {
     if (isActiveAlbum) {
       togglePlay();
+      setExpanded(true);
       return;
     }
     const tracks = await fetchAlbumTracks(album.id);
@@ -34,6 +35,7 @@ export function AlbumCard({ album, className = "w-[150px]" }: AlbumCardProps) {
     }
     const queue = tracks.map(toPlayerTrack);
     playTrack(queue[0], queue);
+    setExpanded(true);
   };
 
   return (

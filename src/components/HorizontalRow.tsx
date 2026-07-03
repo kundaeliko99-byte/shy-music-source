@@ -1,4 +1,4 @@
-import { useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface RowProps {
@@ -11,11 +11,32 @@ interface RowProps {
 export function HorizontalRow({ title, action, children, controls = true }: RowProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const drag = useRef({ active: false, x: 0, left: 0 });
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const updateScrollButtons = useCallback(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const maxScrollLeft = el.scrollWidth - el.clientWidth;
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(el.scrollLeft < maxScrollLeft - 4);
+  }, []);
+
+  useEffect(() => {
+    updateScrollButtons();
+    const el = scroller.current;
+    if (!el || typeof window === "undefined") return;
+
+    const onResize = () => updateScrollButtons();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [children, updateScrollButtons]);
 
   const scrollByPage = (direction: -1 | 1) => {
     const el = scroller.current;
     if (!el) return;
     el.scrollBy({ left: direction * Math.max(220, el.clientWidth * 0.75), behavior: "smooth" });
+    window.setTimeout(updateScrollButtons, 240);
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -62,22 +83,30 @@ export function HorizontalRow({ title, action, children, controls = true }: RowP
       <div className="group/row relative">
         {controls && (
           <>
-            <button
-              type="button"
-              onClick={() => scrollByPage(-1)}
-              aria-label={`Scroll ${title} left`}
-              className="hidden sm:inline-flex absolute left-1 top-1/2 z-10 -translate-y-1/2 h-9 w-9 items-center justify-center rounded-full hairline bg-background/65 text-foreground/70 opacity-35 backdrop-blur-md transition hover:bg-background/90 hover:text-foreground hover:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollByPage(1)}
-              aria-label={`Scroll ${title} right`}
-              className="hidden sm:inline-flex absolute right-1 top-1/2 z-10 -translate-y-1/2 h-9 w-9 items-center justify-center rounded-full hairline bg-background/65 text-foreground/70 opacity-35 backdrop-blur-md transition hover:bg-background/90 hover:text-foreground hover:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
+            {canScrollLeft && (
+              <div className="group/left-edge absolute inset-y-0 left-0 z-10 hidden w-14 items-center sm:flex">
+                <button
+                  type="button"
+                  onClick={() => scrollByPage(-1)}
+                  aria-label={`Scroll ${title} left`}
+                  className="ml-1 inline-flex h-10 w-10 items-center justify-center rounded-full hairline bg-background/75 text-foreground/70 opacity-0 backdrop-blur-md transition hover:bg-background/95 hover:text-foreground group-hover/left-edge:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+              </div>
+            )}
+            {canScrollRight && (
+              <div className="group/right-edge absolute inset-y-0 right-0 z-10 hidden w-14 items-center justify-end sm:flex">
+                <button
+                  type="button"
+                  onClick={() => scrollByPage(1)}
+                  aria-label={`Scroll ${title} right`}
+                  className="mr-1 inline-flex h-10 w-10 items-center justify-center rounded-full hairline bg-background/75 text-foreground/70 opacity-0 backdrop-blur-md transition hover:bg-background/95 hover:text-foreground group-hover/right-edge:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </button>
+              </div>
+            )}
           </>
         )}
         <div
@@ -88,6 +117,7 @@ export function HorizontalRow({ title, action, children, controls = true }: RowP
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
+          onScroll={updateScrollButtons}
           className="flex cursor-grab gap-3 overflow-x-auto scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0 pb-2 scroll-smooth active:cursor-grabbing focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
           {children}

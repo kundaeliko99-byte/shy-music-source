@@ -47,7 +47,7 @@ function HomePage() {
   const [chart, setChart] = useState<ChartEntry[]>([]);
   const [chartTab, setChartTab] = useState<ChartTab>("World");
   const [loading, setLoading] = useState(true);
-  const { playTrack } = usePlayer();
+  const { playTrack, setExpanded } = usePlayer();
 
   useEffect(() => {
     (async () => {
@@ -107,7 +107,10 @@ function HomePage() {
                 ) : "Unknown"} · Made with {prettyTool(top.ai_tool)} · {prettyGenre(top.genre)}
               </p>
               <button
-                onClick={() => playTrack(toPlayerTrack(top))}
+                onClick={() => {
+                  playTrack(toPlayerTrack(top));
+                  setExpanded(true);
+                }}
                 className="mt-4 inline-flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2 rounded-full text-sm font-medium shadow-glow-soft hover:opacity-90"
               >
                 <Play className="w-4 h-4 fill-current" /> Play now
@@ -162,10 +165,10 @@ function HomePage() {
               key={a.id}
               to="/artists/$slug"
               params={{ slug: a.slug }}
-              className="flex-shrink-0 w-[110px] text-center group"
+              className="group flex-shrink-0 w-[110px] rounded-lg p-2 -m-2 text-center transition duration-200 hover:-translate-y-1 hover:bg-surface-elevated hover:shadow-[0_18px_48px_-30px_var(--color-primary-glow)] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             >
               <Cover src={a.avatar_url} seed={a.id} className="w-[110px] h-[110px] mx-auto" shape="circle" glow />
-              <div className="text-xs font-medium mt-2 truncate">{a.display_name}</div>
+              <div className="text-xs font-medium mt-2 truncate transition-colors group-hover:text-foreground">{a.display_name}</div>
               <div className="text-[11px] text-muted-foreground">{fmtCount(a.monthly_listeners)} listeners</div>
             </Link>
           ))

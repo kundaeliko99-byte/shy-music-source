@@ -43,7 +43,7 @@ export const Route = createFileRoute("/albums/$id")({
 function AlbumDetailPage() {
   const { id } = Route.useParams();
   const { user } = useAuth();
-  const { current, isPlaying, playTrack, togglePlay } = usePlayer();
+  const { current, isPlaying, playTrack, togglePlay, setExpanded } = usePlayer();
   const [album, setAlbum] = useState<AlbumDetail | null>(null);
   const [tracks, setTracks] = useState<TrackRow[]>([]);
   const [playlists, setPlaylists] = useState<PlaylistOption[]>([]);
@@ -107,6 +107,7 @@ function AlbumDetailPage() {
                 event.stopPropagation();
                 if (isActiveAlbum) togglePlay();
                 else playTrack(toPlayerTrack(tracks[0]), playerQueue);
+                setExpanded(true);
               }}
             />
           )}
@@ -188,7 +189,7 @@ function AlbumSongRow({
   setPlaylists: Dispatch<SetStateAction<PlaylistOption[]>>;
   onPlay: () => void;
 }) {
-  const { current, isPlaying, togglePlay, addToQueue } = usePlayer();
+  const { current, isPlaying, togglePlay, addToQueue, setExpanded } = usePlayer();
   const [saved, setSaved] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const isCurrent = current?.id === track.id;
@@ -197,6 +198,7 @@ function AlbumSongRow({
   const playOrPause = () => {
     if (isCurrent) togglePlay();
     else onPlay();
+    setExpanded(true);
   };
 
   const shareTrack = async () => {
