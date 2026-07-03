@@ -8,6 +8,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -15,15 +16,26 @@ import {
 const NAV = [
   { to: "/", label: "Home" },
   { to: "/artists", label: "Artists" },
+  { to: "/library", label: "Library" },
+  { to: "/discover", label: "Discover", search: { q: "", vibes: [], genres: [], mood: "", ai_tool: "" } },
 ];
 
-const MUSIC_NAV = [
-  { href: "/#trending-now", label: "Trending" },
-  { href: "/charts", label: "Charts" },
-  { href: "/discover?q=&genre=&mood=&ai_tool=", label: "Discover" },
-  { href: "/library", label: "Playlists" },
-  { href: "/#fans-love", label: "Fans Love" },
-  { href: "/#fan-of-the-week", label: "Fan of the Week" },
+const MUSIC_NAV_GROUPS = [
+  {
+    label: "Listen",
+    items: [
+      { href: "/#trending-now", label: "Trending Now", description: "Most played songs" },
+      { href: "/fresh-ink", label: "Fresh Drops", description: "New curated releases" },
+    ],
+  },
+  {
+    label: "Rankings",
+    items: [
+      { href: "/charts", label: "Charts", description: "Weekly SHY rankings" },
+      { href: "/#fans-love", label: "Fans Love", description: "Fan-favorite songs" },
+      { href: "/#fan-of-the-week", label: "Fan of the Week", description: "Top fan-loved pick" },
+    ],
+  },
 ];
 
 export function TopNav() {
@@ -55,6 +67,7 @@ export function TopNav() {
               <Link
                 key={n.to}
                 to={n.to}
+                search={"search" in n ? n.search : undefined}
                 className={`px-3 py-1.5 text-sm rounded-full transition-colors ${
                   active ? "text-foreground bg-surface-elevated" : "text-muted-foreground hover:text-foreground"
                 }`}
@@ -66,7 +79,7 @@ export function TopNav() {
           <DropdownMenu>
             <DropdownMenuTrigger
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors ${
-                ["/discover", "/charts", "/library"].some((path) => location.pathname.startsWith(path))
+                ["/charts", "/fresh-ink"].some((path) => location.pathname.startsWith(path))
                   ? "bg-surface-elevated text-foreground"
                   : "text-muted-foreground hover:text-foreground"
               }`}
@@ -74,11 +87,22 @@ export function TopNav() {
               <Music2 className="h-3.5 w-3.5" />
               Music
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-48 bg-surface text-foreground hairline">
-              {MUSIC_NAV.map((item) => (
-                <DropdownMenuItem key={item.href} asChild>
-                  <a href={item.href}>{item.label}</a>
-                </DropdownMenuItem>
+            <DropdownMenuContent align="start" className="w-64 bg-surface p-2 text-foreground hairline">
+              {MUSIC_NAV_GROUPS.map((group, groupIndex) => (
+                <div key={group.label}>
+                  {groupIndex > 0 && <DropdownMenuSeparator className="my-2" />}
+                  <DropdownMenuLabel className="px-2 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                    {group.label}
+                  </DropdownMenuLabel>
+                  {group.items.map((item) => (
+                    <DropdownMenuItem key={item.href} asChild>
+                      <a href={item.href} className="flex flex-col items-start gap-0.5 rounded-lg px-2 py-2">
+                        <span className="text-sm font-medium">{item.label}</span>
+                        <span className="text-[11px] text-muted-foreground">{item.description}</span>
+                      </a>
+                    </DropdownMenuItem>
+                  ))}
+                </div>
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
@@ -160,6 +184,7 @@ export function TopNav() {
             <Link
               key={n.to}
               to={n.to}
+              search={"search" in n ? n.search : undefined}
               className={`px-3 py-1 text-xs rounded-full whitespace-nowrap ${
                 active ? "text-foreground bg-surface-elevated" : "text-muted-foreground"
               }`}
@@ -173,11 +198,22 @@ export function TopNav() {
             <Music2 className="h-3 w-3" />
             Music
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-48 bg-surface text-foreground hairline">
-            {MUSIC_NAV.map((item) => (
-              <DropdownMenuItem key={item.href} asChild>
-                <a href={item.href}>{item.label}</a>
-              </DropdownMenuItem>
+          <DropdownMenuContent align="start" className="w-64 bg-surface p-2 text-foreground hairline">
+            {MUSIC_NAV_GROUPS.map((group, groupIndex) => (
+              <div key={group.label}>
+                {groupIndex > 0 && <DropdownMenuSeparator className="my-2" />}
+                <DropdownMenuLabel className="px-2 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  {group.label}
+                </DropdownMenuLabel>
+                {group.items.map((item) => (
+                  <DropdownMenuItem key={item.href} asChild>
+                    <a href={item.href} className="flex flex-col items-start gap-0.5 rounded-lg px-2 py-2">
+                      <span className="text-sm font-medium">{item.label}</span>
+                      <span className="text-[11px] text-muted-foreground">{item.description}</span>
+                    </a>
+                  </DropdownMenuItem>
+                ))}
+              </div>
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
