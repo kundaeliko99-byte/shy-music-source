@@ -1,5 +1,14 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
+  ArrowLeft,
+  Apple,
+  Facebook,
+  Mail,
+  Phone,
+  ShieldCheck,
+  type LucideIcon,
+} from "lucide-react";
+import {
   useEffect,
   useMemo,
   useRef,
@@ -16,16 +25,30 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { withBasePath } from "@/lib/assets";
 
-type AuthMode = "signin" | "signup" | "forgot";
+type AuthStage =
+  | "identifier"
+  | "password"
+  | "otp"
+  | "signup"
+  | "forgot"
+  | "new-password"
+  | "signup-choice";
 type ContactMethod = "email" | "phone";
-type SigninMethod = "otp" | "password";
 type OtpPurpose = "signin" | "signup" | "phone-reset";
+
+type IdentifierLookup = {
+  exists: boolean;
+  hasPassword?: boolean;
+};
 
 const REMEMBER_KEY = "shy.auth.remembered";
 const DEFAULT_PHONE_PREFIX = "+260 ";
 
 const displayNameSchema = z.string().trim().min(1, "Enter your display name").max(50);
 const passwordSchema = z.string().min(8, "Password must be at least 8 characters").max(72);
+
+const inputClass =
+  "w-full rounded-xl border border-border bg-background px-3 py-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground/70 focus:border-primary focus:ring-2 focus:ring-primary/25";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -44,10 +67,12 @@ export const Route = createFileRoute("/auth")({
 function AuthPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [authMode, setAuthMode] = useState<AuthMode>("signin");
+  const [stage, setStage] = useState<AuthStage>("identifier");
   const [contactMethod, setContactMethod] = useState<ContactMethod>("email");
-  const [signinMethod, setSigninMethod] = useState<SigninMethod>("otp");
   const [contactValue, setContactValue] = useState("");
+  const [resolvedIdentifier, setResolvedIdentifier] = useState("");
+  const [resolvedMethod, setResolvedMethod] = useState<ContactMethod>("email");
+  const [resolvedHasPassword, setResolvedHasPassword] = useState(false);
   const [password, setPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -57,12 +82,13 @@ function AuthPage() {
   const [inlineError, setInlineError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [phoneResetVerified, setPhoneResetVerified] = useState(false);
   const [otpRequest, setOtpRequest] = useState<{
     contactMethod: ContactMethod;
     contactValue: string;
     purpose: OtpPurpose;
+    hasPassword: boolean;
   } | null>(null);
-  const [phoneResetVerified, setPhoneResetVerified] = useState(false);
 
   useEffect(() => {
     const remembered = readRememberedDetails();
@@ -70,12 +96,11 @@ function AuthPage() {
     setRememberMe(true);
     setContactMethod(remembered.contactMethod);
     setContactValue(remembered.contactValue);
-    setSigninMethod(remembered.signinMethod);
   }, []);
 
   useEffect(() => {
-    if (user && !phoneResetVerified) navigate({ to: "/" });
-  }, [user, phoneResetVerified, navigate]);
+    if (user && !phoneResetVerified && stage === "identifier") navigate({ to: "/" });
+  }, [user, phoneResetVerified, stage, navigate]);
 
   const contactError = useMemo(
     () => (touchedContact ? validateContact(contactMethod, contactValue) : ""),
@@ -87,15 +112,19 @@ function AuthPage() {
     navigate({ to: "/" });
   }
 
-  function switchAuthMode(nextMode: AuthMode) {
-    setAuthMode(nextMode);
+  function resetToIdentifier(clearIdentifier = false) {
+    setStage("identifier");
     setInlineError("");
     setSuccessMessage("");
-    setOtpRequest(null);
-    setPhoneResetVerified(false);
     setPassword("");
     setNewPassword("");
-    if (nextMode !== "signin") setSigninMethod("otp");
+    setOtpRequest(null);
+    setPhoneResetVerified(false);
+    if (clearIdentifier) {
+      setContactValue(contactMethod === "phone" ? DEFAULT_PHONE_PREFIX : "");
+      setResolvedIdentifier("");
+      setTouchedContact(false);
+    }
   }
 
   function switchContactMethod(nextMethod: ContactMethod) {
@@ -103,12 +132,11 @@ function AuthPage() {
     setTouchedContact(false);
     setInlineError("");
     setSuccessMessage("");
-    setOtpRequest(null);
-    setPhoneResetVerified(false);
     if (nextMethod === "phone" && !contactValue.trim()) setContactValue(DEFAULT_PHONE_PREFIX);
+    if (nextMethod === "email" && contactValue.trim() === DEFAULT_PHONE_PREFIX.trim()) setContactValue("");
   }
 
-  async function submitDetails(event: FormEvent) {
+  async function submitIdentifier(event: FormEvent) {
     event.preventDefault();
     setTouchedContact(true);
     setInlineError("");
@@ -120,105 +148,94 @@ function AuthPage() {
       return;
     }
 
-    if (authMode === "forgot") {
-      await submitForgot();
-      return;
-    }
-
-    if (authMode === "signin" && signinMethod === "password") {
-      await submitPasswordSignin();
-      return;
-    }
-
-    await submitOtpRequest(authMode === "signup" ? "signup" : "signin");
-  }
-
-  async function submitOtpRequest(purpose: OtpPurpose) {
+    const identifier = authContactValue(contactMethod, contactValue);
+    console.log("SHY auth identifier", { type: contactMethod, identifier });
     setLoading(true);
     try {
-      if (purpose === "signup") {
-        displayNameSchema.parse(displayName);
-        passwordSchema.parse(password);
+      const lookup = await checkIdentifier(identifier, contactMethod);
+      setResolvedIdentifier(identifier);
+      setResolvedMethod(contactMethod);
+      setResolvedHasPassword(Boolean(lookup.hasPassword));
+
+      if (!lookup.exists) {
+        setStage("signup-choice");
+        return;
       }
 
-      const destination = authContactValue(contactMethod, contactValue);
-      const data =
-        purpose === "signup"
-          ? { display_name: displayName.trim(), role }
-          : undefined;
+      if (lookup.hasPassword) {
+        setStage("password");
+        return;
+      }
 
-      const { error } =
-        contactMethod === "email"
-          ? await supabase.auth.signInWithOtp({
-              email: destination,
-              options: {
-                shouldCreateUser: purpose === "signup",
-                data,
-                emailRedirectTo: authRedirectUrl(),
-              },
-            })
-          : await supabase.auth.signInWithOtp({
-              phone: destination,
-              options: {
-                shouldCreateUser: purpose === "signup",
-                data,
-              },
-            });
-
-      if (error) throw error;
-      rememberCurrentDetails();
-      setOtpRequest({ contactMethod, contactValue: destination, purpose });
-    } catch (error) {
-      setInlineError(readErrorMessage(error, "Could not send the verification code."));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function submitPasswordSignin() {
-    setLoading(true);
-    try {
-      const destination = authContactValue(contactMethod, contactValue);
-      if (!password) throw new Error("Enter your password");
-
-      const { data, error } =
-        contactMethod === "email"
-          ? await supabase.auth.signInWithPassword({ email: destination, password })
-          : await (supabase.auth.signInWithPassword as any)({ phone: destination, password });
-
-      if (error) throw error;
-      onSignedIn(data.session);
+      await sendOtp(contactMethod, identifier, "signin", false);
     } catch (error) {
       setInlineError(
-        contactMethod === "phone"
-          ? `${readErrorMessage(error, "Could not sign in.")} Phone + password sign-in also requires phone confirmation to be enabled in Supabase.`
-          : readErrorMessage(error, "Could not sign in."),
+        readErrorMessage(error, "Could not check that account. Please try again."),
       );
     } finally {
       setLoading(false);
     }
   }
 
-  async function submitForgot() {
+  async function submitPasswordSignin(event: FormEvent) {
+    event.preventDefault();
+    setInlineError("");
     setLoading(true);
     try {
-      const destination = authContactValue(contactMethod, contactValue);
+      if (!password) throw new Error("Enter your password.");
+      const { data, error } =
+        resolvedMethod === "email"
+          ? await supabase.auth.signInWithPassword({
+              email: resolvedIdentifier,
+              password,
+            })
+          : await (supabase.auth.signInWithPassword as any)({
+              phone: resolvedIdentifier,
+              password,
+            });
 
-      if (contactMethod === "email") {
-        const { error } = await supabase.auth.resetPasswordForEmail(destination, {
+      if (error) throw error;
+      onSignedIn(data.session);
+    } catch (error) {
+      setInlineError(readErrorMessage(error, "Could not sign in."));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function submitSignup(event: FormEvent) {
+    event.preventDefault();
+    setInlineError("");
+    setLoading(true);
+    try {
+      displayNameSchema.parse(displayName);
+      passwordSchema.parse(password);
+      await sendOtp(resolvedMethod, resolvedIdentifier, "signup", false);
+    } catch (error) {
+      setInlineError(readErrorMessage(error, "Could not create the account."));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function submitForgot(event: FormEvent) {
+    event.preventDefault();
+    setInlineError("");
+    setSuccessMessage("");
+    setLoading(true);
+    try {
+      if (resolvedMethod === "email") {
+        const { error } = await supabase.auth.resetPasswordForEmail(resolvedIdentifier, {
           redirectTo: authRedirectUrl(),
         });
         if (error) throw error;
-        setSuccessMessage("Password reset instructions have been sent. Keep this tab open and check your email.");
+        setSuccessMessage(
+          `Password reset instructions have been sent to ${maskIdentifier(resolvedIdentifier, "email")}.`,
+        );
         return;
       }
 
-      const { error } = await supabase.auth.signInWithOtp({
-        phone: destination,
-        options: { shouldCreateUser: false },
-      });
-      if (error) throw error;
-      setOtpRequest({ contactMethod: "phone", contactValue: destination, purpose: "phone-reset" });
+      await sendOtp("phone", resolvedIdentifier, "phone-reset", resolvedHasPassword);
     } catch (error) {
       setInlineError(readErrorMessage(error, "Could not send reset instructions."));
     } finally {
@@ -244,10 +261,45 @@ function AuthPage() {
     }
   }
 
+  async function sendOtp(
+    method: ContactMethod,
+    identifier: string,
+    purpose: OtpPurpose,
+    hasPassword: boolean,
+  ) {
+    const data =
+      purpose === "signup"
+        ? { display_name: displayName.trim(), role }
+        : undefined;
+    const { error } =
+      method === "email"
+        ? await supabase.auth.signInWithOtp({
+            email: identifier,
+            options: {
+              shouldCreateUser: purpose === "signup",
+              data,
+              emailRedirectTo: authRedirectUrl(),
+            },
+          })
+        : await supabase.auth.signInWithOtp({
+            phone: identifier,
+            options: {
+              shouldCreateUser: purpose === "signup",
+              data,
+            },
+          });
+
+    if (error) throw error;
+    setOtpRequest({ contactMethod: method, contactValue: identifier, purpose, hasPassword });
+    setStage("otp");
+    rememberCurrentDetails();
+  }
+
   function handleOtpVerified(session: Session | null, purpose: OtpPurpose) {
     if (purpose === "phone-reset") {
       setOtpRequest(null);
       setPhoneResetVerified(true);
+      setStage("new-password");
       return;
     }
 
@@ -259,7 +311,9 @@ function AuthPage() {
           if (error) throw error;
           navigate({ to: role === "artist" ? "/become-artist" : "/" });
         })
-        .catch((error) => setInlineError(readErrorMessage(error, "Account created, but password setup failed.")));
+        .catch((error) =>
+          setInlineError(readErrorMessage(error, "Account created, but password setup failed.")),
+        );
       return;
     }
 
@@ -268,229 +322,484 @@ function AuthPage() {
 
   function rememberCurrentDetails() {
     try {
-      if (!rememberMe || authMode === "forgot") {
-        if (!rememberMe) window.localStorage.removeItem(REMEMBER_KEY);
+      if (!rememberMe) {
+        window.localStorage.removeItem(REMEMBER_KEY);
         return;
       }
       window.localStorage.setItem(
         REMEMBER_KEY,
-        JSON.stringify({ contactMethod, contactValue, signinMethod }),
+        JSON.stringify({ contactMethod, contactValue }),
       );
     } catch {
       // Ignore storage failures.
     }
   }
 
-  if (otpRequest) {
-    return (
-      <AuthFrame>
-        <OtpEntryScreen
-          contactMethod={otpRequest.contactMethod}
-          contactValue={otpRequest.contactValue}
-          purpose={otpRequest.purpose}
-          onBack={() => setOtpRequest(null)}
-          onSignedIn={(session) => handleOtpVerified(session, otpRequest.purpose)}
-        />
-      </AuthFrame>
-    );
-  }
-
-  if (authMode === "forgot" && phoneResetVerified) {
-    return (
-      <AuthFrame>
-        <form onSubmit={setRecoveredPassword} className="space-y-4">
-          <AuthHeading title="Set New Password" subtitle="Choose a new password for your SHY account." />
-          <InlineBanner message={inlineError} onDismiss={() => setInlineError("")} />
-          <Field label="New password">
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(event) => setNewPassword(event.target.value)}
-              className="auth-input"
-              minLength={8}
-              maxLength={72}
-              autoComplete="new-password"
-              placeholder="Enter your new password"
-              required
-            />
-          </Field>
-          <PrimaryButton loading={loading} disabled={!newPassword} loadingLabel="Saving...">
-            Set new password
-          </PrimaryButton>
-        </form>
-      </AuthFrame>
-    );
+  async function startOAuth(provider: "google" | "facebook" | "apple") {
+    setInlineError("");
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo: authRedirectUrl() },
+      });
+      if (error) throw error;
+    } catch (error) {
+      setInlineError(readErrorMessage(error, "Could not start social sign-in."));
+      setLoading(false);
+    }
   }
 
   return (
     <AuthFrame>
-      <form onSubmit={submitDetails} className="space-y-4">
-        <div className="grid grid-cols-3 gap-1 rounded-full bg-background/50 p-1">
-          {([
-            ["signin", "Sign in"],
-            ["signup", "Sign up"],
-            ["forgot", "Forgot"],
-          ] as const).map(([value, label]) => (
-            <PillButton
-              key={value}
-              active={authMode === value}
-              onClick={() => switchAuthMode(value)}
-            >
-              {label}
+      {stage === "identifier" && (
+        <IdentifierGate
+          contactMethod={contactMethod}
+          contactValue={contactValue}
+          contactError={contactError}
+          inlineError={inlineError}
+          loading={loading}
+          rememberMe={rememberMe}
+          onSubmit={submitIdentifier}
+          onDismissError={() => setInlineError("")}
+          onContactMethodChange={switchContactMethod}
+          onContactValueChange={setContactValue}
+          onContactBlur={() => setTouchedContact(true)}
+          onRememberChange={(checked) => {
+            setRememberMe(checked);
+            if (!checked) window.localStorage.removeItem(REMEMBER_KEY);
+          }}
+          onOAuth={startOAuth}
+        />
+      )}
+
+      {stage === "signup-choice" && (
+        <SignupChoice
+          identifier={resolvedIdentifier}
+          method={resolvedMethod}
+          onBack={() => resetToIdentifier(true)}
+          onSignup={() => {
+            setInlineError("");
+            setStage("signup");
+          }}
+        />
+      )}
+
+      {stage === "password" && (
+        <PasswordScreen
+          identifier={resolvedIdentifier}
+          method={resolvedMethod}
+          password={password}
+          inlineError={inlineError}
+          loading={loading}
+          onPasswordChange={setPassword}
+          onBack={() => resetToIdentifier(true)}
+          onDismissError={() => setInlineError("")}
+          onForgot={() => {
+            setInlineError("");
+            setSuccessMessage("");
+            setStage("forgot");
+          }}
+          onUseCode={() => {
+            setInlineError("");
+            setLoading(true);
+            sendOtp(resolvedMethod, resolvedIdentifier, "signin", true)
+              .catch((error) =>
+                setInlineError(readErrorMessage(error, "Could not send the code.")),
+              )
+              .finally(() => setLoading(false));
+          }}
+          onSubmit={submitPasswordSignin}
+        />
+      )}
+
+      {stage === "otp" && otpRequest && (
+        <OtpEntryScreen
+          contactMethod={otpRequest.contactMethod}
+          contactValue={otpRequest.contactValue}
+          purpose={otpRequest.purpose}
+          hasPassword={otpRequest.hasPassword}
+          onBack={() => resetToIdentifier(true)}
+          onPasswordFallback={() => {
+            setOtpRequest(null);
+            setPassword("");
+            setStage("password");
+          }}
+          onSignedIn={(session) => handleOtpVerified(session, otpRequest.purpose)}
+        />
+      )}
+
+      {stage === "signup" && (
+        <SignupScreen
+          identifier={resolvedIdentifier}
+          method={resolvedMethod}
+          displayName={displayName}
+          password={password}
+          role={role}
+          inlineError={inlineError}
+          loading={loading}
+          onBack={() => resetToIdentifier(true)}
+          onDismissError={() => setInlineError("")}
+          onDisplayNameChange={setDisplayName}
+          onPasswordChange={setPassword}
+          onRoleChange={setRole}
+          onSubmit={submitSignup}
+        />
+      )}
+
+      {stage === "forgot" && (
+        <ForgotPasswordScreen
+          identifier={resolvedIdentifier}
+          method={resolvedMethod}
+          inlineError={inlineError}
+          successMessage={successMessage}
+          loading={loading}
+          onBack={() => {
+            setSuccessMessage("");
+            setInlineError("");
+            setStage("password");
+          }}
+          onDismissError={() => setInlineError("")}
+          onSubmit={submitForgot}
+        />
+      )}
+
+      {stage === "new-password" && (
+        <NewPasswordScreen
+          newPassword={newPassword}
+          inlineError={inlineError}
+          loading={loading}
+          onNewPasswordChange={setNewPassword}
+          onDismissError={() => setInlineError("")}
+          onSubmit={setRecoveredPassword}
+        />
+      )}
+    </AuthFrame>
+  );
+}
+
+function IdentifierGate({
+  contactMethod,
+  contactValue,
+  contactError,
+  inlineError,
+  loading,
+  rememberMe,
+  onSubmit,
+  onDismissError,
+  onContactMethodChange,
+  onContactValueChange,
+  onContactBlur,
+  onRememberChange,
+  onOAuth,
+}: {
+  contactMethod: ContactMethod;
+  contactValue: string;
+  contactError: string;
+  inlineError: string;
+  loading: boolean;
+  rememberMe: boolean;
+  onSubmit: (event: FormEvent) => void;
+  onDismissError: () => void;
+  onContactMethodChange: (method: ContactMethod) => void;
+  onContactValueChange: (value: string) => void;
+  onContactBlur: () => void;
+  onRememberChange: (checked: boolean) => void;
+  onOAuth: (provider: "google" | "facebook" | "apple") => void;
+}) {
+  return (
+    <form onSubmit={onSubmit} className="space-y-5">
+      <AuthHeading title="Welcome Back" subtitle="Enter your email or phone number to continue." />
+      <InlineBanner message={inlineError} onDismiss={onDismissError} />
+
+      <ContactMethodToggle contactMethod={contactMethod} onChange={onContactMethodChange} />
+
+      <Field label={contactMethod === "email" ? "Email" : "Phone number"} error={contactError}>
+        <input
+          type={contactMethod === "email" ? "email" : "tel"}
+          value={contactValue}
+          onChange={(event) => onContactValueChange(event.target.value)}
+          onBlur={onContactBlur}
+          className={inputClass}
+          autoComplete={contactMethod === "email" ? "email" : "tel"}
+          placeholder={contactMethod === "email" ? "you@example.com" : "+260 97 000 0000"}
+          required
+        />
+      </Field>
+
+      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+        <input
+          type="checkbox"
+          checked={rememberMe}
+          onChange={(event) => onRememberChange(event.target.checked)}
+          className="h-4 w-4 rounded border border-primary/70 bg-background accent-[var(--color-primary)]"
+        />
+        Remember my email or phone on this device
+      </label>
+
+      <PrimaryButton
+        loading={loading}
+        disabled={Boolean(contactError) || !contactValue.trim()}
+        loadingLabel="Checking..."
+      >
+        Continue
+      </PrimaryButton>
+
+      <OAuthDivider />
+      <OAuthButtons loading={loading} onOAuth={onOAuth} />
+    </form>
+  );
+}
+
+function SignupChoice({
+  identifier,
+  method,
+  onBack,
+  onSignup,
+}: {
+  identifier: string;
+  method: ContactMethod;
+  onBack: () => void;
+  onSignup: () => void;
+}) {
+  return (
+    <div className="space-y-5">
+      <BackButton onClick={onBack} />
+      <AuthHeading
+        title="No Account Found"
+        subtitle={`We could not find a SHY account for ${maskIdentifier(identifier, method)}.`}
+      />
+      <div className="rounded-xl border border-primary/30 bg-primary/10 p-4 text-sm leading-relaxed text-foreground">
+        You can create a listener account or join as a songwriter with this identifier.
+      </div>
+      <button
+        type="button"
+        onClick={onSignup}
+        className="inline-flex w-full items-center justify-center rounded-full bg-primary py-3 text-sm font-bold text-primary-foreground shadow-glow-soft transition hover:bg-primary/90"
+      >
+        Create account
+      </button>
+    </div>
+  );
+}
+
+function PasswordScreen({
+  identifier,
+  method,
+  password,
+  inlineError,
+  loading,
+  onPasswordChange,
+  onBack,
+  onDismissError,
+  onForgot,
+  onUseCode,
+  onSubmit,
+}: {
+  identifier: string;
+  method: ContactMethod;
+  password: string;
+  inlineError: string;
+  loading: boolean;
+  onPasswordChange: (value: string) => void;
+  onBack: () => void;
+  onDismissError: () => void;
+  onForgot: () => void;
+  onUseCode: () => void;
+  onSubmit: (event: FormEvent) => void;
+}) {
+  return (
+    <form onSubmit={onSubmit} className="space-y-5">
+      <BackButton onClick={onBack} />
+      <AuthHeading title="Enter Your Password" subtitle="Use the password saved on this SHY account." />
+      <IdentifierBadge identifier={identifier} method={method} />
+      <InlineBanner message={inlineError} onDismiss={onDismissError} />
+      <Field label="Password">
+        <input
+          type="password"
+          value={password}
+          onChange={(event) => onPasswordChange(event.target.value)}
+          className={inputClass}
+          autoComplete="current-password"
+          placeholder="Enter your password"
+          required
+        />
+        <button
+          type="button"
+          onClick={onForgot}
+          className="mt-2 text-xs font-semibold text-primary-glow hover:text-foreground"
+        >
+          Forgot password?
+        </button>
+      </Field>
+      <PrimaryButton loading={loading} disabled={!password} loadingLabel="Logging in...">
+        Log in
+      </PrimaryButton>
+      <button
+        type="button"
+        onClick={onUseCode}
+        disabled={loading}
+        className="w-full text-center text-xs font-semibold text-primary-glow hover:text-foreground disabled:opacity-50"
+      >
+        Use a code instead
+      </button>
+    </form>
+  );
+}
+
+function SignupScreen({
+  identifier,
+  method,
+  displayName,
+  password,
+  role,
+  inlineError,
+  loading,
+  onBack,
+  onDismissError,
+  onDisplayNameChange,
+  onPasswordChange,
+  onRoleChange,
+  onSubmit,
+}: {
+  identifier: string;
+  method: ContactMethod;
+  displayName: string;
+  password: string;
+  role: "listener" | "artist";
+  inlineError: string;
+  loading: boolean;
+  onBack: () => void;
+  onDismissError: () => void;
+  onDisplayNameChange: (value: string) => void;
+  onPasswordChange: (value: string) => void;
+  onRoleChange: (role: "listener" | "artist") => void;
+  onSubmit: (event: FormEvent) => void;
+}) {
+  return (
+    <form onSubmit={onSubmit} className="space-y-5">
+      <BackButton onClick={onBack} />
+      <AuthHeading title="Create Your Account" subtitle="SHY will send a code to verify this account." />
+      <IdentifierBadge identifier={identifier} method={method} />
+      <InlineBanner message={inlineError} onDismiss={onDismissError} />
+      <Field label="Display name">
+        <input
+          value={displayName}
+          onChange={(event) => onDisplayNameChange(event.target.value)}
+          className={inputClass}
+          autoComplete="name"
+          maxLength={50}
+          placeholder="Your SHY name"
+          required
+        />
+      </Field>
+      <Field label="Create password">
+        <input
+          type="password"
+          value={password}
+          onChange={(event) => onPasswordChange(event.target.value)}
+          className={inputClass}
+          autoComplete="new-password"
+          minLength={8}
+          maxLength={72}
+          placeholder="At least 8 characters"
+          required
+        />
+      </Field>
+      <div>
+        <div className="mb-1.5 text-[11px] text-muted-foreground">I'm joining as</div>
+        <div className="grid grid-cols-2 gap-2">
+          {(["listener", "artist"] as const).map((value) => (
+            <PillButton key={value} active={role === value} onClick={() => onRoleChange(value)} shape="box">
+              {value === "listener" ? "Listener" : "Songwriter"}
             </PillButton>
           ))}
         </div>
+      </div>
+      <PrimaryButton loading={loading} disabled={!displayName.trim() || !password} loadingLabel="Sending code...">
+        Create account
+      </PrimaryButton>
+    </form>
+  );
+}
 
-        <AuthHeading
-          title={
-            authMode === "signin"
-              ? "Welcome Back"
-              : authMode === "signup"
-                ? "Create Your Account"
-                : "Reset Your Password"
-          }
-          subtitle={
-            authMode === "forgot"
-              ? "Choose email or phone and SHY will help you get back in."
-              : "Use email or phone to continue with SHY."
-          }
+function ForgotPasswordScreen({
+  identifier,
+  method,
+  inlineError,
+  successMessage,
+  loading,
+  onBack,
+  onDismissError,
+  onSubmit,
+}: {
+  identifier: string;
+  method: ContactMethod;
+  inlineError: string;
+  successMessage: string;
+  loading: boolean;
+  onBack: () => void;
+  onDismissError: () => void;
+  onSubmit: (event: FormEvent) => void;
+}) {
+  return (
+    <form onSubmit={onSubmit} className="space-y-5">
+      <BackButton onClick={onBack} />
+      <AuthHeading
+        title="Reset Password"
+        subtitle="SHY already knows which account you are recovering."
+      />
+      <IdentifierBadge identifier={identifier} method={method} />
+      <InlineBanner message={inlineError} onDismiss={onDismissError} />
+      {successMessage ? (
+        <div className="rounded-xl border border-primary/30 bg-primary/10 p-4 text-sm leading-relaxed text-foreground">
+          {successMessage}
+        </div>
+      ) : (
+        <PrimaryButton loading={loading} loadingLabel="Sending...">
+          {method === "email" ? "Send reset instructions" : "Send reset code"}
+        </PrimaryButton>
+      )}
+    </form>
+  );
+}
+
+function NewPasswordScreen({
+  newPassword,
+  inlineError,
+  loading,
+  onNewPasswordChange,
+  onDismissError,
+  onSubmit,
+}: {
+  newPassword: string;
+  inlineError: string;
+  loading: boolean;
+  onNewPasswordChange: (value: string) => void;
+  onDismissError: () => void;
+  onSubmit: (event: FormEvent) => void;
+}) {
+  return (
+    <form onSubmit={onSubmit} className="space-y-5">
+      <AuthHeading title="Set New Password" subtitle="Choose a new password for your SHY account." />
+      <InlineBanner message={inlineError} onDismiss={onDismissError} />
+      <Field label="New password">
+        <input
+          type="password"
+          value={newPassword}
+          onChange={(event) => onNewPasswordChange(event.target.value)}
+          className={inputClass}
+          minLength={8}
+          maxLength={72}
+          autoComplete="new-password"
+          placeholder="Enter your new password"
+          required
         />
-
-        <InlineBanner message={inlineError} onDismiss={() => setInlineError("")} />
-
-        {successMessage ? (
-          <div className="rounded-xl border border-primary/30 bg-primary/10 p-4 text-sm leading-relaxed text-foreground">
-            {successMessage}
-          </div>
-        ) : (
-          <>
-            {authMode === "signup" && (
-              <Field label="Display name">
-                <input
-                  value={displayName}
-                  onChange={(event) => setDisplayName(event.target.value)}
-                  className="auth-input"
-                  autoComplete="name"
-                  maxLength={50}
-                  placeholder="Your SHY name"
-                  required
-                />
-              </Field>
-            )}
-
-            <ContactMethodToggle
-              contactMethod={contactMethod}
-              onChange={switchContactMethod}
-            />
-
-            <Field label={contactMethod === "email" ? "Email" : "Phone number"} error={contactError}>
-              <input
-                type={contactMethod === "email" ? "email" : "tel"}
-                value={contactValue}
-                onChange={(event) => setContactValue(event.target.value)}
-                onBlur={() => setTouchedContact(true)}
-                className="auth-input"
-                autoComplete={contactMethod === "email" ? "email" : "tel"}
-                placeholder={contactMethod === "email" ? "you@example.com" : "+260 97 000 0000"}
-                required
-              />
-            </Field>
-
-            {authMode === "signin" && (
-              <div>
-                <div className="mb-1.5 text-[11px] text-muted-foreground">Sign in method</div>
-                <div className="grid grid-cols-2 gap-2">
-                  {([
-                    ["otp", "OTP code"],
-                    ["password", "Password"],
-                  ] as const).map(([value, label]) => (
-                    <PillButton
-                      key={value}
-                      active={signinMethod === value}
-                      onClick={() => setSigninMethod(value)}
-                      shape="box"
-                    >
-                      {label}
-                    </PillButton>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {((authMode === "signin" && signinMethod === "password") || authMode === "signup") && (
-              <Field label={authMode === "signup" ? "Create password" : "Password"}>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  className="auth-input"
-                  autoComplete={authMode === "signup" ? "new-password" : "current-password"}
-                  minLength={authMode === "signup" ? 8 : 1}
-                  maxLength={72}
-                  placeholder={authMode === "signup" ? "At least 8 characters" : "Enter your password"}
-                  required
-                />
-                {authMode === "signin" && (
-                  <button
-                    type="button"
-                    onClick={() => switchAuthMode("forgot")}
-                    className="mt-2 text-xs font-medium text-primary-glow hover:text-foreground"
-                  >
-                    Forgot password?
-                  </button>
-                )}
-              </Field>
-            )}
-
-            {authMode === "signup" && (
-              <div>
-                <div className="mb-1.5 text-[11px] text-muted-foreground">I'm joining as</div>
-                <div className="grid grid-cols-2 gap-2">
-                  {(["listener", "artist"] as const).map((value) => (
-                    <PillButton key={value} active={role === value} onClick={() => setRole(value)} shape="box">
-                      {value === "listener" ? "Listener" : "Songwriter"}
-                    </PillButton>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {authMode === "signin" && (
-              <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(event) => {
-                    setRememberMe(event.target.checked);
-                    if (!event.target.checked) window.localStorage.removeItem(REMEMBER_KEY);
-                  }}
-                  className="h-4 w-4 rounded border border-primary/70 bg-background accent-[var(--color-primary)]"
-                />
-                Remember my email or phone on this device
-              </label>
-            )}
-
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
-              {authMode === "forgot"
-                ? contactMethod === "email"
-                  ? "We will send reset instructions to your email."
-                  : "SHY sends a phone code first, then lets you set a new password."
-                : authMode === "signin" && signinMethod === "password"
-                  ? "Password sign-in checks your existing SHY account."
-                  : "SHY sends a 6-digit verification code to confirm the account."}
-            </p>
-
-            <PrimaryButton
-              loading={loading}
-              disabled={Boolean(contactError) || !contactValue.trim()}
-              loadingLabel={authMode === "signin" && signinMethod === "password" ? "Signing in..." : "Sending..."}
-            >
-              {submitLabel(authMode, contactMethod, signinMethod)}
-            </PrimaryButton>
-          </>
-        )}
-      </form>
-    </AuthFrame>
+      </Field>
+      <PrimaryButton loading={loading} disabled={!newPassword} loadingLabel="Saving...">
+        Set new password
+      </PrimaryButton>
+    </form>
   );
 }
 
@@ -498,13 +807,17 @@ function OtpEntryScreen({
   contactMethod,
   contactValue,
   purpose,
+  hasPassword,
   onBack,
+  onPasswordFallback,
   onSignedIn,
 }: {
   contactMethod: ContactMethod;
   contactValue: string;
   purpose: OtpPurpose;
+  hasPassword: boolean;
   onBack: () => void;
+  onPasswordFallback: () => void;
   onSignedIn: (session: Session | null) => void;
 }) {
   const [digits, setDigits] = useState(Array.from({ length: 6 }, () => ""));
@@ -553,8 +866,8 @@ function OtpEntryScreen({
             });
       if (verifyError) throw verifyError;
       onSignedIn(data.session);
-    } catch (caught) {
-      setError(readErrorMessage(caught, "Invalid or expired code."));
+    } catch {
+      setError("That code didn't work. Try again or resend.");
       setDigits(Array.from({ length: 6 }, () => ""));
       submittedTokenRef.current = "";
       window.setTimeout(() => inputRefs.current[0]?.focus(), 0);
@@ -614,16 +927,19 @@ function OtpEntryScreen({
 
   return (
     <div className="space-y-5">
+      <BackButton onClick={onBack} />
       <AuthHeading
-        title="Enter Verification Code"
-        subtitle={`We sent a 6-digit code to ${contactValue}.`}
+        title={`Enter the code we sent to ${maskIdentifier(contactValue, contactMethod)}`}
+        subtitle="Type the 6-digit code. SHY will check it automatically."
       />
       <InlineBanner message={error} onDismiss={() => setError("")} />
       <div className="grid grid-cols-6 gap-2">
         {digits.map((digit, index) => (
           <input
             key={index}
-            ref={(node) => { inputRefs.current[index] = node; }}
+            ref={(node) => {
+              inputRefs.current[index] = node;
+            }}
             value={digit}
             onChange={(event) => setDigit(index, event.target.value)}
             onKeyDown={(event) => handleKeyDown(index, event)}
@@ -631,26 +947,95 @@ function OtpEntryScreen({
             inputMode="numeric"
             autoComplete={index === 0 ? "one-time-code" : "off"}
             maxLength={1}
-            className="h-12 rounded-lg border border-border bg-background text-center text-lg font-semibold text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+            className="h-12 rounded-xl border border-border bg-background text-center text-lg font-semibold text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
             disabled={loading}
           />
         ))}
       </div>
-      <div className="flex items-center justify-between gap-3 text-xs">
-        <button type="button" onClick={onBack} className="text-muted-foreground hover:text-foreground">
-          Change details
-        </button>
+      <button
+        type="button"
+        onClick={resendCode}
+        disabled={loading || resendSeconds > 0}
+        className="w-full rounded-full border border-border bg-surface-elevated py-2.5 text-sm font-semibold text-foreground transition hover:border-primary/50 disabled:opacity-45"
+      >
+        {resendSeconds > 0 ? `Resend code in ${resendSeconds}s` : "Resend code"}
+      </button>
+      {hasPassword && (
         <button
           type="button"
-          onClick={resendCode}
-          disabled={loading || resendSeconds > 0}
-          className="font-medium text-primary-glow disabled:text-muted-foreground"
+          onClick={onPasswordFallback}
+          className="w-full text-center text-xs font-semibold text-primary-glow hover:text-foreground"
         >
-          {resendSeconds > 0 ? `Resend in ${resendSeconds}s` : "Resend code"}
+          Log in with a password
         </button>
-      </div>
+      )}
       {loading && <p className="text-center text-xs text-muted-foreground">Verifying...</p>}
     </div>
+  );
+}
+
+function OAuthDivider() {
+  return (
+    <div className="flex items-center gap-3 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+      <span className="h-px flex-1 bg-border" />
+      or
+      <span className="h-px flex-1 bg-border" />
+    </div>
+  );
+}
+
+function OAuthButtons({
+  loading,
+  onOAuth,
+}: {
+  loading: boolean;
+  onOAuth: (provider: "google" | "facebook" | "apple") => void;
+}) {
+  return (
+    <div className="grid gap-2">
+      <OAuthButton
+        label="Continue with Google"
+        icon={Mail}
+        disabled={loading}
+        onClick={() => onOAuth("google")}
+      />
+      <OAuthButton
+        label="Continue with Facebook"
+        icon={Facebook}
+        disabled={loading}
+        onClick={() => onOAuth("facebook")}
+      />
+      <OAuthButton
+        label="Continue with Apple"
+        icon={Apple}
+        disabled={loading}
+        onClick={() => onOAuth("apple")}
+      />
+    </div>
+  );
+}
+
+function OAuthButton({
+  label,
+  icon: Icon,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  icon: LucideIcon;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="flex w-full items-center justify-center gap-2 rounded-full border border-border bg-transparent px-4 py-2.5 text-sm font-semibold text-foreground transition hover:border-primary/50 hover:bg-surface-elevated disabled:opacity-45"
+    >
+      <Icon className="h-4 w-4" />
+      {label}
+    </button>
   );
 }
 
@@ -672,7 +1057,17 @@ function ContactMethodToggle({
             onClick={() => onChange(value)}
             shape="box"
           >
-            {value === "email" ? "Email" : "Phone number"}
+            {value === "email" ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Mail className="h-3.5 w-3.5" />
+                Email
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5">
+                <Phone className="h-3.5 w-3.5" />
+                Phone number
+              </span>
+            )}
           </PillButton>
         ))}
       </div>
@@ -682,7 +1077,7 @@ function ContactMethodToggle({
 
 function AuthFrame({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background bg-aurora px-4">
+    <div className="flex min-h-screen items-center justify-center bg-background bg-aurora px-4 py-8">
       <div className="w-full max-w-md">
         <Link to="/" className="mb-8 flex justify-center">
           <ShyLogo size={36} />
@@ -708,9 +1103,9 @@ function AuthHeading({ title, subtitle }: { title: string; subtitle: string }) {
 function Field({ label, error, children }: { label: string; error?: string; children: ReactNode }) {
   return (
     <label className="block">
-      <div className="mb-1 text-[11px] text-muted-foreground">{label}</div>
+      <div className="mb-1.5 text-[11px] text-muted-foreground">{label}</div>
       {children}
-      {error && <div className="mt-1 text-[11px] text-destructive">{error}</div>}
+      {error && <div className="mt-1.5 text-[11px] text-primary-glow">{error}</div>}
     </label>
   );
 }
@@ -730,7 +1125,7 @@ function PillButton({
     <button
       type="button"
       onClick={onClick}
-      className={`${shape === "pill" ? "rounded-full" : "rounded-lg"} border py-2 text-xs font-medium transition ${
+      className={`${shape === "pill" ? "rounded-full" : "rounded-lg"} border py-2 text-xs font-semibold transition ${
         active
           ? "border-primary bg-primary text-primary-foreground shadow-glow-soft"
           : "border-border bg-transparent text-muted-foreground hover:border-primary/50 hover:text-foreground"
@@ -756,7 +1151,7 @@ function PrimaryButton({
     <button
       type="submit"
       disabled={loading || disabled}
-      className="inline-flex w-full items-center justify-center rounded-full bg-primary py-2.5 text-sm font-semibold text-primary-foreground shadow-glow-soft transition hover:bg-primary/90 disabled:opacity-45"
+      className="inline-flex w-full items-center justify-center rounded-full bg-primary py-3 text-sm font-bold text-primary-foreground shadow-glow-soft transition hover:bg-primary/90 disabled:bg-surface-elevated disabled:text-muted-foreground disabled:shadow-none"
     >
       {loading ? loadingLabel : children}
     </button>
@@ -766,7 +1161,7 @@ function PrimaryButton({
 function InlineBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   if (!message) return null;
   return (
-    <div className="flex items-start justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs leading-relaxed text-destructive">
+    <div className="flex items-start justify-between gap-3 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-xs leading-relaxed text-primary-glow">
       <span>{message}</span>
       <button type="button" onClick={onDismiss} className="font-semibold text-foreground/80 hover:text-foreground">
         Dismiss
@@ -775,12 +1170,46 @@ function InlineBanner({ message, onDismiss }: { message: string; onDismiss: () =
   );
 }
 
-function submitLabel(authMode: AuthMode, contactMethod: ContactMethod, signinMethod: SigninMethod) {
-  if (authMode === "signup") return "Create account";
-  if (authMode === "forgot") {
-    return contactMethod === "email" ? "Send reset instructions" : "Send reset code";
+function BackButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border bg-background text-muted-foreground transition hover:border-primary/50 hover:text-foreground"
+      aria-label="Back"
+    >
+      <ArrowLeft className="h-4 w-4" />
+    </button>
+  );
+}
+
+function IdentifierBadge({
+  identifier,
+  method,
+}: {
+  identifier: string;
+  method: ContactMethod;
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-xs text-muted-foreground">
+      <ShieldCheck className="h-4 w-4 text-primary-glow" />
+      <span>{maskIdentifier(identifier, method)}</span>
+    </div>
+  );
+}
+
+async function checkIdentifier(identifier: string, type: ContactMethod) {
+  const { data, error } = await supabase.functions.invoke<IdentifierLookup>(
+    "check-identifier",
+    {
+      body: { identifier, type },
+    },
+  );
+  if (error) throw error;
+  if (!data || typeof data.exists !== "boolean") {
+    throw new Error("The account check returned an unexpected response.");
   }
-  return signinMethod === "password" ? "Sign in" : "Send sign-in code";
+  return data;
 }
 
 function validateContact(method: ContactMethod, value: string) {
@@ -807,6 +1236,29 @@ function authContactValue(method: ContactMethod, value: string) {
   return `+260${compact}`;
 }
 
+function maskIdentifier(identifier: string, method: ContactMethod) {
+  if (method === "phone") {
+    const compact = identifier.replace(/\s/g, "");
+    if (compact.length <= 6) return compact.replace(/\d(?=\d{2})/g, "*");
+    return `${compact.slice(0, 4)}${"*".repeat(Math.max(3, compact.length - 6))}${compact.slice(-2)}`;
+  }
+
+  const [local = "", domain = ""] = identifier.split("@");
+  const maskedLocal =
+    local.length <= 1
+      ? `${local}*`
+      : `${local[0]}${"*".repeat(Math.max(1, local.length - 2))}${local[local.length - 1]}`;
+  const dotIndex = domain.lastIndexOf(".");
+  if (dotIndex <= 0) return `${maskedLocal}@${domain}`;
+  const host = domain.slice(0, dotIndex);
+  const tld = domain.slice(dotIndex);
+  const maskedHost =
+    host.length <= 1
+      ? `${host}*`
+      : `${host[0]}${"*".repeat(Math.max(1, host.length - 2))}${host[host.length - 1]}`;
+  return `${maskedLocal}@${maskedHost}${tld}`;
+}
+
 function readRememberedDetails() {
   try {
     const raw = window.localStorage.getItem(REMEMBER_KEY);
@@ -814,17 +1266,14 @@ function readRememberedDetails() {
     const parsed = JSON.parse(raw) as Partial<{
       contactMethod: ContactMethod;
       contactValue: string;
-      signinMethod: SigninMethod;
     }>;
     if (
       (parsed.contactMethod === "email" || parsed.contactMethod === "phone") &&
-      typeof parsed.contactValue === "string" &&
-      (parsed.signinMethod === "otp" || parsed.signinMethod === "password")
+      typeof parsed.contactValue === "string"
     ) {
       return parsed as {
         contactMethod: ContactMethod;
         contactValue: string;
-        signinMethod: SigninMethod;
       };
     }
   } catch {
