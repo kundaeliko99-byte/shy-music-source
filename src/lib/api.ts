@@ -65,6 +65,7 @@ export function toPlayerTrack(t: TrackRow): PlayerTrack {
     lyrics: t.lyrics,
     album_id: t.album_id,
     genre: t.genre,
+    artist_id: t.artist_id,
   };
 }
 
@@ -281,7 +282,7 @@ export interface ChartEntry extends TrackRow {
 // Artists whose weekly streams are boosted to match the all-time play
 // multiplier applied server-side by `increment_play_count`.
 const BOOSTED_ARTIST_MULTIPLIERS: Record<string, number> = {
-  "fffc185c-fc73-4230-b2aa-083867b3c023": 200, // KOPA & DJ Ottuza
+  "fffc185c-fc73-4230-b2aa-083867b3c023": 100, // KOPA & DJ Ottuza
 };
 
 export async function fetchChart(opts: { country?: string; limit?: number } = {}): Promise<ChartEntry[]> {

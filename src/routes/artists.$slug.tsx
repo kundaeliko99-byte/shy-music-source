@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/HorizontalRow";
 import { MotivateButton, networkLabel } from "@/components/MotivateButton";
 import { DownloadButton } from "@/components/DownloadButton";
 import { useMotivationCount } from "@/hooks/useMotivate";
+import { useLiveStreamCount } from "@/hooks/useTrackStreams";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -62,12 +63,12 @@ function ArtistPage() {
   const [following, setFollowing] = useState(false);
   const [followerCount, setFollowerCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [myPlayCount, setMyPlayCount] = useState(0);
+  const [bestFanWeekPlays, setBestFanWeekPlays] = useState<number[]>([]);
   const avatarInput = useRef<HTMLInputElement>(null);
   const bannerInput = useRef<HTMLInputElement>(null);
 
   const isOwner = !!user && !!artist && artist.user_id === user.id;
-  const isBestFan = myPlayCount >= 20;
+  const isBestFan = qualifiesForBestFan(bestFanWeekPlays);
   const { count: motivationCount, bump: bumpMotivation } = useMotivationCount(artist?.id);
 
   useEffect(() => {
@@ -102,12 +103,16 @@ function ArtistPage() {
 
         if (user && t.length > 0) {
           const trackIds = t.map((x) => x.id);
-          const { count: plays } = await supabase
+          const weekStart = sevenDayWindowStart();
+          const { data: plays } = await supabase
             .from("listening_history")
-            .select("id", { count: "exact", head: true })
+            .select("played_at")
             .eq("user_id", user.id)
-            .in("track_id", trackIds);
-          setMyPlayCount(plays ?? 0);
+            .in("track_id", trackIds)
+            .gte("played_at", weekStart.toISOString());
+          setBestFanWeekPlays(countDailyPlays((plays ?? []) as Array<{ played_at: string }>, weekStart));
+        } else {
+          setBestFanWeekPlays([]);
         }
       }
     });
@@ -218,7 +223,7 @@ function ArtistPage() {
               {isBestFan && (
                 <span
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/40"
-                  title={`You've played ${myPlayCount} of this artist's tracks`}
+                  title="Best Fan: 20+ plays every day for the last 7 days"
                 >
                   <Trophy className="w-3.5 h-3.5" />
                   Best Fan
@@ -326,7 +331,7 @@ function ArtistPage() {
                     {t.title}
                   </Link>
                   <div className="text-[11px] text-muted-foreground flex items-center gap-3">
-                    <span className="inline-flex items-center gap-1"><Headphones className="w-2.5 h-2.5" />{fmtCount(t.plays_count)}</span>
+                    <LiveTrackStreams track={t} />
                     <span className="inline-flex items-center gap-1"><Download className="w-2.5 h-2.5" />0</span>
                   </div>
                 </div>
@@ -422,6 +427,39 @@ function StatChip({ icon, value, label }: { icon: React.ReactNode; value: string
       <span className="text-muted-foreground">{label}</span>
     </span>
   );
+}
+
+function LiveTrackStreams({ track }: { track: TrackRow }) {
+  const liveStreams = useLiveStreamCount(track.id, track.plays_count);
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Headphones className="w-2.5 h-2.5" />
+      {fmtCount(liveStreams)}
+    </span>
+  );
+}
+
+function sevenDayWindowStart() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  today.setDate(today.getDate() - 6);
+  return today;
+}
+
+function countDailyPlays(rows: Array<{ played_at: string }>, start: Date) {
+  const counts = Array.from({ length: 7 }, () => 0);
+  const startTime = start.getTime();
+  for (const row of rows) {
+    const playedAt = new Date(row.played_at);
+    playedAt.setHours(0, 0, 0, 0);
+    const index = Math.floor((playedAt.getTime() - startTime) / 86_400_000);
+    if (index >= 0 && index < 7) counts[index] += 1;
+  }
+  return counts;
+}
+
+function qualifiesForBestFan(dailyPlays: number[]) {
+  return dailyPlays.length === 7 && dailyPlays.every((count) => count >= 20);
 }
 
 function prettyTool(t: string) {

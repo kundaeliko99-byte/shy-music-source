@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Download, X, Gift } from "lucide-react";
+import { Crown, Download, X } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
@@ -24,7 +24,7 @@ function sanitize(name: string) {
 export function DownloadButton({ trackId, title, audioUrl, artistId, size = "md" }: Props) {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { remaining, allowance, used, refresh } = useDownloadQuota();
+  const { remaining, allowance, used, isPremium, refresh } = useDownloadQuota();
   const motivateArtist = useMotivateArtist(artistId);
   const [busy, setBusy] = useState(false);
   const [showUpsell, setShowUpsell] = useState(false);
@@ -53,7 +53,11 @@ export function DownloadButton({ trackId, title, audioUrl, artistId, size = "md"
       a.remove();
       URL.revokeObjectURL(url);
       await refresh();
-      toast.success(`Downloaded — ${Math.max(0, remaining - 1)} downloads left`);
+      toast.success(
+        isPremium
+          ? "Downloaded - premium unlimited"
+          : `Downloaded - ${Math.max(0, remaining - 1)} downloads left this month`,
+      );
     } catch {
       toast.error("Download failed. Try again.");
     } finally {
@@ -65,7 +69,7 @@ export function DownloadButton({ trackId, title, audioUrl, artistId, size = "md"
     e.preventDefault();
     e.stopPropagation();
     if (!user) { navigate({ to: "/auth" }); return; }
-    if (remaining <= 0) { setShowUpsell(true); return; }
+    if (!isPremium && remaining <= 0) { setShowUpsell(true); return; }
     await doDownload();
   }
 
@@ -76,7 +80,7 @@ export function DownloadButton({ trackId, title, audioUrl, artistId, size = "md"
       <button
         onClick={handleClick}
         disabled={busy}
-        title={user ? `${used}/${allowance} downloads used` : "Sign in to download"}
+        title={user ? (isPremium ? "Premium unlimited downloads" : `${used}/${allowance} downloads used this month`) : "Sign in to download"}
         className={
           isIcon
             ? "w-9 h-9 rounded-full hairline flex items-center justify-center text-muted-foreground hover:bg-surface-elevated hover:text-foreground disabled:opacity-50"
@@ -105,12 +109,12 @@ export function DownloadButton({ trackId, title, audioUrl, artistId, size = "md"
               <X className="w-4 h-4" />
             </button>
             <div className="w-14 h-14 rounded-full bg-gradient-primary text-primary-foreground inline-flex items-center justify-center shadow-glow-soft">
-              <Gift className="w-6 h-6" />
+              <Crown className="w-6 h-6" />
             </div>
-            <h3 className="text-lg font-semibold mt-3">You've used your {allowance} downloads</h3>
+            <h3 className="text-lg font-semibold mt-3">You've used your 10 free monthly downloads</h3>
             <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-              Motivate an artist to unlock 20 more downloads. Every motivation supports the
-              creators you love.
+              Premium listeners get unlimited downloads. You can still motivate an artist
+              directly with mobile money to support the creators you love.
             </p>
 
             <div className="mt-5 flex flex-col items-center gap-3">
@@ -119,7 +123,7 @@ export function DownloadButton({ trackId, title, audioUrl, artistId, size = "md"
                   artist={motivateArtist}
                   onMotivated={() => {
                     refresh();
-                    toast.success("Motivation recorded. Extra downloads unlock after verification.");
+                    toast.success("Motivation recorded. Thank you for supporting the artist.");
                   }}
                 />
               ) : (

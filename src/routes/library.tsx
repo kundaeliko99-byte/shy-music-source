@@ -57,8 +57,13 @@ function LibraryPage() {
         supabase.from("follows").select(`artist_id, artists ( id, display_name, slug, avatar_url, monthly_listeners )`).eq("follower_id", user.id).order("created_at", { ascending: false }),
         supabase.from("saved_albums").select(`album_id, albums ( id, title, cover_url, artist_id, release_type, artwork_shape )`).eq("user_id", user.id).order("created_at", { ascending: false }),
         supabase.from("listening_history").select(`played_at, tracks ( ${TRACK_SELECT} )`).eq("user_id", user.id).order("played_at", { ascending: false }).limit(50),
-        // Aggregate ALL plays (artist_id only) to compute Best Fan badges
-        supabase.from("listening_history").select(`tracks ( artist_id )`).eq("user_id", user.id).limit(1000),
+        // Aggregate the last 7 calendar days to compute Best Fan badges.
+        supabase
+          .from("listening_history")
+          .select(`played_at, tracks ( artist_id )`)
+          .eq("user_id", user.id)
+          .gte("played_at", sevenDayWindowStart().toISOString())
+          .limit(5000),
       ]);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       setLiked((likedRes.data ?? []).map((r: any) => r.tracks).filter(Boolean));
@@ -69,25 +74,33 @@ function LibraryPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       setHistory((historyRes.data ?? []).map((r: any) => r.tracks).filter(Boolean));
 
-      // Tally plays per artist
-      const tally: Record<string, number> = {};
+      // Tally plays per artist per day. Best Fan requires 20+ plays every day
+      // for the last 7 days, not only 20 lifetime plays.
+      const dailyByArtist: Record<string, number[]> = {};
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       for (const row of (allHistoryRes.data ?? []) as any[]) {
         const aid = row.tracks?.artist_id;
         if (!aid) continue;
-        tally[aid] = (tally[aid] ?? 0) + 1;
+        dailyByArtist[aid] ??= Array.from({ length: 7 }, () => 0);
+        const index = dayIndex(row.played_at, sevenDayWindowStart());
+        if (index >= 0 && index < 7) dailyByArtist[aid][index] += 1;
       }
-      setPlaysByArtist(tally);
+      const weeklyTotals = Object.fromEntries(
+        Object.entries(dailyByArtist).map(([id, counts]) => [id, counts.reduce((sum, count) => sum + count, 0)]),
+      );
+      setPlaysByArtist(weeklyTotals);
 
       // Resolve qualifying artists' display info
-      const qualifyingIds = Object.entries(tally).filter(([, n]) => n >= 20).map(([id]) => id);
+      const qualifyingIds = Object.entries(dailyByArtist)
+        .filter(([, counts]) => counts.every((count) => count >= 20))
+        .map(([id]) => id);
       if (qualifyingIds.length > 0) {
         const { data: artistRows } = await supabase
           .from("artists")
           .select("id, display_name, slug, avatar_url")
           .in("id", qualifyingIds);
         const enriched = (artistRows ?? [])
-          .map((a) => ({ ...a, plays: tally[a.id] ?? 0 }))
+          .map((a) => ({ ...a, plays: weeklyTotals[a.id] ?? 0 }))
           .sort((x, y) => y.plays - x.plays);
         setBestFanArtists(enriched);
       } else {
@@ -109,13 +122,13 @@ function LibraryPage() {
       <h1 className="text-2xl font-semibold mb-1">Your Library</h1>
       <p className="text-sm text-muted-foreground mb-5">Everything you love, in one place.</p>
 
-      {/* Best Fan badges — earned by playing an artist's tracks 20+ times */}
+      {/* Best Fan badges - earned by playing an artist's tracks 20+ times every day for a week */}
       {bestFanArtists.length > 0 && (
         <section className="mb-6 bg-gradient-to-br from-amber-500/10 via-surface to-surface hairline rounded-xl p-4">
           <div className="flex items-center gap-2 mb-3">
             <Trophy className="w-4 h-4 text-amber-400" />
             <h2 className="text-sm font-semibold">Your Best Fan badges</h2>
-            <span className="text-[11px] text-muted-foreground">· 20+ plays</span>
+            <span className="text-[11px] text-muted-foreground">20+ plays daily for 7 days</span>
           </div>
           <div className="flex gap-3 overflow-x-auto scrollbar-none pb-1">
             {bestFanArtists.map((a) => (
@@ -127,12 +140,12 @@ function LibraryPage() {
               >
                 <div className="relative">
                   <Cover src={a.avatar_url} seed={a.id} className="w-[96px] h-[96px] ring-2 ring-amber-400/60" shape="circle" />
-                  <span className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-amber-400 text-amber-950 flex items-center justify-center shadow-glow" title={`Best Fan · ${a.plays} plays`}>
+                  <span className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-amber-400 text-amber-950 flex items-center justify-center shadow-glow" title={`Best Fan - ${a.plays} plays this week`}>
                     <Trophy className="w-3.5 h-3.5" />
                   </span>
                 </div>
                 <div className="text-xs font-medium mt-2 truncate">{a.display_name}</div>
-                <div className="text-[10px] text-amber-400">{a.plays} plays</div>
+                <div className="text-[10px] text-amber-400">{a.plays} this week</div>
               </Link>
             ))}
           </div>
@@ -188,7 +201,7 @@ function LibraryPage() {
                 <div className="relative inline-block w-full">
                   <Cover src={a.avatar_url} seed={a.id} className={`w-full aspect-square ${bestFanIds.has(a.id) ? "ring-2 ring-amber-400/70" : ""}`} shape="circle" />
                   {bestFanIds.has(a.id) && (
-                    <span className="absolute bottom-1 right-1 w-7 h-7 rounded-full bg-amber-400 text-amber-950 flex items-center justify-center shadow-glow" title={`Best Fan · ${playsByArtist[a.id] ?? 0} plays`}>
+                    <span className="absolute bottom-1 right-1 w-7 h-7 rounded-full bg-amber-400 text-amber-950 flex items-center justify-center shadow-glow" title={`Best Fan - ${playsByArtist[a.id] ?? 0} plays this week`}>
                       <Trophy className="w-3.5 h-3.5" />
                     </span>
                   )}
@@ -253,4 +266,17 @@ function TabBtn({ active, onClick, icon, label, count }: { active: boolean; onCl
       {count > 0 && <span className={`text-[10px] ${active ? "text-primary-foreground/80" : "text-muted-foreground"}`}>{count}</span>}
     </button>
   );
+}
+
+function sevenDayWindowStart() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  today.setDate(today.getDate() - 6);
+  return today;
+}
+
+function dayIndex(playedAt: string, start: Date) {
+  const day = new Date(playedAt);
+  day.setHours(0, 0, 0, 0);
+  return Math.floor((day.getTime() - start.getTime()) / 86_400_000);
 }
