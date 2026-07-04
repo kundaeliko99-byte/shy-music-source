@@ -33,13 +33,9 @@ type AuthStage =
   | "forgot"
   | "new-password"
   | "signup-choice";
+type AuthMode = "signin" | "signup";
 type ContactMethod = "email" | "phone";
 type OtpPurpose = "signin" | "signup" | "phone-reset";
-
-type IdentifierLookup = {
-  exists: boolean;
-  hasPassword?: boolean;
-};
 
 const REMEMBER_KEY = "shy.auth.remembered";
 const DEFAULT_PHONE_PREFIX = "+260 ";
@@ -67,6 +63,7 @@ export const Route = createFileRoute("/auth")({
 function AuthPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const [authMode, setAuthMode] = useState<AuthMode>("signin");
   const [stage, setStage] = useState<AuthStage>("identifier");
   const [contactMethod, setContactMethod] = useState<ContactMethod>("email");
   const [contactValue, setContactValue] = useState("");
@@ -113,6 +110,7 @@ function AuthPage() {
   }
 
   function resetToIdentifier(clearIdentifier = false) {
+    setAuthMode("signin");
     setStage("identifier");
     setInlineError("");
     setSuccessMessage("");
@@ -136,6 +134,22 @@ function AuthPage() {
     if (nextMethod === "email" && contactValue.trim() === DEFAULT_PHONE_PREFIX.trim()) setContactValue("");
   }
 
+  function switchAuthMode(nextMode: AuthMode) {
+    setAuthMode(nextMode);
+    setInlineError("");
+    setSuccessMessage("");
+    setPassword("");
+    setNewPassword("");
+    setOtpRequest(null);
+    setPhoneResetVerified(false);
+    setTouchedContact(false);
+    setStage(nextMode === "signin" ? "identifier" : "signup");
+    if (nextMode === "signup") {
+      setResolvedIdentifier("");
+      setResolvedMethod(contactMethod);
+    }
+  }
+
   async function submitIdentifier(event: FormEvent) {
     event.preventDefault();
     setTouchedContact(true);
@@ -150,31 +164,11 @@ function AuthPage() {
 
     const identifier = authContactValue(contactMethod, contactValue);
     console.log("SHY auth identifier", { type: contactMethod, identifier });
-    setLoading(true);
-    try {
-      const lookup = await checkIdentifier(identifier, contactMethod);
-      setResolvedIdentifier(identifier);
-      setResolvedMethod(contactMethod);
-      setResolvedHasPassword(Boolean(lookup.hasPassword));
-
-      if (!lookup.exists) {
-        setStage("signup-choice");
-        return;
-      }
-
-      if (lookup.hasPassword) {
-        setStage("password");
-        return;
-      }
-
-      await sendOtp(contactMethod, identifier, "signin", false);
-    } catch (error) {
-      setInlineError(
-        readErrorMessage(error, "Could not check that account. Please try again."),
-      );
-    } finally {
-      setLoading(false);
-    }
+    setResolvedIdentifier(identifier);
+    setResolvedMethod(contactMethod);
+    setResolvedHasPassword(true);
+    rememberCurrentDetails();
+    setStage("password");
   }
 
   async function submitPasswordSignin(event: FormEvent) {
@@ -205,12 +199,18 @@ function AuthPage() {
 
   async function submitSignup(event: FormEvent) {
     event.preventDefault();
+    setTouchedContact(true);
     setInlineError("");
     setLoading(true);
     try {
+      const validation = validateContact(contactMethod, contactValue);
+      if (validation) throw new Error(validation);
       displayNameSchema.parse(displayName);
       passwordSchema.parse(password);
-      await sendOtp(resolvedMethod, resolvedIdentifier, "signup", false);
+      const identifier = authContactValue(contactMethod, contactValue);
+      setResolvedIdentifier(identifier);
+      setResolvedMethod(contactMethod);
+      await sendOtp(contactMethod, identifier, "signup", false);
     } catch (error) {
       setInlineError(readErrorMessage(error, "Could not create the account."));
     } finally {
@@ -352,6 +352,10 @@ function AuthPage() {
 
   return (
     <AuthFrame>
+      {(stage === "identifier" || stage === "signup") && !otpRequest && (
+        <AuthTabs authMode={authMode} onChange={switchAuthMode} />
+      )}
+
       {stage === "identifier" && (
         <IdentifierGate
           contactMethod={contactMethod}
@@ -433,12 +437,18 @@ function AuthPage() {
         <SignupScreen
           identifier={resolvedIdentifier}
           method={resolvedMethod}
+          contactMethod={contactMethod}
+          contactValue={contactValue}
+          contactError={contactError}
           displayName={displayName}
           password={password}
           role={role}
           inlineError={inlineError}
           loading={loading}
-          onBack={() => resetToIdentifier(true)}
+          onContactMethodChange={switchContactMethod}
+          onContactValueChange={setContactValue}
+          onContactBlur={() => setTouchedContact(true)}
+          onBack={() => switchAuthMode("signin")}
           onDismissError={() => setInlineError("")}
           onDisplayNameChange={setDisplayName}
           onPasswordChange={setPassword}
@@ -551,6 +561,27 @@ function IdentifierGate({
   );
 }
 
+function AuthTabs({
+  authMode,
+  onChange,
+}: {
+  authMode: AuthMode;
+  onChange: (mode: AuthMode) => void;
+}) {
+  return (
+    <div className="mb-5 grid grid-cols-2 gap-1 rounded-full bg-background/50 p-1">
+      {([
+        ["signin", "Sign in"],
+        ["signup", "Sign up"],
+      ] as const).map(([value, label]) => (
+        <PillButton key={value} active={authMode === value} onClick={() => onChange(value)}>
+          {label}
+        </PillButton>
+      ))}
+    </div>
+  );
+}
+
 function SignupChoice({
   identifier,
   method,
@@ -650,6 +681,9 @@ function PasswordScreen({
 function SignupScreen({
   identifier,
   method,
+  contactMethod,
+  contactValue,
+  contactError,
   displayName,
   password,
   role,
@@ -657,6 +691,9 @@ function SignupScreen({
   loading,
   onBack,
   onDismissError,
+  onContactMethodChange,
+  onContactValueChange,
+  onContactBlur,
   onDisplayNameChange,
   onPasswordChange,
   onRoleChange,
@@ -664,6 +701,9 @@ function SignupScreen({
 }: {
   identifier: string;
   method: ContactMethod;
+  contactMethod: ContactMethod;
+  contactValue: string;
+  contactError: string;
   displayName: string;
   password: string;
   role: "listener" | "artist";
@@ -671,6 +711,9 @@ function SignupScreen({
   loading: boolean;
   onBack: () => void;
   onDismissError: () => void;
+  onContactMethodChange: (method: ContactMethod) => void;
+  onContactValueChange: (value: string) => void;
+  onContactBlur: () => void;
   onDisplayNameChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
   onRoleChange: (role: "listener" | "artist") => void;
@@ -678,9 +721,26 @@ function SignupScreen({
 }) {
   return (
     <form onSubmit={onSubmit} className="space-y-5">
-      <BackButton onClick={onBack} />
       <AuthHeading title="Create Your Account" subtitle="SHY will send a code to verify this account." />
-      <IdentifierBadge identifier={identifier} method={method} />
+      {identifier ? (
+        <IdentifierBadge identifier={identifier} method={method} />
+      ) : (
+        <>
+          <ContactMethodToggle contactMethod={contactMethod} onChange={onContactMethodChange} />
+          <Field label={contactMethod === "email" ? "Email" : "Phone number"} error={contactError}>
+            <input
+              type={contactMethod === "email" ? "email" : "tel"}
+              value={contactValue}
+              onChange={(event) => onContactValueChange(event.target.value)}
+              onBlur={onContactBlur}
+              className={inputClass}
+              autoComplete={contactMethod === "email" ? "email" : "tel"}
+              placeholder={contactMethod === "email" ? "you@example.com" : "+260 97 000 0000"}
+              required
+            />
+          </Field>
+        </>
+      )}
       <InlineBanner message={inlineError} onDismiss={onDismissError} />
       <Field label="Display name">
         <input
@@ -719,6 +779,13 @@ function SignupScreen({
       <PrimaryButton loading={loading} disabled={!displayName.trim() || !password} loadingLabel="Sending code...">
         Create account
       </PrimaryButton>
+      <button
+        type="button"
+        onClick={onBack}
+        className="w-full text-center text-xs font-semibold text-primary-glow hover:text-foreground"
+      >
+        I already have an account
+      </button>
     </form>
   );
 }
@@ -1196,20 +1263,6 @@ function IdentifierBadge({
       <span>{maskIdentifier(identifier, method)}</span>
     </div>
   );
-}
-
-async function checkIdentifier(identifier: string, type: ContactMethod) {
-  const { data, error } = await supabase.functions.invoke<IdentifierLookup>(
-    "check-identifier",
-    {
-      body: { identifier, type },
-    },
-  );
-  if (error) throw error;
-  if (!data || typeof data.exists !== "boolean") {
-    throw new Error("The account check returned an unexpected response.");
-  }
-  return data;
 }
 
 function validateContact(method: ContactMethod, value: string) {
