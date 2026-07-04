@@ -21,7 +21,6 @@ import {
 import type { Session } from "@supabase/supabase-js";
 import { z } from "zod";
 import { ShyLogo } from "@/components/ShyLogo";
-import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { withBasePath } from "@/lib/assets";
 
@@ -62,7 +61,6 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const [authMode, setAuthMode] = useState<AuthMode>("signin");
   const [stage, setStage] = useState<AuthStage>("identifier");
   const [contactMethod, setContactMethod] = useState<ContactMethod>("email");
@@ -94,10 +92,6 @@ function AuthPage() {
     setContactMethod(remembered.contactMethod);
     setContactValue(remembered.contactValue);
   }, []);
-
-  useEffect(() => {
-    if (user && !phoneResetVerified && stage === "identifier") navigate({ to: "/" });
-  }, [user, phoneResetVerified, stage, navigate]);
 
   const contactError = useMemo(
     () => (touchedContact ? validateContact(contactMethod, contactValue) : ""),
