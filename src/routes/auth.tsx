@@ -16,6 +16,7 @@ import {
   type ClipboardEvent,
   type FormEvent,
   type KeyboardEvent,
+  type RefObject,
   type ReactNode,
 } from "react";
 import type { Session } from "@supabase/supabase-js";
@@ -78,6 +79,7 @@ function AuthPage() {
   const [successMessage, setSuccessMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [phoneResetVerified, setPhoneResetVerified] = useState(false);
+  const contactInputRef = useRef<HTMLInputElement | null>(null);
   const [otpRequest, setOtpRequest] = useState<{
     contactMethod: ContactMethod;
     contactValue: string;
@@ -97,6 +99,10 @@ function AuthPage() {
     () => (touchedContact ? validateContact(contactMethod, contactValue) : ""),
     [contactMethod, contactValue, touchedContact],
   );
+
+  function readContactValue() {
+    return contactInputRef.current?.value ?? contactValue;
+  }
 
   function onSignedIn(_session: Session | null) {
     rememberCurrentDetails();
@@ -150,13 +156,15 @@ function AuthPage() {
     setInlineError("");
     setSuccessMessage("");
 
-    const validation = validateContact(contactMethod, contactValue);
+    const rawContactValue = readContactValue();
+    setContactValue(rawContactValue);
+    const validation = validateContact(contactMethod, rawContactValue);
     if (validation) {
       setInlineError(validation);
       return;
     }
 
-    const identifier = authContactValue(contactMethod, contactValue);
+    const identifier = authContactValue(contactMethod, rawContactValue);
     console.log("SHY auth identifier", { type: contactMethod, identifier });
     setResolvedIdentifier(identifier);
     setResolvedMethod(contactMethod);
@@ -197,11 +205,13 @@ function AuthPage() {
     setInlineError("");
     setLoading(true);
     try {
-      const validation = validateContact(contactMethod, contactValue);
+      const rawContactValue = readContactValue();
+      setContactValue(rawContactValue);
+      const validation = validateContact(contactMethod, rawContactValue);
       if (validation) throw new Error(validation);
       displayNameSchema.parse(displayName);
       passwordSchema.parse(password);
-      const identifier = authContactValue(contactMethod, contactValue);
+      const identifier = authContactValue(contactMethod, rawContactValue);
       setResolvedIdentifier(identifier);
       setResolvedMethod(contactMethod);
       await sendOtp(contactMethod, identifier, "signup", false);
@@ -353,6 +363,7 @@ function AuthPage() {
       {stage === "identifier" && (
         <IdentifierGate
           contactMethod={contactMethod}
+          contactInputRef={contactInputRef}
           contactValue={contactValue}
           contactError={contactError}
           inlineError={inlineError}
@@ -361,8 +372,10 @@ function AuthPage() {
           onSubmit={submitIdentifier}
           onDismissError={() => setInlineError("")}
           onContactMethodChange={switchContactMethod}
-          onContactValueChange={setContactValue}
-          onContactBlur={() => setTouchedContact(true)}
+          onContactBlur={(value) => {
+            setContactValue(value);
+            setTouchedContact(true);
+          }}
           onRememberChange={(checked) => {
             setRememberMe(checked);
             if (!checked) window.localStorage.removeItem(REMEMBER_KEY);
@@ -432,6 +445,7 @@ function AuthPage() {
           identifier={resolvedIdentifier}
           method={resolvedMethod}
           contactMethod={contactMethod}
+          contactInputRef={contactInputRef}
           contactValue={contactValue}
           contactError={contactError}
           displayName={displayName}
@@ -440,8 +454,10 @@ function AuthPage() {
           inlineError={inlineError}
           loading={loading}
           onContactMethodChange={switchContactMethod}
-          onContactValueChange={setContactValue}
-          onContactBlur={() => setTouchedContact(true)}
+          onContactBlur={(value) => {
+            setContactValue(value);
+            setTouchedContact(true);
+          }}
           onBack={() => switchAuthMode("signin")}
           onDismissError={() => setInlineError("")}
           onDisplayNameChange={setDisplayName}
@@ -484,6 +500,7 @@ function AuthPage() {
 
 function IdentifierGate({
   contactMethod,
+  contactInputRef,
   contactValue,
   contactError,
   inlineError,
@@ -492,12 +509,12 @@ function IdentifierGate({
   onSubmit,
   onDismissError,
   onContactMethodChange,
-  onContactValueChange,
   onContactBlur,
   onRememberChange,
   onOAuth,
 }: {
   contactMethod: ContactMethod;
+  contactInputRef: RefObject<HTMLInputElement | null>;
   contactValue: string;
   contactError: string;
   inlineError: string;
@@ -506,8 +523,7 @@ function IdentifierGate({
   onSubmit: (event: FormEvent) => void;
   onDismissError: () => void;
   onContactMethodChange: (method: ContactMethod) => void;
-  onContactValueChange: (value: string) => void;
-  onContactBlur: () => void;
+  onContactBlur: (value: string) => void;
   onRememberChange: (checked: boolean) => void;
   onOAuth: (provider: "google" | "facebook" | "apple") => void;
 }) {
@@ -520,12 +536,16 @@ function IdentifierGate({
 
       <Field label={contactMethod === "email" ? "Email" : "Phone number"} error={contactError}>
         <input
-          type={contactMethod === "email" ? "email" : "tel"}
-          value={contactValue}
-          onChange={(event) => onContactValueChange(event.target.value)}
-          onBlur={onContactBlur}
+          key={contactMethod}
+          ref={contactInputRef}
+          type={contactMethod === "email" ? "text" : "tel"}
+          inputMode={contactMethod === "email" ? "email" : "tel"}
+          defaultValue={contactValue}
+          onBlur={(event) => onContactBlur(event.currentTarget.value)}
           className={inputClass}
-          autoComplete={contactMethod === "email" ? "email" : "tel"}
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
           placeholder={contactMethod === "email" ? "you@example.com" : "+260 97 000 0000"}
           required
         />
@@ -543,7 +563,7 @@ function IdentifierGate({
 
       <PrimaryButton
         loading={loading}
-        disabled={Boolean(contactError) || !contactValue.trim()}
+        disabled={Boolean(contactError)}
         loadingLabel="Checking..."
       >
         Continue
@@ -676,6 +696,7 @@ function SignupScreen({
   identifier,
   method,
   contactMethod,
+  contactInputRef,
   contactValue,
   contactError,
   displayName,
@@ -686,7 +707,6 @@ function SignupScreen({
   onBack,
   onDismissError,
   onContactMethodChange,
-  onContactValueChange,
   onContactBlur,
   onDisplayNameChange,
   onPasswordChange,
@@ -696,6 +716,7 @@ function SignupScreen({
   identifier: string;
   method: ContactMethod;
   contactMethod: ContactMethod;
+  contactInputRef: RefObject<HTMLInputElement | null>;
   contactValue: string;
   contactError: string;
   displayName: string;
@@ -706,8 +727,7 @@ function SignupScreen({
   onBack: () => void;
   onDismissError: () => void;
   onContactMethodChange: (method: ContactMethod) => void;
-  onContactValueChange: (value: string) => void;
-  onContactBlur: () => void;
+  onContactBlur: (value: string) => void;
   onDisplayNameChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
   onRoleChange: (role: "listener" | "artist") => void;
@@ -723,12 +743,16 @@ function SignupScreen({
           <ContactMethodToggle contactMethod={contactMethod} onChange={onContactMethodChange} />
           <Field label={contactMethod === "email" ? "Email" : "Phone number"} error={contactError}>
             <input
-              type={contactMethod === "email" ? "email" : "tel"}
-              value={contactValue}
-              onChange={(event) => onContactValueChange(event.target.value)}
-              onBlur={onContactBlur}
+              key={contactMethod}
+              ref={contactInputRef}
+              type={contactMethod === "email" ? "text" : "tel"}
+              inputMode={contactMethod === "email" ? "email" : "tel"}
+              defaultValue={contactValue}
+              onBlur={(event) => onContactBlur(event.currentTarget.value)}
               className={inputClass}
-              autoComplete={contactMethod === "email" ? "email" : "tel"}
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
               placeholder={contactMethod === "email" ? "you@example.com" : "+260 97 000 0000"}
               required
             />
