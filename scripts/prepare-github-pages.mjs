@@ -7,6 +7,10 @@ const normalizedBase = basePath.endsWith("/") ? basePath : `${basePath}/`;
 
 await rename(join(outDir, "github-pages.html"), join(outDir, "index.html"));
 await copyFile(join(outDir, "index.html"), join(outDir, "404.html"));
+for (const route of ["admin", "become-artist", "dashboard", "library", "upload"]) {
+  await mkdir(join(outDir, route), { recursive: true });
+  await copyFile(join(outDir, "index.html"), join(outDir, route, "index.html"));
+}
 await mkdir(join(outDir, "auth"), { recursive: true });
 await writeFile(join(outDir, ".nojekyll"), "");
 

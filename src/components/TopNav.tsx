@@ -1,9 +1,10 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { Search, Upload, LogIn, User as UserIcon, BarChart3, Shield, Music2 } from "lucide-react";
+import { Search, Upload, LogIn, LogOut, UserPlus, BarChart3, Shield, Music2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { ShyLogo } from "./ShyLogo";
 import { NotificationsBell } from "./NotificationsBell";
 import { useAuth } from "@/contexts/AuthContext";
+import { withBasePath } from "@/lib/assets";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -124,55 +125,66 @@ export function TopNav() {
           <div className="flex items-center gap-2">
             <NotificationsBell />
             {isArtist && (
-              <Link
-                to="/upload"
+              <a
+                href={withBasePath("/upload/")}
                 className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full bg-gradient-primary text-primary-foreground font-medium shadow-glow-soft hover:opacity-90"
               >
                 <Upload className="w-3.5 h-3.5" /> Upload
-              </Link>
+              </a>
             )}
-            <DropdownMenu>
-              <DropdownMenuTrigger className="w-8 h-8 rounded-full bg-primary/20 hairline flex items-center justify-center text-primary-glow text-xs hover:bg-primary/30 transition-colors">
+            {isArtist && (
+              <a
+                href={withBasePath("/dashboard/")}
+                title="Open dashboard"
+                className="inline-flex h-8 w-8 lg:h-auto lg:w-auto items-center justify-center lg:gap-1.5 lg:px-3 lg:py-1.5 text-xs rounded-full bg-surface-elevated text-foreground font-medium hairline hover:text-primary-glow"
+              >
+                <BarChart3 className="w-3.5 h-3.5" />
+                <span className="hidden lg:inline">Dashboard</span>
+              </a>
+            )}
+            {isAdmin && (
+              <a
+                href={withBasePath("/admin/")}
+                title="Open admin"
+                className="inline-flex h-8 w-8 lg:h-auto lg:w-auto items-center justify-center lg:gap-1.5 lg:px-3 lg:py-1.5 text-xs rounded-full bg-surface-elevated text-foreground font-medium hairline hover:text-primary-glow"
+              >
+                <Shield className="w-3.5 h-3.5" />
+                <span className="hidden lg:inline">Admin</span>
+              </a>
+            )}
+            {!isArtist && (
+              <a
+                href={withBasePath("/become-artist/")}
+                title="Become an artist"
+                className="hidden sm:inline-flex h-8 w-8 lg:h-auto lg:w-auto items-center justify-center lg:gap-1.5 lg:px-3 lg:py-1.5 text-xs rounded-full bg-surface-elevated text-foreground font-medium hairline hover:text-primary-glow"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span className="hidden lg:inline">Become artist</span>
+              </a>
+            )}
+            <a
+              href={withBasePath(isAdmin ? "/admin/" : isArtist ? "/dashboard/" : "/library/")}
+              title={isAdmin ? "Open admin" : isArtist ? "Open dashboard" : "Open library"}
+              className="w-8 h-8 rounded-full bg-primary/20 hairline flex items-center justify-center text-primary-glow text-xs hover:bg-primary/30 transition-colors"
+            >
                 {(user.email?.[0] ?? "U").toUpperCase()}
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <div className="px-2 py-1.5 text-xs text-muted-foreground truncate">{user.email}</div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link to="/library"><UserIcon className="w-4 h-4 mr-2" />Library</Link>
-                </DropdownMenuItem>
-                {isArtist && (
-                  <DropdownMenuItem asChild>
-                    <Link to="/dashboard"><BarChart3 className="w-4 h-4 mr-2" />Dashboard</Link>
-                  </DropdownMenuItem>
-                )}
-                {isArtist && (
-                  <DropdownMenuItem asChild>
-                    <Link to="/upload"><Upload className="w-4 h-4 mr-2" />Upload</Link>
-                  </DropdownMenuItem>
-                )}
-                {!isArtist && (
-                  <DropdownMenuItem asChild>
-                    <Link to="/become-artist">Become an artist</Link>
-                  </DropdownMenuItem>
-                )}
-                {isAdmin && (
-                  <DropdownMenuItem asChild>
-                    <Link to="/admin"><Shield className="w-4 h-4 mr-2" />Admin</Link>
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => signOut()}>Sign out</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            </a>
+            <button
+              type="button"
+              title="Sign out"
+              onClick={() => void signOut()}
+              className="hidden sm:inline-flex h-8 w-8 items-center justify-center rounded-full bg-surface-elevated text-muted-foreground hairline hover:text-foreground"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
           </div>
         ) : (
-          <Link
-            to="/auth"
+          <a
+            href={withBasePath("/auth/")}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full bg-gradient-primary text-primary-foreground font-medium shadow-glow-soft hover:opacity-90"
           >
             <LogIn className="w-3.5 h-3.5" /> Sign in
-          </Link>
+          </a>
         )}
       </div>
 
