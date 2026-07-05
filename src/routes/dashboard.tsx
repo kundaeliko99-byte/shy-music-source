@@ -1,6 +1,6 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { BarChart3, TrendingUp, Users, Music2, Pencil, Save, ShoppingBag, BadgeDollarSign, Globe2, Tags, CalendarClock } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { BarChart3, TrendingUp, Users, Music2, Pencil, Save, ShoppingBag, Tags } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { Cover } from "@/components/Cover";
@@ -234,7 +234,7 @@ function DashboardPage() {
   );
 }
 
-function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function StatCard({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
     <div className="bg-surface/60 hairline rounded-xl px-4 py-3 min-w-[140px]">
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1">
@@ -242,6 +242,15 @@ function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string
       </div>
       <div className="text-xl font-semibold mt-0.5 tabular-nums">{value}</div>
     </div>
+  );
+}
+
+function FieldLite({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="space-y-1.5">
+      <span className="block text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">{label}</span>
+      {children}
+    </label>
   );
 }
 

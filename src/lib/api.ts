@@ -94,6 +94,22 @@ function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function sundayWeekStart() {
+  const now = new Date();
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - start.getDay());
+  return start;
+}
+
+function sundayWeekStartIsoDate() {
+  return sundayWeekStart().toISOString().slice(0, 10);
+}
+
+function sundayWeekStartIsoTime() {
+  return sundayWeekStart().toISOString();
+}
+
 export async function fetchNewThisWeek(limit = 12): Promise<TrackRow[]> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data } = await supabase
@@ -117,7 +133,7 @@ export async function fetchTrendingTracks(limit = 12): Promise<TrackRow[]> {
 }
 
 export async function fetchTopTrack(): Promise<TrackRow | null> {
-  const list = await fetchTrendingTracks(1);
+  const list = await fetchChart({ limit: 1 });
   return list[0] ?? null;
 }
 
@@ -237,7 +253,7 @@ export async function fetchAlbumSpotlights(limit = 10): Promise<{
   });
 
   const now = Date.now();
-  const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const thisSunday = sundayWeekStartIsoDate();
   const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10);
 
@@ -250,7 +266,7 @@ export async function fetchAlbumSpotlights(limit = 10): Promise<{
   };
 
   return {
-    week: pick(sevenDaysAgo),
+    week: pick(thisSunday),
     month: pick(thirtyDaysAgo),
     year: pick(yearStart),
   };
@@ -361,7 +377,7 @@ export async function fetchArtistTracks(artistId: string, limit = 20): Promise<T
 }
 
 /**
- * Charts: rolling 7-day plays per track, optionally filtered by country.
+ * Charts: Sunday-starting weekly plays per track, optionally filtered by country.
  * Returns rank-ordered tracks with `weekly_plays`.
  */
 export interface ChartEntry extends TrackRow {
@@ -377,7 +393,7 @@ const BOOSTED_ARTIST_MULTIPLIERS: Record<string, number> = {
 
 export async function fetchChart(opts: { country?: string; limit?: number } = {}): Promise<ChartEntry[]> {
   const limit = opts.limit ?? 20;
-  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const since = sundayWeekStartIsoTime();
   let q = supabase.from("plays").select("track_id, country").gte("played_at", since);
   if (opts.country) q = q.eq("country", opts.country);
   const { data: plays } = await q;
