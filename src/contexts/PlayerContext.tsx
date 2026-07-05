@@ -59,7 +59,7 @@ const PlayerContext = createContext<PlayerContextValue | undefined>(undefined);
 const PLAY_THRESHOLD_SECONDS = 30;
 
 const TRACK_SELECT_MIN = `
-  id, title, cover_url, audio_url, duration_seconds, artwork_shape, lyrics, album_id, genre,
+  id, title, cover_url, audio_url, duration_seconds, artwork_shape, lyrics, album_id, genre, artist_id,
   artists ( display_name, slug )
 `;
 
@@ -73,6 +73,7 @@ type RawTrack = {
   lyrics: string | null;
   album_id: string | null;
   genre: string | null;
+  artist_id: string;
   artists: { display_name: string; slug: string } | null;
 };
 

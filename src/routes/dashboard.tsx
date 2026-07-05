@@ -58,52 +58,79 @@ function DashboardPage() {
   const [tracks, setTracks] = useState<TrackRow[]>([]);
   const [countries, setCountries] = useState<Array<{ country: string; plays: number }>>([]);
   const [loading, setLoading] = useState(true);
+  const [loadWarning, setLoadWarning] = useState<string | null>(null);
 
   useEffect(() => {
+    let alive = true;
+
     (async () => {
-      const { data: u } = await supabase.auth.getUser();
-      if (!u.user) return;
-      const { data: a } = await supabase
-        .from("artists")
-        .select("id, display_name, slug, monthly_listeners, avatar_url, banner_url, bio, contact_email, country, mobile_money_number, mobile_money_network, ai_tools_used, instagram_url, facebook_url, twitter_url, tiktok_url, youtube_url")
-        .eq("user_id", u.user.id)
-        .maybeSingle();
-      if (!a) {
-        setLoading(false);
-        return;
-      }
-      setArtist(a as ArtistRow);
+      try {
+        const { data: u, error: userError } = await supabase.auth.getUser();
+        if (userError) throw userError;
+        if (!u.user) return;
 
-      const { data: t } = await supabase
-        .from("tracks")
-        .select("id, title, cover_url, audio_url, duration_seconds, genre, mood, ai_tool, lyrics, explicit, plays_count, release_date, artist_id, album_id, artwork_shape, artists(display_name, slug, verified)")
-        .eq("artist_id", a.id)
-        .order("plays_count", { ascending: false })
-        .limit(20);
-      setTracks((t ?? []) as unknown as TrackRow[]);
+        const { data: a, error: artistError } = await supabase
+          .from("artists")
+          .select("id, display_name, slug, monthly_listeners, avatar_url, banner_url, bio, contact_email, country, mobile_money_number, mobile_money_network, ai_tools_used, instagram_url, facebook_url, twitter_url, tiktok_url, youtube_url")
+          .eq("user_id", u.user.id)
+          .maybeSingle();
 
-      // Country breakdown from plays (RLS lets the artist read their own track plays)
-      const trackIds = (t ?? []).map((x) => x.id);
-      if (trackIds.length) {
-        const { data: p } = await supabase
-          .from("plays")
-          .select("country")
-          .in("track_id", trackIds)
-          .limit(1000);
-        const m = new Map<string, number>();
-        for (const row of p ?? []) {
-          const c = row.country ?? "??";
-          m.set(c, (m.get(c) ?? 0) + 1);
+        if (artistError) throw artistError;
+        if (!a) return;
+        if (!alive) return;
+
+        const artistRow = a as ArtistRow;
+        setArtist(artistRow);
+
+        const { data: t, error: trackError } = await supabase
+          .from("tracks")
+          .select("id, title, cover_url, audio_url, duration_seconds, genre, mood, ai_tool, lyrics, explicit, plays_count, release_date, artist_id, album_id, artwork_shape, artists(display_name, slug, verified)")
+          .eq("artist_id", artistRow.id)
+          .order("plays_count", { ascending: false })
+          .limit(20);
+
+        if (trackError) {
+          setLoadWarning("Some music analytics could not be loaded yet.");
+          setTracks([]);
+          return;
         }
-        const arr = [...m.entries()]
-          .map(([country, plays]) => ({ country, plays }))
-          .sort((a, b) => b.plays - a.plays)
-          .slice(0, 6);
-        setCountries(arr);
-      }
 
-      setLoading(false);
+        const trackRows = (t ?? []) as unknown as TrackRow[];
+        if (!alive) return;
+        setTracks(trackRows);
+
+        const trackIds = trackRows.map((x) => x.id).slice(0, 50);
+        if (trackIds.length) {
+          const { data: p, error: playsError } = await supabase
+            .from("plays")
+            .select("country")
+            .in("track_id", trackIds)
+            .limit(300);
+
+          if (!playsError && alive) {
+            const m = new Map<string, number>();
+            for (const row of p ?? []) {
+              const c = row.country ?? "??";
+              m.set(c, (m.get(c) ?? 0) + 1);
+            }
+            const arr = [...m.entries()]
+              .map(([country, plays]) => ({ country, plays }))
+              .sort((a, b) => b.plays - a.plays)
+              .slice(0, 6);
+            setCountries(arr);
+          }
+        }
+      } catch (error) {
+        console.error("Dashboard failed to load", error);
+        if (alive) setLoadWarning("Dashboard data could not be fully loaded. You can still use profile and music controls.");
+      } finally {
+        if (alive) setLoading(false);
+      }
     })();
+
+    return () => {
+      alive = false;
+    };
   }, []);
 
   if (loading) {
@@ -151,6 +178,12 @@ function DashboardPage() {
           <Pencil className="w-3.5 h-3.5" /> Edit Profile
         </Link>
       </header>
+
+      {loadWarning && (
+        <div className="mb-4 rounded-xl border border-primary/25 bg-primary/10 px-4 py-3 text-sm text-muted-foreground">
+          {loadWarning}
+        </div>
+      )}
 
       <ProfileStudio artist={artist} onSaved={setArtist} />
 

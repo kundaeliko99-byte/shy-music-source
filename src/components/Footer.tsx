@@ -24,7 +24,7 @@ export function Footer() {
           <nav className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-zinc-400" aria-label="Footer navigation">
             <Link to="/" className="hover:text-white">Home</Link>
             <Link to="/artists" className="hover:text-white">Artists</Link>
-            <Link to="/discover" search={{ q: "", genre: "", mood: "", ai_tool: "" }} className="hover:text-white">Discover</Link>
+            <Link to="/discover" search={{ q: "", vibes: [], genres: [], mood: "", ai_tool: "" }} className="hover:text-white">Discover</Link>
             <a href={withBasePath("/#watch-out")} className="hover:text-white">Watch Out</a>
             <a href="mailto:support@shymusic.app" className="hover:text-white">Contact Support</a>
           </nav>

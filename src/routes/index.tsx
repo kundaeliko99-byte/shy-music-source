@@ -16,6 +16,7 @@ import {
   fetchAlbumSpotlights,
   fetchUpcomingReleases,
   toPlayerTrack,
+  type AlbumSummary,
   type TrackRow,
   type UpcomingRelease,
 } from "@/lib/api";
@@ -130,7 +131,7 @@ function HomePage() {
               </p>
               <div className="mt-4 flex gap-2">
                 <Link to="/auth" className="bg-primary text-primary-foreground px-4 py-2 rounded-full text-sm font-medium shadow-glow-soft">Get started</Link>
-                <Link to="/discover" search={{ q: "", genre: "", mood: "", ai_tool: "" }} className="bg-surface hairline px-4 py-2 rounded-full text-sm font-medium">Browse</Link>
+                <Link to="/discover" search={{ q: "", vibes: [], genres: [], mood: "", ai_tool: "" }} className="bg-surface hairline px-4 py-2 rounded-full text-sm font-medium">Browse</Link>
               </div>
             </div>
           </div>
@@ -140,7 +141,7 @@ function HomePage() {
       {/* Fresh Drops */}
       <HorizontalRow
         title="Fresh Drops"
-        action={<Link to="/discover" search={{ q: "", genre: "", mood: "", ai_tool: "" }} className="text-xs text-muted-foreground hover:text-foreground">See all</Link>}
+        action={<Link to="/discover" search={{ q: "", vibes: [], genres: [], mood: "", ai_tool: "" }} className="text-xs text-muted-foreground hover:text-foreground">See all</Link>}
       >
         {loading
           ? Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="w-[140px] h-[180px]" />)
