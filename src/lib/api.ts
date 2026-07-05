@@ -52,6 +52,20 @@ export interface AlbumDetail extends Omit<AlbumSummary, "track_count" | "total_p
   ai_tool: string | null;
 }
 
+export interface UpcomingRelease {
+  id: string;
+  title: string;
+  release_type: "Song" | "Album";
+  artist_name: string;
+  artist_slug: string | null;
+  cover_url: string | null;
+  artwork_shape: ArtworkShape;
+  release_date: string;
+  description: string;
+  genre: string;
+  teaser_url: string | null;
+}
+
 export function toPlayerTrack(t: TrackRow): PlayerTrack {
   return {
     id: t.id,
@@ -76,12 +90,17 @@ const TRACK_SELECT = `
   albums ( id, title, cover_url, artwork_shape, release_type )
 `;
 
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export async function fetchNewThisWeek(limit = 12): Promise<TrackRow[]> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data } = await supabase
     .from("tracks")
     .select(TRACK_SELECT)
     .gte("release_date", sevenDaysAgo.slice(0, 10))
+    .lte("release_date", todayIsoDate())
     .order("release_date", { ascending: false })
     .limit(limit);
   return (data ?? []) as unknown as TrackRow[];
@@ -91,6 +110,7 @@ export async function fetchTrendingTracks(limit = 12): Promise<TrackRow[]> {
   const { data } = await supabase
     .from("tracks")
     .select(TRACK_SELECT)
+    .lte("release_date", todayIsoDate())
     .order("plays_count", { ascending: false })
     .limit(limit);
   return (data ?? []) as unknown as TrackRow[];
@@ -109,7 +129,11 @@ export async function fetchAllTracks(opts: {
   ai_tool?: string;
   limit?: number;
 } = {}): Promise<TrackRow[]> {
-  let q = supabase.from("tracks").select(TRACK_SELECT).order("plays_count", { ascending: false });
+  let q = supabase
+    .from("tracks")
+    .select(TRACK_SELECT)
+    .lte("release_date", todayIsoDate())
+    .order("plays_count", { ascending: false });
   if (opts.genres && opts.genres.length > 0) q = q.in("genre", opts.genres as never);
   else if (opts.genre) q = q.eq("genre", opts.genre as never);
   if (opts.mood) q = q.eq("mood", opts.mood as never);
@@ -131,6 +155,7 @@ export async function fetchFreshInk(limit = 20): Promise<TrackRow[]> {
     .from("tracks")
     .select(TRACK_SELECT)
     .gte("release_date", fourteenDaysAgo)
+    .lte("release_date", todayIsoDate())
     .order("release_date", { ascending: false })
     .limit(80);
   const all = (data ?? []) as unknown as TrackRow[];
@@ -190,6 +215,7 @@ export async function fetchAlbumSpotlights(limit = 10): Promise<{
       artists ( display_name, slug, verified, avatar_url ),
       tracks ( id, plays_count )
     `)
+    .lte("release_date", todayIsoDate())
     .order("release_date", { ascending: false })
     .limit(100);
 
@@ -230,6 +256,69 @@ export async function fetchAlbumSpotlights(limit = 10): Promise<{
   };
 }
 
+export async function fetchUpcomingReleases(limit = 8): Promise<UpcomingRelease[]> {
+  const today = new Date().toISOString().slice(0, 10);
+  const [trackResult, albumResult] = await Promise.all([
+    supabase
+      .from("tracks")
+      .select(TRACK_SELECT)
+      .gt("release_date", today)
+      .order("release_date", { ascending: true })
+      .limit(limit),
+    supabase
+      .from("albums")
+      .select(`
+        id, title, cover_url, release_type, artwork_shape, release_date,
+        artists ( display_name, slug, verified, avatar_url )
+      `)
+      .gt("release_date", today)
+      .order("release_date", { ascending: true })
+      .limit(limit),
+  ]);
+
+  const tracks = ((trackResult.data ?? []) as unknown as TrackRow[]).map((track) => ({
+    id: `track:${track.id}`,
+    title: track.title,
+    release_type: "Song" as const,
+    artist_name: track.artists?.display_name ?? "Unknown songwriter",
+    artist_slug: track.artists?.slug ?? null,
+    cover_url: track.cover_url,
+    artwork_shape: track.artwork_shape ?? "circle",
+    release_date: track.release_date,
+    description: track.lyrics
+      ? "A songwriter preview is ready. Full listening unlocks on release day."
+      : "A new SHY song is being prepared for release.",
+    genre: track.genre,
+    teaser_url: track.audio_url || null,
+  }));
+
+  const albums = ((albumResult.data ?? []) as Array<{
+    id: string;
+    title: string;
+    cover_url: string | null;
+    release_type: string | null;
+    artwork_shape: ArtworkShape | null;
+    release_date: string;
+    artists: { display_name: string; slug: string } | null;
+  }>).map((album) => ({
+    id: `album:${album.id}`,
+    title: album.title,
+    release_type: "Album" as const,
+    artist_name: album.artists?.display_name ?? "Unknown songwriter",
+    artist_slug: album.artists?.slug ?? null,
+    cover_url: album.cover_url,
+    artwork_shape: album.artwork_shape ?? "circle",
+    release_date: album.release_date,
+    description: "A full project is queued for SHY listeners.",
+    genre: album.release_type ?? "Album",
+    teaser_url: null,
+  }));
+
+  return [...tracks, ...albums]
+    .sort((a, b) => a.release_date.localeCompare(b.release_date))
+    .slice(0, limit);
+}
+
 export async function fetchAlbumById(id: string): Promise<AlbumDetail | null> {
   const { data } = await supabase
     .from("albums")
@@ -265,6 +354,7 @@ export async function fetchArtistTracks(artistId: string, limit = 20): Promise<T
     .from("tracks")
     .select(TRACK_SELECT)
     .eq("artist_id", artistId)
+    .lte("release_date", todayIsoDate())
     .order("plays_count", { ascending: false })
     .limit(limit);
   return (data ?? []) as unknown as TrackRow[];

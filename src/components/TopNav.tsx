@@ -32,7 +32,7 @@ const MUSIC_NAV_GROUPS = [
   {
     label: "Rankings",
     items: [
-      { href: "/charts", label: "Charts", description: "Weekly SHY rankings" },
+      { href: "/#watch-out", label: "Watch Out", description: "Upcoming songs and albums" },
       { href: "/#fans-love", label: "Fans Love", description: "Fan-favorite songs" },
       { href: "/#fan-of-the-week", label: "Fan of the Week", description: "Top fan-loved pick" },
     ],
@@ -80,7 +80,7 @@ export function TopNav() {
           <DropdownMenu>
             <DropdownMenuTrigger
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors ${
-                ["/charts", "/fresh-ink"].some((path) => location.pathname.startsWith(path))
+                ["/fresh-ink"].some((path) => location.pathname.startsWith(path))
                   ? "bg-surface-elevated text-foreground"
                   : "text-muted-foreground hover:text-foreground"
               }`}
@@ -97,7 +97,7 @@ export function TopNav() {
                   </DropdownMenuLabel>
                   {group.items.map((item) => (
                     <DropdownMenuItem key={item.href} asChild>
-                      <a href={item.href} className="flex flex-col items-start gap-0.5 rounded-lg px-2 py-2">
+                      <a href={item.href.startsWith("/") ? withBasePath(item.href) : item.href} className="flex flex-col items-start gap-0.5 rounded-lg px-2 py-2">
                         <span className="text-sm font-medium">{item.label}</span>
                         <span className="text-[11px] text-muted-foreground">{item.description}</span>
                       </a>
@@ -219,7 +219,7 @@ export function TopNav() {
                 </DropdownMenuLabel>
                 {group.items.map((item) => (
                   <DropdownMenuItem key={item.href} asChild>
-                    <a href={item.href} className="flex flex-col items-start gap-0.5 rounded-lg px-2 py-2">
+                    <a href={item.href.startsWith("/") ? withBasePath(item.href) : item.href} className="flex flex-col items-start gap-0.5 rounded-lg px-2 py-2">
                       <span className="text-sm font-medium">{item.label}</span>
                       <span className="text-[11px] text-muted-foreground">{item.description}</span>
                     </a>

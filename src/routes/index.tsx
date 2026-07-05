@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Play, TrendingUp } from "lucide-react";
+import { CalendarClock, Music2, Play, Sparkles } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { AlbumCard } from "@/components/AlbumCard";
 import { Cover } from "@/components/Cover";
@@ -14,10 +14,10 @@ import {
   fetchTrendingTracks,
   fetchRisingArtists,
   fetchAlbumSpotlights,
-  fetchChart,
+  fetchUpcomingReleases,
   toPlayerTrack,
   type TrackRow,
-  type ChartEntry,
+  type UpcomingRelease,
 } from "@/lib/api";
 import { fmtCount } from "@/lib/format";
 
@@ -31,45 +31,41 @@ export const Route = createFileRoute("/")({
   component: HomePage,
 });
 
-type ChartTab = "Zambia" | "Africa" | "World";
-const TAB_COUNTRY: Record<ChartTab, string | undefined> = {
-  Zambia: "ZM",
-  Africa: undefined, // simplified for v1
-  World: undefined,
-};
-
 function HomePage() {
   const [top, setTop] = useState<TrackRow | null>(null);
   const [newWeek, setNewWeek] = useState<TrackRow[]>([]);
   const [trending, setTrending] = useState<TrackRow[]>([]);
   const [rising, setRising] = useState<Array<{ id: string; display_name: string; slug: string; avatar_url: string | null; verified: boolean; country: string | null; monthly_listeners: number }>>([]);
   const [albums, setAlbums] = useState<{ week: AlbumSummary[]; month: AlbumSummary[]; year: AlbumSummary[] }>({ week: [], month: [], year: [] });
-  const [chart, setChart] = useState<ChartEntry[]>([]);
-  const [chartTab, setChartTab] = useState<ChartTab>("World");
+  const [upcoming, setUpcoming] = useState<UpcomingRelease[]>([]);
+  const [now, setNow] = useState(Date.now());
   const [loading, setLoading] = useState(true);
   const { playTrack } = usePlayer();
 
   useEffect(() => {
     (async () => {
-      const [t, n, tr, r, al] = await Promise.all([
+      const [t, n, tr, r, al, up] = await Promise.all([
         fetchTopTrack(),
         fetchNewThisWeek(12),
         fetchTrendingTracks(12),
         fetchRisingArtists(10),
         fetchAlbumSpotlights(10),
+        fetchUpcomingReleases(8),
       ]);
       setTop(t);
       setNewWeek(n);
       setTrending(tr);
       setRising(r);
       setAlbums(al);
+      setUpcoming(up);
       setLoading(false);
     })();
   }, []);
 
   useEffect(() => {
-    fetchChart({ country: TAB_COUNTRY[chartTab], limit: 5 }).then(setChart);
-  }, [chartTab]);
+    const id = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   return (
     <AppShell>
@@ -257,73 +253,83 @@ function HomePage() {
         </HorizontalRow>
       )}
 
-      {/* Charts preview */}
-      <section id="charts-preview" className="bg-surface hairline rounded-xl p-4 mb-8 scroll-mt-24">
+      <section id="watch-out" className="bg-surface hairline rounded-xl p-4 mb-8 scroll-mt-24">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-semibold flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-primary-glow" /> Charts
+            <Sparkles className="w-4 h-4 text-primary-glow" /> WATCH OUT
           </h2>
-          <div className="flex gap-1">
-            {(["Zambia", "Africa", "World"] as ChartTab[]).map((t) => (
-              <button
-                key={t}
-                onClick={() => setChartTab(t)}
-                className={`text-[11px] px-2.5 py-1 rounded-full hairline transition-colors ${
-                  chartTab === t ? "bg-primary text-primary-foreground border-primary" : "text-muted-foreground"
-                }`}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
+          <Link
+            to="/upload"
+            className="inline-flex items-center gap-2 rounded-full bg-surface-elevated px-3 py-1.5 text-xs font-medium text-foreground hairline hover:text-primary-glow"
+          >
+            <CalendarClock className="h-3.5 w-3.5" /> Schedule a release
+          </Link>
         </div>
-        {chart.length === 0 ? (
-          <EmptyState title="Chart will populate as plays roll in" hint="Plays in the last 7 days determine ranking." />
+        {loading ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-56 w-full" />)}
+          </div>
+        ) : upcoming.length === 0 ? (
+          <EmptyState
+            title="No upcoming releases yet"
+            hint="When songwriters schedule future songs or albums, they will appear here before release day."
+          />
         ) : (
-          <div>
-            {chart.map((c) => (
-              <div key={c.id} className="flex items-center gap-3 py-2 hairline-b last:border-b-0">
-                <div className="w-5 text-center text-sm font-medium text-primary-glow">{c.rank}</div>
-                <Cover src={c.cover_url} seed={c.id} size={36} shape={c.artwork_shape ?? "circle"} />
-                <div className="flex-1 min-w-0">
-                  <Link
-                    to="/tracks/$id"
-                    params={{ id: c.id }}
-                    aria-label={`Open song page for ${c.title}`}
-                    className="block truncate text-xs font-medium hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-                  >
-                    {c.title}
-                  </Link>
-                  {c.artists ? (
-                    <Link
-                      to="/artists/$slug"
-                      params={{ slug: c.artists.slug }}
-                      aria-label={`Open artist profile for ${c.artists.display_name}`}
-                      className="block truncate text-[11px] text-muted-foreground hover:text-foreground hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-                    >
-                      {c.artists.display_name}
-                    </Link>
-                  ) : (
-                    <div className="text-[11px] text-muted-foreground truncate">Unknown</div>
-                  )}
-                </div>
-                <div className="text-right">
-                  <div className="text-[11px] text-primary-glow whitespace-nowrap">
-                    {fmtCount(c.weekly_plays || c.plays_count)} streams
-                  </div>
-                  {c.weekly_plays > 0 && c.rank <= 3 && (
-                    <span className="inline-block mt-0.5 text-[9px] px-1.5 py-0.5 rounded bg-primary/20 text-primary-glow">NEW</span>
-                  )}
-                </div>
-              </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {upcoming.map((release) => (
+              <UpcomingReleaseCard key={release.id} release={release} now={now} />
             ))}
-            <Link to="/charts" className="block text-center text-xs text-primary-glow mt-3 hover:underline">
-              View all charts →
-            </Link>
           </div>
         )}
       </section>
     </AppShell>
+  );
+}
+
+function UpcomingReleaseCard({ release, now }: { release: UpcomingRelease; now: number }) {
+  return (
+    <article className="group overflow-hidden rounded-lg bg-background/70 hairline transition duration-200 hover:-translate-y-1 hover:bg-surface-elevated hover:shadow-[0_18px_48px_-30px_var(--color-primary-glow)]">
+      <div className="relative">
+        <Cover
+          src={release.cover_url}
+          seed={release.id}
+          className="aspect-square w-full"
+          shape={release.artwork_shape ?? "rounded"}
+          glow
+        />
+        <span className="absolute left-2 top-2 rounded-full bg-background/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-primary-glow backdrop-blur">
+          Coming Soon
+        </span>
+        <span className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-full bg-primary px-2 py-1 text-[10px] font-semibold text-primary-foreground shadow-glow-soft">
+          <Music2 className="h-3 w-3" /> {release.release_type}
+        </span>
+      </div>
+      <div className="space-y-3 p-3">
+        <div>
+          <h3 className="truncate text-sm font-semibold text-foreground">{release.title}</h3>
+          {release.artist_slug ? (
+            <Link
+              to="/artists/$slug"
+              params={{ slug: release.artist_slug }}
+              className="block truncate text-xs text-muted-foreground hover:text-primary-glow hover:underline"
+            >
+              {release.artist_name}
+            </Link>
+          ) : (
+            <p className="truncate text-xs text-muted-foreground">{release.artist_name}</p>
+          )}
+        </div>
+        <p className="line-clamp-2 min-h-9 text-xs leading-relaxed text-muted-foreground">{release.description}</p>
+        <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+          <span className="truncate rounded-full bg-surface px-2 py-1 hairline">{prettyGenre(release.genre)}</span>
+          <span className="whitespace-nowrap">{formatReleaseDate(release.release_date)}</span>
+        </div>
+        <div className="rounded-lg border border-primary/20 bg-primary/10 px-3 py-2">
+          <div className="text-[10px] uppercase tracking-[0.16em] text-primary-glow">Countdown</div>
+          <div className="mt-0.5 text-sm font-semibold text-foreground">{formatCountdown(release.release_date, now)}</div>
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -334,4 +340,19 @@ function prettyGenre(g: string) {
 function prettyTool(t: string) {
   const map: Record<string, string> = { suno: "Suno", udio: "Udio", stable_audio: "Stable Audio", custom_model: "Custom Model", other: "Other" };
   return map[t] ?? t;
+}
+
+function formatReleaseDate(date: string) {
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(`${date}T12:00:00`));
+}
+
+function formatCountdown(date: string, now: number) {
+  const releaseTime = new Date(`${date}T00:00:00`).getTime();
+  const diff = releaseTime - now;
+  if (diff <= 0) return "Released today";
+  const days = Math.floor(diff / 86_400_000);
+  const hours = Math.floor((diff % 86_400_000) / 3_600_000);
+  if (days > 0) return `${days}d ${hours}h`;
+  const minutes = Math.max(1, Math.floor((diff % 3_600_000) / 60_000));
+  return `${hours}h ${minutes}m`;
 }
