@@ -14,7 +14,7 @@ function NotFoundComponent() {
         <h1 className="text-7xl font-bold text-foreground text-glow">404</h1>
         <h2 className="mt-4 text-xl font-semibold">Lost in the noise</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          That page does not exist on SHY. Try heading back to the charts.
+          That page does not exist on SHYMusic Creative. Try heading back home.
         </p>
         <div className="mt-6">
           <Link
@@ -34,21 +34,21 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "SHY - Songwriter Marketplace" },
-      { name: "description", content: "SHY is a marketplace and creative platform for songwriters, song discovery, rights management, fan support, and music buyer opportunities." },
-      { name: "author", content: "SHY" },
+      { title: "SHYMusic Creative" },
+      { name: "description", content: "SHYMusic Creative is a marketplace and creative platform for songwriters, song discovery, rights management, fan support, and music buyer opportunities." },
+      { name: "author", content: "SHYMusic Creative" },
       { name: "theme-color", content: "#0A0A0F" },
-      { name: "application-name", content: "SHY Music" },
-      { name: "apple-mobile-web-app-title", content: "SHY Music" },
+      { name: "application-name", content: "SHYMusic Creative" },
+      { name: "apple-mobile-web-app-title", content: "SHYMusic Creative" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
-      { property: "og:title", content: "SHY - Songwriter Marketplace" },
-      { property: "og:description", content: "SHY is a marketplace and creative platform for songwriters, song discovery, rights management, fan support, and music buyer opportunities." },
+      { property: "og:title", content: "SHYMusic Creative" },
+      { property: "og:description", content: "SHYMusic Creative is a marketplace and creative platform for songwriters, song discovery, rights management, fan support, and music buyer opportunities." },
       { property: "og:type", content: "website" },
       { property: "og:image", content: withBasePath("/assets/brand/shy-logo.png") },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: "SHY - Songwriter Marketplace" },
-      { name: "twitter:description", content: "SHY is a marketplace and creative platform for songwriters, song discovery, rights management, fan support, and music buyer opportunities." },
+      { name: "twitter:title", content: "SHYMusic Creative" },
+      { name: "twitter:description", content: "SHYMusic Creative is a marketplace and creative platform for songwriters, song discovery, rights management, fan support, and music buyer opportunities." },
       { name: "twitter:image", content: withBasePath("/assets/brand/shy-logo.png") },
     ],
     links: [

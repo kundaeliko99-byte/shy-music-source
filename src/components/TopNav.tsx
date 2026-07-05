@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { Search, Upload, LogIn, LogOut, UserPlus, BarChart3, Shield, Music2 } from "lucide-react";
+import { Search, Upload, LogIn, LogOut, UserPlus, BarChart3, Shield, Music2, Library, UserCircle } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { ShyLogo } from "./ShyLogo";
 import { NotificationsBell } from "./NotificationsBell";
@@ -48,6 +48,11 @@ export function TopNav() {
   const onSearch = (e: FormEvent) => {
     e.preventDefault();
     if (q.trim()) navigate({ to: "/discover", search: { q: q.trim() } as never });
+  };
+
+  const userInitial = (user?.email?.[0] ?? user?.phone?.[0] ?? "U").toUpperCase();
+  const confirmSignOut = () => {
+    if (window.confirm("Log out of SHYMusic Creative?")) void signOut();
   };
 
   return (
@@ -162,21 +167,47 @@ export function TopNav() {
                 <span className="hidden lg:inline">Become artist</span>
               </a>
             )}
-            <a
-              href={withBasePath(isAdmin ? "/admin/" : isArtist ? "/dashboard/" : "/library/")}
-              title={isAdmin ? "Open admin" : isArtist ? "Open dashboard" : "Open library"}
-              className="w-8 h-8 rounded-full bg-primary/20 hairline flex items-center justify-center text-primary-glow text-xs hover:bg-primary/30 transition-colors"
-            >
-                {(user.email?.[0] ?? "U").toUpperCase()}
-            </a>
-            <button
-              type="button"
-              title="Sign out"
-              onClick={() => void signOut()}
-              className="hidden sm:inline-flex h-8 w-8 items-center justify-center rounded-full bg-surface-elevated text-muted-foreground hairline hover:text-foreground"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                title="Open profile menu"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/20 text-xs text-primary-glow hairline transition-colors hover:bg-primary/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+              >
+                {userInitial}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64 bg-surface p-2 text-foreground hairline">
+                <DropdownMenuLabel className="px-2 py-1">
+                  <span className="block text-xs font-semibold">SHYMusic Creative</span>
+                  <span className="block truncate text-[11px] font-normal text-muted-foreground">{user.email ?? user.phone ?? "Signed in"}</span>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator className="my-2" />
+                <DropdownMenuItem asChild>
+                  <a href={withBasePath("/library/")} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm">
+                    <Library className="h-3.5 w-3.5" /> Library
+                  </a>
+                </DropdownMenuItem>
+                {isArtist && (
+                  <DropdownMenuItem asChild>
+                    <a href={withBasePath("/dashboard/")} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm">
+                      <UserCircle className="h-3.5 w-3.5" /> Artist dashboard
+                    </a>
+                  </DropdownMenuItem>
+                )}
+                {isAdmin && (
+                  <DropdownMenuItem asChild>
+                    <a href={withBasePath("/admin/")} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm">
+                      <Shield className="h-3.5 w-3.5" /> Admin control panel
+                    </a>
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator className="my-2" />
+                <DropdownMenuItem
+                  onClick={confirmSignOut}
+                  className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-sm text-muted-foreground focus:text-foreground"
+                >
+                  <LogOut className="h-3.5 w-3.5" /> Log out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         ) : (
           <a

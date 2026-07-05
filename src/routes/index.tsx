@@ -24,8 +24,8 @@ import { fmtCount } from "@/lib/format";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "SHY - Songwriter Marketplace" },
-      { name: "description", content: "Discover songs, support songwriters, and connect music buyers with songwriter opportunities on SHY." },
+      { title: "SHYMusic Creative" },
+      { name: "description", content: "Discover songs, support songwriters, and connect music buyers with songwriter opportunities on SHYMusic Creative." },
     ],
   }),
   component: HomePage,

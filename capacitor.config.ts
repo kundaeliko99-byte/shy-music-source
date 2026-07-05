@@ -2,7 +2,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
   appId: "app.shymusic.mobile",
-  appName: "SHY",
+  appName: "SHYMusic Creative",
   webDir: "mobile",
   server: {
     // Capacitor wraps the deployed SHY web app so Android and web share

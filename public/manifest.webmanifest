@@ -1,7 +1,7 @@
 {
-  "name": "SHY Music",
-  "short_name": "SHY",
-  "description": "SHY is where songwriters vent. Stream, discover, and share songs born from human creativity.",
+  "name": "SHYMusic Creative",
+  "short_name": "SHYMusic",
+  "description": "SHYMusic Creative is a marketplace and creative platform for songwriters, releases, fan support, and music buyer opportunities.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

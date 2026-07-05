@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Users, Music2, Disc3, Play, Download, Heart, Crown, Activity } from "lucide-react";
+import { Users, Music2, Disc3, Play, Download, Heart, Crown, Activity, ShieldCheck, Ban, EyeOff, ShoppingBag, FileWarning, Settings, Save } from "lucide-react";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { fmtCount } from "@/lib/format";
+import { useAuth } from "@/contexts/AuthContext";
 
 export const Route = createFileRoute("/admin/")({
   component: AdminOverview,
@@ -25,6 +27,11 @@ interface Stats {
 }
 
 interface FeedItem { id: string; kind: string; label: string; at: string }
+interface AdminUserRow { id: string; display_name: string | null; username: string | null; avatar_url: string | null; account_status?: string | null; created_at: string }
+interface AdminArtistRow { id: string; display_name: string; slug: string; verified: boolean; moderation_status?: string | null; created_at: string }
+interface AdminTrackRow { id: string; title: string; artist_id: string; plays_count: number; moderation_status?: string | null; artists?: { display_name: string } | null }
+interface PurchaseRow { id: string; track_id: string; artist_id: string; buyer_name: string | null; buyer_contact: string | null; proposed_price: number | null; currency: string | null; status: string; created_at: string }
+interface AuditLogRow { id: string; action: string; target_table: string; note: string | null; created_at: string }
 
 function startOf(period: "day" | "week"): string {
   const d = new Date();
@@ -41,8 +48,15 @@ async function countSince(table: "plays" | "downloads", iso?: string) {
 }
 
 function AdminOverview() {
+  const { user } = useAuth();
   const [s, setS] = useState<Stats | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
+  const [users, setUsers] = useState<AdminUserRow[]>([]);
+  const [artists, setArtists] = useState<AdminArtistRow[]>([]);
+  const [tracks, setTracks] = useState<AdminTrackRow[]>([]);
+  const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLogRow[]>([]);
+  const [busy, setBusy] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -134,8 +148,73 @@ function AdminOverview() {
         ...(newTracks ?? []).map((t) => ({ id: `nt${t.id}`, kind: "New track", label: t.title, at: t.created_at })),
       ].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 30);
       setFeed(items);
+
+      const [{ data: profileRows }, { data: artistRows }, { data: trackRows }, { data: purchaseRows }, { data: logs }] = await Promise.all([
+        (supabase as any).from("profiles").select("id, display_name, username, avatar_url, account_status, created_at").order("created_at", { ascending: false }).limit(12),
+        (supabase as any).from("artists").select("id, display_name, slug, verified, moderation_status, created_at").order("created_at", { ascending: false }).limit(12),
+        (supabase as any).from("tracks").select("id, title, artist_id, plays_count, moderation_status, artists(display_name)").order("created_at", { ascending: false }).limit(12),
+        (supabase as any).from("song_purchase_requests").select("id, track_id, artist_id, buyer_name, buyer_contact, proposed_price, currency, status, created_at").order("created_at", { ascending: false }).limit(12),
+        (supabase as any).from("admin_action_logs").select("id, action, target_table, note, created_at").order("created_at", { ascending: false }).limit(12),
+      ]);
+      setUsers(profileRows ?? []);
+      setArtists(artistRows ?? []);
+      setTracks(trackRows ?? []);
+      setPurchases(purchaseRows ?? []);
+      setAuditLogs(logs ?? []);
     })();
   }, []);
+
+  async function logAction(action: string, targetTable: string, targetId: string, nextValue: unknown, note?: string) {
+    if (!user) return;
+    await (supabase as any).from("admin_action_logs").insert({
+      admin_id: user.id,
+      action,
+      target_table: targetTable,
+      target_id: targetId,
+      new_value: nextValue,
+      note: note ?? null,
+    });
+  }
+
+  async function updateUserStatus(row: AdminUserRow, account_status: "active" | "suspended" | "banned") {
+    setBusy(`user:${row.id}`);
+    const { error } = await (supabase as any).from("profiles").update({ account_status }).eq("id", row.id);
+    if (!error) await logAction("account_status_changed", "profiles", row.id, { account_status });
+    setBusy("");
+    if (error) return toast.error("Apply the admin control migration before changing account status.");
+    setUsers((current) => current.map((u) => u.id === row.id ? { ...u, account_status } : u));
+    toast.success(`Account marked ${account_status}`);
+  }
+
+  async function verifyArtist(row: AdminArtistRow, verified: boolean) {
+    setBusy(`artist:${row.id}`);
+    const { error } = await (supabase as any).from("artists").update({ verified }).eq("id", row.id);
+    if (!error) await logAction(verified ? "artist_verified" : "artist_unverified", "artists", row.id, { verified });
+    setBusy("");
+    if (error) return toast.error(error.message);
+    setArtists((current) => current.map((a) => a.id === row.id ? { ...a, verified } : a));
+    toast.success(verified ? "Artist verified" : "Artist verification removed");
+  }
+
+  async function moderateTrack(row: AdminTrackRow, moderation_status: "active" | "hidden" | "removed") {
+    setBusy(`track:${row.id}`);
+    const { error } = await (supabase as any).from("tracks").update({ moderation_status }).eq("id", row.id);
+    if (!error) await logAction("track_moderation_changed", "tracks", row.id, { moderation_status });
+    setBusy("");
+    if (error) return toast.error("Apply the admin control migration before moderating tracks.");
+    setTracks((current) => current.map((t) => t.id === row.id ? { ...t, moderation_status } : t));
+    toast.success(`Track marked ${moderation_status}`);
+  }
+
+  async function updatePurchase(row: PurchaseRow, status: "new" | "contacted" | "closed") {
+    setBusy(`purchase:${row.id}`);
+    const { error } = await (supabase as any).from("song_purchase_requests").update({ status }).eq("id", row.id);
+    if (!error) await logAction("purchase_status_changed", "song_purchase_requests", row.id, { status });
+    setBusy("");
+    if (error) return toast.error(error.message);
+    setPurchases((current) => current.map((p) => p.id === row.id ? { ...p, status } : p));
+    toast.success(`Purchase request marked ${status}`);
+  }
 
   if (!s) return <div className="text-sm text-muted-foreground">Loading…</div>;
 
@@ -187,6 +266,19 @@ function AdminOverview() {
           ))}
         </div>
       </div>
+
+      <AdminControlCenter
+        users={users}
+        artists={artists}
+        tracks={tracks}
+        purchases={purchases}
+        auditLogs={auditLogs}
+        busy={busy}
+        onUserStatus={updateUserStatus}
+        onVerifyArtist={verifyArtist}
+        onModerateTrack={moderateTrack}
+        onPurchaseStatus={updatePurchase}
+      />
     </div>
   );
 }
@@ -205,6 +297,196 @@ function Section({ title, icon, children }: { title: string; icon: React.ReactNo
     <div>
       <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">{icon} {title}</h2>
       <div className="grid grid-cols-3 gap-3">{children}</div>
+    </div>
+  );
+}
+
+function AdminControlCenter({
+  users,
+  artists,
+  tracks,
+  purchases,
+  auditLogs,
+  busy,
+  onUserStatus,
+  onVerifyArtist,
+  onModerateTrack,
+  onPurchaseStatus,
+}: {
+  users: AdminUserRow[];
+  artists: AdminArtistRow[];
+  tracks: AdminTrackRow[];
+  purchases: PurchaseRow[];
+  auditLogs: AuditLogRow[];
+  busy: string;
+  onUserStatus: (row: AdminUserRow, status: "active" | "suspended" | "banned") => void;
+  onVerifyArtist: (row: AdminArtistRow, verified: boolean) => void;
+  onModerateTrack: (row: AdminTrackRow, status: "active" | "hidden" | "removed") => void;
+  onPurchaseStatus: (row: PurchaseRow, status: "new" | "contacted" | "closed") => void;
+}) {
+  return (
+    <div className="space-y-6">
+      <h2 className="flex items-center gap-2 text-lg font-semibold">
+        <ShieldCheck className="h-5 w-5 text-primary-glow" /> Admin control center
+      </h2>
+
+      <AdminPanel title="Users and account safety" icon={<Users className="h-4 w-4" />}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">User</th>
+                <th className="px-3 py-2 text-left font-medium">Status</th>
+                <th className="px-3 py-2 text-right font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.length === 0 && <tr><td colSpan={3} className="p-4 text-center text-muted-foreground">No user rows visible yet.</td></tr>}
+              {users.map((row) => (
+                <tr key={row.id} className="border-t border-border/40">
+                  <td className="px-3 py-2">
+                    <div className="font-medium">{row.display_name || row.username || row.id.slice(0, 8)}</div>
+                    <div className="text-[11px] text-muted-foreground">{new Date(row.created_at).toLocaleDateString()}</div>
+                  </td>
+                  <td className="px-3 py-2"><StatusPill value={row.account_status ?? "active"} /></td>
+                  <td className="px-3 py-2">
+                    <div className="flex justify-end gap-1.5">
+                      <ActionButton disabled={busy === `user:${row.id}`} onClick={() => onUserStatus(row, "active")} label="Activate" />
+                      <ActionButton disabled={busy === `user:${row.id}`} onClick={() => onUserStatus(row, "suspended")} label="Suspend" icon={<FileWarning className="h-3 w-3" />} />
+                      <ActionButton disabled={busy === `user:${row.id}`} onClick={() => onUserStatus(row, "banned")} label="Ban" icon={<Ban className="h-3 w-3" />} />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </AdminPanel>
+
+      <AdminPanel title="Artists and verification" icon={<ShieldCheck className="h-4 w-4" />}>
+        <div className="grid gap-2 md:grid-cols-2">
+          {artists.length === 0 && <EmptyAdminMessage text="No artist rows visible yet." />}
+          {artists.map((row) => (
+            <div key={row.id} className="rounded-lg bg-background/50 p-3 hairline">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-medium">{row.display_name}</div>
+                  <div className="text-[11px] text-muted-foreground">/{row.slug}</div>
+                </div>
+                <StatusPill value={row.verified ? "verified" : "unverified"} />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <ActionButton disabled={busy === `artist:${row.id}`} onClick={() => onVerifyArtist(row, true)} label="Verify" />
+                <ActionButton disabled={busy === `artist:${row.id}`} onClick={() => onVerifyArtist(row, false)} label="Remove verify" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </AdminPanel>
+
+      <AdminPanel title="Songs, albums, and content review" icon={<Music2 className="h-4 w-4" />}>
+        <div className="space-y-2">
+          {tracks.length === 0 && <EmptyAdminMessage text="No recent tracks visible yet." />}
+          {tracks.map((row) => (
+            <div key={row.id} className="flex flex-col gap-2 rounded-lg bg-background/50 p-3 hairline sm:flex-row sm:items-center">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium">{row.title}</div>
+                <div className="text-[11px] text-muted-foreground">{row.artists?.display_name ?? "Unknown artist"} - {fmtCount(row.plays_count)} plays</div>
+              </div>
+              <StatusPill value={row.moderation_status ?? "active"} />
+              <div className="flex gap-1.5">
+                <ActionButton disabled={busy === `track:${row.id}`} onClick={() => onModerateTrack(row, "active")} label="Approve" />
+                <ActionButton disabled={busy === `track:${row.id}`} onClick={() => onModerateTrack(row, "hidden")} label="Hide" icon={<EyeOff className="h-3 w-3" />} />
+                <ActionButton disabled={busy === `track:${row.id}`} onClick={() => onModerateTrack(row, "removed")} label="Remove" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </AdminPanel>
+
+      <AdminPanel title="Purchases, gifts, and seller requests" icon={<ShoppingBag className="h-4 w-4" />}>
+        <div className="space-y-2">
+          {purchases.length === 0 && <EmptyAdminMessage text="No purchase requests yet." />}
+          {purchases.map((row) => (
+            <div key={row.id} className="grid gap-2 rounded-lg bg-background/50 p-3 text-xs hairline md:grid-cols-[1fr_auto_auto] md:items-center">
+              <div>
+                <div className="font-medium">{row.buyer_name || "Buyer request"}</div>
+                <div className="text-muted-foreground">{row.buyer_contact || "No contact"} - {row.proposed_price ? `${row.currency ?? "USD"} ${row.proposed_price}` : "Price not proposed"}</div>
+              </div>
+              <StatusPill value={row.status} />
+              <div className="flex gap-1.5">
+                <ActionButton disabled={busy === `purchase:${row.id}`} onClick={() => onPurchaseStatus(row, "new")} label="New" />
+                <ActionButton disabled={busy === `purchase:${row.id}`} onClick={() => onPurchaseStatus(row, "contacted")} label="Contacted" />
+                <ActionButton disabled={busy === `purchase:${row.id}`} onClick={() => onPurchaseStatus(row, "closed")} label="Closed" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </AdminPanel>
+
+      <AdminPanel title="Platform settings and reports" icon={<Settings className="h-4 w-4" />}>
+        <div className="grid gap-3 md:grid-cols-3">
+          <AdminSetting title="Homepage sections" text="Manage featured shelves such as Fresh Drops, Watch Out, Fans Love, and Fan of the Week." />
+          <AdminSetting title="Reports and safety" text="Review reported users, songs, albums, comments, and artist profiles." />
+          <AdminSetting title="Genres and categories" text="Keep SHY tags, release types, and marketplace categories clean and consistent." />
+        </div>
+      </AdminPanel>
+
+      <AdminPanel title="Admin activity log" icon={<Activity className="h-4 w-4" />}>
+        <div className="divide-y divide-border/40">
+          {auditLogs.length === 0 && <EmptyAdminMessage text="No audit records visible yet. New admin actions will appear here after the migration is applied." />}
+          {auditLogs.map((log) => (
+            <div key={log.id} className="grid gap-2 px-1 py-2 text-xs sm:grid-cols-[150px_1fr_auto]">
+              <span className="font-medium">{log.action}</span>
+              <span className="text-muted-foreground">{log.target_table}{log.note ? ` - ${log.note}` : ""}</span>
+              <span className="text-muted-foreground">{new Date(log.created_at).toLocaleString()}</span>
+            </div>
+          ))}
+        </div>
+      </AdminPanel>
+    </div>
+  );
+}
+
+function AdminPanel({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="rounded-xl bg-surface p-4 hairline">
+      <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">{icon}{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function ActionButton({ label, icon, disabled, onClick }: { label: string; icon?: React.ReactNode; disabled?: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="inline-flex items-center gap-1 rounded-full bg-surface-elevated px-2.5 py-1 text-[11px] font-medium text-foreground hairline hover:text-primary-glow disabled:opacity-50"
+    >
+      {icon ?? <Save className="h-3 w-3" />} {label}
+    </button>
+  );
+}
+
+function StatusPill({ value }: { value: string }) {
+  return (
+    <span className="inline-flex w-fit rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.12em] text-primary-glow hairline">
+      {value}
+    </span>
+  );
+}
+
+function EmptyAdminMessage({ text }: { text: string }) {
+  return <div className="rounded-lg bg-background/50 p-4 text-center text-sm text-muted-foreground">{text}</div>;
+}
+
+function AdminSetting({ title, text }: { title: string; text: string }) {
+  return (
+    <div className="rounded-lg bg-background/50 p-3 hairline">
+      <div className="text-sm font-medium">{title}</div>
+      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{text}</p>
     </div>
   );
 }

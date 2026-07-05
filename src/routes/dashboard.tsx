@@ -1,6 +1,6 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { BarChart3, TrendingUp, Users, Music2, Pencil, Save, ShoppingBag } from "lucide-react";
+import { BarChart3, TrendingUp, Users, Music2, Pencil, Save, ShoppingBag, BadgeDollarSign, Globe2, Tags, CalendarClock } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { Cover } from "@/components/Cover";
@@ -30,11 +30,28 @@ interface ArtistRow {
   slug: string;
   monthly_listeners: number;
   avatar_url: string | null;
+  banner_url: string | null;
+  bio: string | null;
   contact_email: string | null;
   country: string | null;
   mobile_money_number: string | null;
   mobile_money_network: string | null;
+  ai_tools_used: string[] | null;
+  instagram_url: string | null;
+  facebook_url: string | null;
+  twitter_url: string | null;
+  tiktok_url: string | null;
+  youtube_url: string | null;
 }
+
+const DASHBOARD_GENRES = ["afrobeats", "amapiano", "hiphop", "zed_hiphop", "gospel", "rnb", "dancehall", "pop", "afropop", "afrofusion", "kalindula", "traditional", "world", "cinematic"];
+const AI_TOOLS = ["suno", "udio", "stable_audio", "custom_model", "other"];
+const MOBILE_NETWORKS = [
+  { value: "", label: "Not set" },
+  { value: "mtn", label: "MTN Mobile Money" },
+  { value: "airtel", label: "Airtel Money" },
+  { value: "zamtel", label: "Zamtel Kwacha" },
+];
 
 function DashboardPage() {
   const [artist, setArtist] = useState<ArtistRow | null>(null);
@@ -48,7 +65,7 @@ function DashboardPage() {
       if (!u.user) return;
       const { data: a } = await supabase
         .from("artists")
-        .select("id, display_name, slug, monthly_listeners, avatar_url, contact_email, country, mobile_money_number, mobile_money_network")
+        .select("id, display_name, slug, monthly_listeners, avatar_url, banner_url, bio, contact_email, country, mobile_money_number, mobile_money_network, ai_tools_used, instagram_url, facebook_url, twitter_url, tiktok_url, youtube_url")
         .eq("user_id", u.user.id)
         .maybeSingle();
       if (!a) {
@@ -135,6 +152,8 @@ function DashboardPage() {
         </Link>
       </header>
 
+      <ProfileStudio artist={artist} onSaved={setArtist} />
+
       {/* Headline stat */}
       <div className="rounded-2xl hairline bg-gradient-to-br from-[#FFD166]/15 via-surface to-background p-6 mb-6 relative overflow-hidden">
         <div className="absolute -top-12 -right-12 w-48 h-48 bg-[#FFD166]/20 blur-3xl rounded-full" />
@@ -208,6 +227,8 @@ function DashboardPage() {
         </div>
       </section>
 
+      <TrackManager artist={artist} tracks={tracks} onTracksChange={setTracks} />
+
       <MarketplaceSettings artist={artist} tracks={tracks} />
     </AppShell>
   );
@@ -221,6 +242,241 @@ function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string
       </div>
       <div className="text-xl font-semibold mt-0.5 tabular-nums">{value}</div>
     </div>
+  );
+}
+
+function ProfileStudio({ artist, onSaved }: { artist: ArtistRow; onSaved: (artist: ArtistRow) => void }) {
+  const [form, setForm] = useState({
+    display_name: artist.display_name,
+    slug: artist.slug,
+    bio: artist.bio ?? "",
+    avatar_url: artist.avatar_url ?? "",
+    banner_url: artist.banner_url ?? "",
+    contact_email: artist.contact_email ?? "",
+    country: artist.country ?? "",
+    mobile_money_number: artist.mobile_money_number ?? "",
+    mobile_money_network: artist.mobile_money_network ?? "",
+    instagram_url: artist.instagram_url ?? "",
+    facebook_url: artist.facebook_url ?? "",
+    twitter_url: artist.twitter_url ?? "",
+    tiktok_url: artist.tiktok_url ?? "",
+    youtube_url: artist.youtube_url ?? "",
+    ai_tools_used: new Set(artist.ai_tools_used ?? []),
+  });
+  const [saving, setSaving] = useState(false);
+
+  function setField<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function toggleTool(tool: string) {
+    setForm((current) => {
+      const next = new Set(current.ai_tools_used);
+      if (next.has(tool)) next.delete(tool);
+      else next.add(tool);
+      return { ...current, ai_tools_used: next };
+    });
+  }
+
+  async function saveProfile() {
+    setSaving(true);
+    const payload = {
+      display_name: form.display_name.trim(),
+      slug: form.slug.trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, ""),
+      bio: form.bio.trim() || null,
+      avatar_url: form.avatar_url.trim() || null,
+      banner_url: form.banner_url.trim() || null,
+      contact_email: form.contact_email.trim() || null,
+      country: form.country.trim() || null,
+      mobile_money_number: form.mobile_money_number.trim() || null,
+      mobile_money_network: form.mobile_money_network || null,
+      instagram_url: form.instagram_url.trim() || null,
+      facebook_url: form.facebook_url.trim() || null,
+      twitter_url: form.twitter_url.trim() || null,
+      tiktok_url: form.tiktok_url.trim() || null,
+      youtube_url: form.youtube_url.trim() || null,
+      ai_tools_used: Array.from(form.ai_tools_used),
+    };
+    const { data, error } = await (supabase as any)
+      .from("artists")
+      .update(payload)
+      .eq("id", artist.id)
+      .select("id, display_name, slug, monthly_listeners, avatar_url, banner_url, bio, contact_email, country, mobile_money_number, mobile_money_network, ai_tools_used, instagram_url, facebook_url, twitter_url, tiktok_url, youtube_url")
+      .single();
+    setSaving(false);
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    onSaved(data as ArtistRow);
+    toast.success("Artist profile updated");
+  }
+
+  return (
+    <section className="mb-6 rounded-2xl bg-surface p-4 hairline">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            <Pencil className="h-4 w-4 text-primary-glow" /> Profile studio
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">Control what listeners, buyers, and fans see on your public artist profile.</p>
+        </div>
+        <Link to="/artists/$slug" params={{ slug: artist.slug }} className="w-fit rounded-full bg-surface-elevated px-3 py-1.5 text-xs font-medium hairline hover:text-primary-glow">
+          View public profile
+        </Link>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[180px_1fr]">
+        <div className="space-y-3">
+          <Cover src={form.avatar_url} seed={artist.id} className="aspect-square w-full" shape="circle" glow />
+          <FieldLite label="Avatar image URL">
+            <input className="input-lite" value={form.avatar_url} onChange={(e) => setField("avatar_url", e.target.value)} placeholder="https://..." />
+          </FieldLite>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <FieldLite label="Artist / songwriter name">
+            <input className="input-lite" value={form.display_name} onChange={(e) => setField("display_name", e.target.value)} />
+          </FieldLite>
+          <FieldLite label="Profile slug">
+            <input className="input-lite" value={form.slug} onChange={(e) => setField("slug", e.target.value)} />
+          </FieldLite>
+          <FieldLite label="Banner image URL">
+            <input className="input-lite" value={form.banner_url} onChange={(e) => setField("banner_url", e.target.value)} placeholder="https://..." />
+          </FieldLite>
+          <FieldLite label="Country">
+            <input className="input-lite" value={form.country} onChange={(e) => setField("country", e.target.value)} placeholder="Zambia" />
+          </FieldLite>
+          <label className="space-y-1 md:col-span-2">
+            <span className="text-[11px] text-muted-foreground">Bio</span>
+            <textarea className="input-lite min-h-24 resize-y" value={form.bio} onChange={(e) => setField("bio", e.target.value)} placeholder="Tell fans and buyers what makes your writing unique." />
+          </label>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <FieldLite label="Contact email">
+          <input className="input-lite" value={form.contact_email} onChange={(e) => setField("contact_email", e.target.value)} placeholder="bookings@email.com" />
+        </FieldLite>
+        <FieldLite label="Motivation mobile money number">
+          <input className="input-lite" value={form.mobile_money_number} onChange={(e) => setField("mobile_money_number", e.target.value)} placeholder="+260..." />
+        </FieldLite>
+        <FieldLite label="Mobile money network">
+          <select className="input-lite" value={form.mobile_money_network} onChange={(e) => setField("mobile_money_network", e.target.value)}>
+            {MOBILE_NETWORKS.map((n) => <option key={n.value} value={n.value}>{n.label}</option>)}
+          </select>
+        </FieldLite>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-5">
+        {(["instagram_url", "facebook_url", "twitter_url", "tiktok_url", "youtube_url"] as const).map((key) => (
+          <FieldLite key={key} label={key.replace("_url", "").replace("_", " ")}>
+            <input className="input-lite" value={form[key]} onChange={(e) => setField(key, e.target.value)} placeholder="https://..." />
+          </FieldLite>
+        ))}
+      </div>
+
+      <div className="mt-4">
+        <div className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+          <Tags className="h-3.5 w-3.5" /> Tools / tags used in your creative process
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {AI_TOOLS.map((tool) => (
+            <button
+              key={tool}
+              type="button"
+              onClick={() => toggleTool(tool)}
+              className={`rounded-full px-3 py-1.5 text-xs hairline ${form.ai_tools_used.has(tool) ? "bg-primary text-primary-foreground border-primary" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              {tool.replace("_", " ")}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <button onClick={saveProfile} disabled={saving || !form.display_name.trim() || !form.slug.trim()} className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-gradient-primary px-4 py-2 text-xs font-medium text-primary-foreground shadow-glow-soft disabled:opacity-60">
+        <Save className="h-3.5 w-3.5" /> {saving ? "Saving..." : "Save profile"}
+      </button>
+    </section>
+  );
+}
+
+function TrackManager({ artist, tracks, onTracksChange }: { artist: ArtistRow; tracks: TrackRow[]; onTracksChange: (tracks: TrackRow[]) => void }) {
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  function updateLocal(trackId: string, patch: Partial<TrackRow>) {
+    onTracksChange(tracks.map((track) => track.id === trackId ? { ...track, ...patch } : track));
+  }
+
+  async function saveTrack(track: TrackRow) {
+    setSavingId(track.id);
+    const { error } = await (supabase as any)
+      .from("tracks")
+      .update({
+        title: track.title,
+        genre: track.genre,
+        release_date: track.release_date,
+        explicit: track.explicit,
+        cover_url: track.cover_url || null,
+        lyrics: track.lyrics || null,
+      })
+      .eq("id", track.id)
+      .eq("artist_id", artist.id);
+    setSavingId(null);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success(`Updated ${track.title}`);
+  }
+
+  return (
+    <section className="mb-6">
+      <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
+        <Music2 className="h-4 w-4 text-primary-glow" /> Music control room
+      </h2>
+      <div className="rounded-xl bg-surface p-4 hairline">
+        {tracks.length === 0 ? (
+          <div className="rounded-lg bg-background/50 p-4 text-sm text-muted-foreground">Upload songs to edit metadata, tags, covers, release dates, and pricing.</div>
+        ) : (
+          <div className="space-y-3">
+            {tracks.map((track) => (
+              <div key={track.id} className="rounded-xl bg-background/40 p-3 hairline">
+                <div className="grid gap-3 lg:grid-cols-[48px_1.4fr_1fr_140px_90px] lg:items-center">
+                  <Cover src={track.cover_url} seed={track.id} size={48} shape={track.artwork_shape ?? "circle"} />
+                  <FieldLite label="Song title">
+                    <input className="input-lite" value={track.title} onChange={(e) => updateLocal(track.id, { title: e.target.value })} />
+                  </FieldLite>
+                  <FieldLite label="Genre / tag">
+                    <select className="input-lite" value={track.genre} onChange={(e) => updateLocal(track.id, { genre: e.target.value as TrackRow["genre"] })}>
+                      {DASHBOARD_GENRES.map((genre) => <option key={genre} value={genre}>{genre.replace("_", " ")}</option>)}
+                    </select>
+                  </FieldLite>
+                  <FieldLite label="Release date">
+                    <input className="input-lite" type="date" value={track.release_date} onChange={(e) => updateLocal(track.id, { release_date: e.target.value })} />
+                  </FieldLite>
+                  <label className="flex items-center gap-2 pt-5 text-xs text-muted-foreground">
+                    <input type="checkbox" checked={track.explicit} onChange={(e) => updateLocal(track.id, { explicit: e.target.checked })} />
+                    Explicit
+                  </label>
+                </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-[1fr_2fr_auto] md:items-end">
+                  <FieldLite label="Cover image URL">
+                    <input className="input-lite" value={track.cover_url ?? ""} onChange={(e) => updateLocal(track.id, { cover_url: e.target.value })} placeholder="https://..." />
+                  </FieldLite>
+                  <FieldLite label="Lyrics / notes">
+                    <input className="input-lite" value={track.lyrics ?? ""} onChange={(e) => updateLocal(track.id, { lyrics: e.target.value })} placeholder="Short lyric note or paste full lyrics" />
+                  </FieldLite>
+                  <button onClick={() => saveTrack(track)} disabled={savingId === track.id} className="inline-flex items-center justify-center gap-1.5 rounded-full bg-surface-elevated px-3 py-2 text-xs font-medium hairline hover:text-primary-glow disabled:opacity-60">
+                    <Save className="h-3.5 w-3.5" /> {savingId === track.id ? "Saving..." : "Save song"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
