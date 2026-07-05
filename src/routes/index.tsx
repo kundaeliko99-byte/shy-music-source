@@ -207,7 +207,19 @@ function HomePage() {
                   {top.title}
                 </Link>
                 <div className="truncate text-xs text-muted-foreground">
-                  {top.artists?.display_name ?? "Unknown artist"} - {fmtCount(top.plays_count)} fan plays
+                  {top.artists ? (
+                    <Link
+                      to="/artists/$slug"
+                      params={{ slug: top.artists.slug }}
+                      aria-label={`Open artist profile for ${top.artists.display_name}`}
+                      className="hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                    >
+                      {top.artists.display_name}
+                    </Link>
+                  ) : (
+                    "Unknown artist"
+                  )}{" "}
+                  - {fmtCount(top.plays_count)} fan plays
                 </div>
               </div>
               <button
@@ -274,11 +286,21 @@ function HomePage() {
                 <div className="w-5 text-center text-sm font-medium text-primary-glow">{c.rank}</div>
                 <Cover src={c.cover_url} seed={c.id} size={36} shape={c.artwork_shape ?? "circle"} />
                 <div className="flex-1 min-w-0">
-                  <Link to="/tracks/$id" params={{ id: c.id }} className="text-xs font-medium truncate block hover:text-primary-glow">
+                  <Link
+                    to="/tracks/$id"
+                    params={{ id: c.id }}
+                    aria-label={`Open song page for ${c.title}`}
+                    className="block truncate text-xs font-medium hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                  >
                     {c.title}
                   </Link>
                   {c.artists ? (
-                    <Link to="/artists/$slug" params={{ slug: c.artists.slug }} className="text-[11px] text-muted-foreground truncate hover:text-foreground block">
+                    <Link
+                      to="/artists/$slug"
+                      params={{ slug: c.artists.slug }}
+                      aria-label={`Open artist profile for ${c.artists.display_name}`}
+                      className="block truncate text-[11px] text-muted-foreground hover:text-foreground hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                    >
                       {c.artists.display_name}
                     </Link>
                   ) : (
