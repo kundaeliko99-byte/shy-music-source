@@ -13,9 +13,7 @@ import {
   useMemo,
   useRef,
   useState,
-  type ClipboardEvent,
   type FormEvent,
-  type KeyboardEvent,
   type RefObject,
   type ReactNode,
 } from "react";
@@ -28,14 +26,12 @@ import { withBasePath } from "@/lib/assets";
 type AuthStage =
   | "identifier"
   | "password"
-  | "otp"
   | "signup"
   | "forgot"
   | "new-password"
   | "signup-choice";
 type AuthMode = "signin" | "signup";
 type ContactMethod = "email" | "phone";
-type OtpPurpose = "signin" | "signup" | "phone-reset";
 
 const REMEMBER_KEY = "shy.auth.remembered";
 const SIGNIN_FAILURE_KEY = "shy.auth.failed_signins";
@@ -72,7 +68,6 @@ function AuthPage() {
   const [contactValue, setContactValue] = useState("");
   const [resolvedIdentifier, setResolvedIdentifier] = useState("");
   const [resolvedMethod, setResolvedMethod] = useState<ContactMethod>("email");
-  const [resolvedHasPassword, setResolvedHasPassword] = useState(false);
   const [password, setPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -82,14 +77,7 @@ function AuthPage() {
   const [inlineError, setInlineError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [loading, setLoading] = useState(false);
-  const [phoneResetVerified, setPhoneResetVerified] = useState(false);
   const contactInputRef = useRef<HTMLInputElement | null>(null);
-  const [otpRequest, setOtpRequest] = useState<{
-    contactMethod: ContactMethod;
-    contactValue: string;
-    purpose: OtpPurpose;
-    hasPassword: boolean;
-  } | null>(null);
 
   useEffect(() => {
     setIsMounted(true);
@@ -121,8 +109,6 @@ function AuthPage() {
     setSuccessMessage("");
     setPassword("");
     setNewPassword("");
-    setOtpRequest(null);
-    setPhoneResetVerified(false);
     if (clearIdentifier) {
       setContactValue(contactMethod === "phone" ? DEFAULT_PHONE_PREFIX : "");
       setResolvedIdentifier("");
@@ -145,8 +131,6 @@ function AuthPage() {
     setSuccessMessage("");
     setPassword("");
     setNewPassword("");
-    setOtpRequest(null);
-    setPhoneResetVerified(false);
     setTouchedContact(false);
     setStage(nextMode === "signin" ? "identifier" : "signup");
     if (nextMode === "signup") {
@@ -173,7 +157,6 @@ function AuthPage() {
     console.log("SHY auth identifier", { type: contactMethod, identifier });
     setResolvedIdentifier(identifier);
     setResolvedMethod(contactMethod);
-    setResolvedHasPassword(true);
     if (getFailedSigninCount(contactMethod, identifier) >= MAX_FAILED_SIGNINS) {
       setInlineError(contactSupportMessage(identifier, contactMethod));
       return;
@@ -294,72 +277,12 @@ function AuthPage() {
       const { error } = await supabase.auth.updateUser({ password: parsedPassword });
       if (error) throw error;
       setSuccessMessage("Your password has been updated. You are signed in.");
-      setPhoneResetVerified(false);
       navigate({ to: "/" });
     } catch (error) {
       setInlineError(readErrorMessage(error, "Could not update password."));
     } finally {
       setLoading(false);
     }
-  }
-
-  async function sendOtp(
-    method: ContactMethod,
-    identifier: string,
-    purpose: OtpPurpose,
-    hasPassword: boolean,
-  ) {
-    const data =
-      purpose === "signup"
-        ? { display_name: displayName.trim(), role }
-        : undefined;
-    const { error } =
-      method === "email"
-        ? await supabase.auth.signInWithOtp({
-            email: identifier,
-            options: {
-              shouldCreateUser: purpose === "signup",
-              data,
-              emailRedirectTo: authRedirectUrl(),
-            },
-          })
-        : await supabase.auth.signInWithOtp({
-            phone: identifier,
-            options: {
-              shouldCreateUser: purpose === "signup",
-              data,
-            },
-          });
-
-    if (error) throw error;
-    setOtpRequest({ contactMethod: method, contactValue: identifier, purpose, hasPassword });
-    setStage("otp");
-    rememberCurrentDetails();
-  }
-
-  function handleOtpVerified(session: Session | null, purpose: OtpPurpose) {
-    if (purpose === "phone-reset") {
-      setOtpRequest(null);
-      setPhoneResetVerified(true);
-      setStage("new-password");
-      return;
-    }
-
-    if (purpose === "signup") {
-      passwordSchema
-        .parseAsync(password)
-        .then((parsedPassword) => supabase.auth.updateUser({ password: parsedPassword }))
-        .then(({ error }) => {
-          if (error) throw error;
-          navigate({ to: role === "artist" ? "/become-artist" : "/" });
-        })
-        .catch((error) =>
-          setInlineError(readErrorMessage(error, "Account created, but password setup failed.")),
-        );
-      return;
-    }
-
-    onSignedIn(session);
   }
 
   function rememberCurrentDetails() {
@@ -405,7 +328,7 @@ function AuthPage() {
 
       {isMounted && (
         <>
-      {(stage === "identifier" || stage === "signup") && !otpRequest && (
+      {(stage === "identifier" || stage === "signup") && (
         <AuthTabs authMode={authMode} onChange={switchAuthMode} />
       )}
 
@@ -462,22 +385,6 @@ function AuthPage() {
             setStage("forgot");
           }}
           onSubmit={submitPasswordSignin}
-        />
-      )}
-
-      {stage === "otp" && otpRequest && (
-        <OtpEntryScreen
-          contactMethod={otpRequest.contactMethod}
-          contactValue={otpRequest.contactValue}
-          purpose={otpRequest.purpose}
-          hasPassword={otpRequest.hasPassword}
-          onBack={() => resetToIdentifier(true)}
-          onPasswordFallback={() => {
-            setOtpRequest(null);
-            setPassword("");
-            setStage("password");
-          }}
-          onSignedIn={(session) => handleOtpVerified(session, otpRequest.purpose)}
         />
       )}
 
@@ -925,182 +832,6 @@ function NewPasswordScreen({
         Set new password
       </PrimaryButton>
     </form>
-  );
-}
-
-function OtpEntryScreen({
-  contactMethod,
-  contactValue,
-  purpose,
-  hasPassword,
-  onBack,
-  onPasswordFallback,
-  onSignedIn,
-}: {
-  contactMethod: ContactMethod;
-  contactValue: string;
-  purpose: OtpPurpose;
-  hasPassword: boolean;
-  onBack: () => void;
-  onPasswordFallback: () => void;
-  onSignedIn: (session: Session | null) => void;
-}) {
-  const [digits, setDigits] = useState(Array.from({ length: 6 }, () => ""));
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [sentAt, setSentAt] = useState(Date.now());
-  const [now, setNow] = useState(Date.now());
-  const inputRefs = useRef<Array<HTMLInputElement | null>>([]);
-  const submittedTokenRef = useRef("");
-
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  useEffect(() => {
-    inputRefs.current[0]?.focus();
-  }, []);
-
-  const token = digits.join("");
-  const resendSeconds = Math.max(0, 30 - Math.floor((now - sentAt) / 1000));
-
-  useEffect(() => {
-    if (token.length !== 6 || digits.some((digit) => !digit) || loading) return;
-    if (submittedTokenRef.current === token) return;
-    submittedTokenRef.current = token;
-    verifyToken(token);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, digits, loading]);
-
-  async function verifyToken(nextToken: string) {
-    setLoading(true);
-    setError("");
-    try {
-      const { data, error: verifyError } =
-        contactMethod === "email"
-          ? await supabase.auth.verifyOtp({
-              email: contactValue,
-              token: nextToken,
-              type: "email",
-            })
-          : await supabase.auth.verifyOtp({
-              phone: contactValue,
-              token: nextToken,
-              type: "sms",
-            });
-      if (verifyError) throw verifyError;
-      onSignedIn(data.session);
-    } catch {
-      setError("That code didn't work. Try again or resend.");
-      setDigits(Array.from({ length: 6 }, () => ""));
-      submittedTokenRef.current = "";
-      window.setTimeout(() => inputRefs.current[0]?.focus(), 0);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function resendCode() {
-    if (resendSeconds > 0) return;
-    setLoading(true);
-    setError("");
-    try {
-      const { error: sendError } =
-        contactMethod === "email"
-          ? await supabase.auth.signInWithOtp({
-              email: contactValue,
-              options: { shouldCreateUser: purpose === "signup", emailRedirectTo: authRedirectUrl() },
-            })
-          : await supabase.auth.signInWithOtp({
-              phone: contactValue,
-              options: { shouldCreateUser: purpose === "signup" },
-            });
-      if (sendError) throw sendError;
-      setSentAt(Date.now());
-    } catch (caught) {
-      setError(readErrorMessage(caught, "Could not resend code."));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function setDigit(index: number, value: string) {
-    const digit = value.replace(/\D/g, "").slice(-1);
-    setDigits((current) => {
-      const next = [...current];
-      next[index] = digit;
-      return next;
-    });
-    if (digit && index < 5) inputRefs.current[index + 1]?.focus();
-  }
-
-  function handleKeyDown(index: number, event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key !== "Backspace") return;
-    if (digits[index]) return;
-    inputRefs.current[Math.max(0, index - 1)]?.focus();
-  }
-
-  function handlePaste(event: ClipboardEvent<HTMLInputElement>) {
-    const pasted = event.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
-    if (!pasted) return;
-    event.preventDefault();
-    const next = Array.from({ length: 6 }, (_, index) => pasted[index] ?? "");
-    setDigits(next);
-    inputRefs.current[Math.min(pasted.length, 5)]?.focus();
-  }
-
-  return (
-    <div className="space-y-5">
-      <BackButton onClick={onBack} />
-      <AuthHeading
-        title={`Enter the code we sent to ${maskIdentifier(contactValue, contactMethod)}`}
-        subtitle="Type the 6-digit code from the SHY email or SMS. SHY will check it automatically."
-      />
-      {contactMethod === "email" && (
-        <div className="rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-          The email must show a 6-digit code. If it only shows a Verify Email button, the Supabase hosted email template still needs the SHY OTP template applied.
-        </div>
-      )}
-      <InlineBanner message={error} onDismiss={() => setError("")} />
-      <div className="grid grid-cols-6 gap-2">
-        {digits.map((digit, index) => (
-          <input
-            key={index}
-            ref={(node) => {
-              inputRefs.current[index] = node;
-            }}
-            value={digit}
-            onChange={(event) => setDigit(index, event.target.value)}
-            onKeyDown={(event) => handleKeyDown(index, event)}
-            onPaste={handlePaste}
-            inputMode="numeric"
-            autoComplete={index === 0 ? "one-time-code" : "off"}
-            maxLength={1}
-            className="h-12 rounded-xl border border-border bg-background text-center text-lg font-semibold text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
-            disabled={loading}
-          />
-        ))}
-      </div>
-      <button
-        type="button"
-        onClick={resendCode}
-        disabled={loading || resendSeconds > 0}
-        className="w-full rounded-full border border-border bg-surface-elevated py-2.5 text-sm font-semibold text-foreground transition hover:border-primary/50 disabled:opacity-45"
-      >
-        {resendSeconds > 0 ? `Resend code in ${resendSeconds}s` : "Resend code"}
-      </button>
-      {hasPassword && (
-        <button
-          type="button"
-          onClick={onPasswordFallback}
-          className="w-full text-center text-xs font-semibold text-primary-glow hover:text-foreground"
-        >
-          Log in with a password
-        </button>
-      )}
-      {loading && <p className="text-center text-xs text-muted-foreground">Verifying...</p>}
-    </div>
   );
 }
 
