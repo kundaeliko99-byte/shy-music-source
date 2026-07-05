@@ -230,20 +230,9 @@ function AuthPage() {
     setSuccessMessage("");
     setLoading(true);
     try {
-      if (resolvedMethod === "email") {
-        const { error } = await supabase.auth.resetPasswordForEmail(resolvedIdentifier, {
-          redirectTo: authRedirectUrl(),
-        });
-        if (error) throw error;
-        setSuccessMessage(
-          `Password reset instructions have been sent to ${maskIdentifier(resolvedIdentifier, "email")}.`,
-        );
-        return;
-      }
-
-      await sendOtp("phone", resolvedIdentifier, "phone-reset", resolvedHasPassword);
+      await sendOtp(resolvedMethod, resolvedIdentifier, "phone-reset", resolvedHasPassword);
     } catch (error) {
-      setInlineError(readErrorMessage(error, "Could not send reset instructions."));
+      setInlineError(readErrorMessage(error, "Could not send the reset code."));
     } finally {
       setLoading(false);
     }
@@ -1030,8 +1019,13 @@ function OtpEntryScreen({
       <BackButton onClick={onBack} />
       <AuthHeading
         title={`Enter the code we sent to ${maskIdentifier(contactValue, contactMethod)}`}
-        subtitle="Type the 6-digit code. SHY will check it automatically."
+        subtitle="Type the 6-digit code from the SHY email or SMS. SHY will check it automatically."
       />
+      {contactMethod === "email" && (
+        <div className="rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+          The email must show a 6-digit code. If it only shows a Verify Email button, the Supabase hosted email template still needs the SHY OTP template applied.
+        </div>
+      )}
       <InlineBanner message={error} onDismiss={() => setError("")} />
       <div className="grid grid-cols-6 gap-2">
         {digits.map((digit, index) => (

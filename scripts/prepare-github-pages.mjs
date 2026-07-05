@@ -136,14 +136,14 @@ function standaloneAuthHtml({ basePath, supabaseUrl, supabaseKey }) {
         </form>
         <form id="password-form" class="hidden">
           <button class="link" data-back type="button">Back</button>
-          <h1>Enter Your Password</h1>
+          <h1 id="password-title">Enter Your Password</h1>
           <p id="password-id"></p>
           <div class="field">
             <label for="password">Password</label>
             <input id="password" type="password" autocomplete="current-password" placeholder="Enter your password" required />
           </div>
           <button class="link" id="forgot" type="button">Forgot password?</button>
-          <button class="primary" type="submit">Log in</button>
+          <button id="password-submit" class="primary" type="submit">Log in</button>
           <p class="foot"><button class="link" id="use-code" type="button">Use a code instead</button></p>
         </form>
         <form id="signup-form" class="hidden">
@@ -167,6 +167,7 @@ function standaloneAuthHtml({ basePath, supabaseUrl, supabaseKey }) {
           <button class="link" data-back type="button">Back</button>
           <h1 id="otp-title">Enter the code</h1>
           <p>Type the 6-digit code. SHY will check it automatically.</p>
+          <div id="email-code-help" class="notice show hidden">The email must show a 6-digit code. If it only shows a Verify Email button, the Supabase hosted email template still needs the SHY OTP template applied.</div>
           <div class="code">${Array.from({ length: 6 }, (_, index) => `<input maxlength="1" inputmode="numeric" data-code="${index}" />`).join("")}</div>
           <button id="resend" class="outline" type="button">Resend code</button>
           <p class="foot"><button id="otp-password" class="link" type="button">Log in with a password</button></p>
@@ -197,12 +198,12 @@ function standaloneAuthHtml({ basePath, supabaseUrl, supabaseKey }) {
       document.querySelectorAll("[data-mode='signin']").forEach(b => b.onclick = () => $("tab-signin").click());
       document.querySelectorAll("[data-role]").forEach(b => b.onclick = () => { role = b.dataset.role; document.querySelectorAll("[data-role]").forEach(x => x.classList.toggle("active", x === b)); });
       document.querySelectorAll("[data-oauth]").forEach(b => b.onclick = async () => { try { requireClient(); const { error } = await client.auth.signInWithOAuth({ provider: b.dataset.oauth, options: { redirectTo: location.origin + BASE_PATH } }); if (error) throw error; } catch (e) { showNotice(e.message || "Could not start social sign-in."); } });
-      $("signin-form").onsubmit = (event) => { event.preventDefault(); const value = $("contact").value; const error = valid(value, method); if (error) return showNotice(error); identifier = normalize(value, method); if ($("remember").checked) localStorage.setItem("shy.auth.remembered", JSON.stringify({ contactMethod: method, contactValue: value })); $("password-id").textContent = mask(identifier); show("password-form"); $("password").focus(); };
-      $("password-form").onsubmit = async (event) => { event.preventDefault(); try { requireClient(); const password = $("password").value; const args = method === "email" ? { email: identifier, password } : { phone: identifier, password }; const { error } = await client.auth.signInWithPassword(args); if (error) throw error; location.href = BASE_PATH; } catch (e) { showNotice(e.message || "Could not sign in."); } };
+      $("signin-form").onsubmit = (event) => { event.preventDefault(); const value = $("contact").value; const error = valid(value, method); if (error) return showNotice(error); identifier = normalize(value, method); otpPurpose = "signin"; $("password-title").textContent = "Enter Your Password"; $("password-submit").textContent = "Log in"; $("forgot").classList.remove("hidden"); $("use-code").classList.remove("hidden"); $("password").autocomplete = "current-password"; $("password").placeholder = "Enter your password"; if ($("remember").checked) localStorage.setItem("shy.auth.remembered", JSON.stringify({ contactMethod: method, contactValue: value })); $("password-id").textContent = mask(identifier); show("password-form"); $("password").focus(); };
+      $("password-form").onsubmit = async (event) => { event.preventDefault(); try { requireClient(); const password = $("password").value; if (otpPurpose === "phone-reset") { const { error } = await client.auth.updateUser({ password }); if (error) throw error; location.href = BASE_PATH; return; } const args = method === "email" ? { email: identifier, password } : { phone: identifier, password }; const { error } = await client.auth.signInWithPassword(args); if (error) throw error; location.href = BASE_PATH; } catch (e) { showNotice(e.message || "Could not sign in."); } };
       $("use-code").onclick = async () => sendOtp("signin");
-      $("forgot").onclick = async () => { try { requireClient(); if (method === "email") { const { error } = await client.auth.resetPasswordForEmail(identifier, { redirectTo: location.origin + BASE_PATH + "auth/" }); if (error) throw error; showNotice("Password reset instructions have been sent."); } else { await sendOtp("phone-reset"); } } catch (e) { showNotice(e.message || "Could not reset password."); } };
+      $("forgot").onclick = async () => { try { requireClient(); await sendOtp("phone-reset"); } catch (e) { showNotice(e.message || "Could not send the reset code."); } };
       $("signup-form").onsubmit = async (event) => { event.preventDefault(); const value = $("signup-contact").value; const error = valid(value, method); if (error) return showNotice(error); if ($("signup-password").value.length < 8) return showNotice("Password must be at least 8 characters."); identifier = normalize(value, method); await sendOtp("signup"); };
-      async function sendOtp(purpose) { try { requireClient(); otpPurpose = purpose; const options = purpose === "signup" ? { shouldCreateUser: true, data: { display_name: $("display-name").value.trim(), role } } : { shouldCreateUser: false }; const payload = method === "email" ? { email: identifier, options: { ...options, emailRedirectTo: location.origin + BASE_PATH + "auth/" } } : { phone: identifier, options }; const { error } = await client.auth.signInWithOtp(payload); if (error) throw error; $("otp-title").textContent = "Enter the code we sent to " + mask(identifier); show("otp-form"); startResend(); document.querySelector("[data-code='0']").focus(); } catch (e) { showNotice(e.message || "Could not send code."); } }
+      async function sendOtp(purpose) { try { requireClient(); otpPurpose = purpose; const options = purpose === "signup" ? { shouldCreateUser: true, data: { display_name: $("display-name").value.trim(), role } } : { shouldCreateUser: false }; const payload = method === "email" ? { email: identifier, options: { ...options, emailRedirectTo: location.origin + BASE_PATH + "auth/" } } : { phone: identifier, options }; const { error } = await client.auth.signInWithOtp(payload); if (error) throw error; $("otp-title").textContent = "Enter the code we sent to " + mask(identifier); show("otp-form"); $("email-code-help").classList.toggle("hidden", method !== "email"); startResend(); document.querySelector("[data-code='0']").focus(); } catch (e) { showNotice(e.message || "Could not send code."); } }
       function startResend() { resendAt = Date.now() + 30000; tickResend(); }
       function tickResend() { const left = Math.max(0, Math.ceil((resendAt - Date.now()) / 1000)); $("resend").textContent = left ? "Resend code in " + left + "s" : "Resend code"; $("resend").disabled = left > 0; if (left) setTimeout(tickResend, 1000); }
       $("resend").onclick = () => sendOtp(otpPurpose);
@@ -211,7 +212,7 @@ function standaloneAuthHtml({ basePath, supabaseUrl, supabaseKey }) {
         box.addEventListener("input", async () => { box.value = box.value.replace(/\\D/g, "").slice(0,1); if (box.value && boxes[index+1]) boxes[index+1].focus(); const token = [...boxes].map(x => x.value).join(""); if (token.length === 6) await verifyOtp(token, boxes); });
         box.addEventListener("keydown", (e) => { if (e.key === "Backspace" && !box.value && boxes[index-1]) boxes[index-1].focus(); });
       });
-      async function verifyOtp(token, boxes) { try { requireClient(); const payload = method === "email" ? { email: identifier, token, type: "email" } : { phone: identifier, token, type: "sms" }; const { error } = await client.auth.verifyOtp(payload); if (error) throw error; if (otpPurpose === "signup") { await client.auth.updateUser({ password: $("signup-password").value }); } location.href = BASE_PATH; } catch { boxes.forEach(x => x.value = ""); boxes[0].focus(); showNotice("That code didn't work. Try again or resend."); } }
+      async function verifyOtp(token, boxes) { try { requireClient(); const payload = method === "email" ? { email: identifier, token, type: "email" } : { phone: identifier, token, type: "sms" }; const { error } = await client.auth.verifyOtp(payload); if (error) throw error; if (otpPurpose === "signup") { await client.auth.updateUser({ password: $("signup-password").value }); location.href = BASE_PATH; return; } if (otpPurpose === "phone-reset") { show("password-form"); $("password-title").textContent = "Set New Password"; $("password-id").textContent = "Create a new password for " + mask(identifier); $("password-submit").textContent = "Save new password"; $("forgot").classList.add("hidden"); $("use-code").classList.add("hidden"); $("password").autocomplete = "new-password"; $("password").placeholder = "Enter a new password"; $("password").value = ""; $("password").focus(); return; } location.href = BASE_PATH; } catch { boxes.forEach(x => x.value = ""); boxes[0].focus(); showNotice("That code didn't work. Try again or resend."); } }
       try { const saved = JSON.parse(localStorage.getItem("shy.auth.remembered") || "null"); if (saved?.contactValue) { method = saved.contactMethod || "email"; setMethod(method, $("signin-form")); $("contact").value = saved.contactValue; $("remember").checked = true; } } catch {}
     </script>
   </body>

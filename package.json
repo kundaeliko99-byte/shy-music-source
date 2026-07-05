@@ -13,7 +13,8 @@
     "format": "prettier --write .",
     "android:sync": "cap sync android",
     "android:open": "cap open android",
-    "android:build": "cd android && gradlew.bat assembleDebug"
+    "android:build": "cd android && gradlew.bat assembleDebug",
+    "supabase:auth-otp-template": "node scripts/apply-supabase-otp-email-templates.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",
