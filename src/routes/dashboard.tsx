@@ -9,6 +9,23 @@ import { supabase } from "@/integrations/supabase/client";
 import { fmtCount } from "@/lib/format";
 import type { TrackRow } from "@/lib/api";
 import { defaultSaleTerms, fetchSongSaleTerms, type SaleType, type SongSaleTerms } from "@/lib/songSales";
+import { useAuth } from "@/contexts/AuthContext";
+
+const DASHBOARD_TIMEOUT_MS = 7000;
+
+async function withTimeout<T>(request: PromiseLike<T>, label: string, ms = DASHBOARD_TIMEOUT_MS): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve(request),
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(`${label} timed out`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
 
 export const Route = createFileRoute("/dashboard")({
   head: () => ({
@@ -18,8 +35,12 @@ export const Route = createFileRoute("/dashboard")({
     ],
   }),
   beforeLoad: async () => {
-    const { data } = await supabase.auth.getUser();
-    if (!data.user) throw redirect({ to: "/auth" });
+    try {
+      const { data } = await withTimeout(supabase.auth.getUser(), "Dashboard auth check", 5000);
+      if (!data.user) throw redirect({ to: "/auth" });
+    } catch {
+      throw redirect({ to: "/auth" });
+    }
   },
   component: DashboardPage,
 });
@@ -54,6 +75,7 @@ const MOBILE_NETWORKS = [
 ];
 
 function DashboardPage() {
+  const { user, loading: authLoading } = useAuth();
   const [artist, setArtist] = useState<ArtistRow | null>(null);
   const [tracks, setTracks] = useState<TrackRow[]>([]);
   const [countries, setCountries] = useState<Array<{ country: string; plays: number }>>([]);
@@ -62,18 +84,35 @@ function DashboardPage() {
 
   useEffect(() => {
     let alive = true;
+    let forceReadyId: ReturnType<typeof setTimeout> | undefined;
+
+    if (authLoading) return () => { alive = false; };
+
+    if (!user) {
+      setLoading(false);
+      setLoadWarning("Sign in again to open the artist dashboard.");
+      return () => { alive = false; };
+    }
+
+    setLoading(true);
+    setLoadWarning(null);
+
+    forceReadyId = setTimeout(() => {
+      if (!alive) return;
+      setLoading(false);
+      setLoadWarning("Dashboard data is taking too long to load. You can still use the page while SHY retries in the background.");
+    }, DASHBOARD_TIMEOUT_MS);
 
     (async () => {
       try {
-        const { data: u, error: userError } = await supabase.auth.getUser();
-        if (userError) throw userError;
-        if (!u.user) return;
-
-        const { data: a, error: artistError } = await supabase
-          .from("artists")
-          .select("id, display_name, slug, monthly_listeners, avatar_url, banner_url, bio, contact_email, country, mobile_money_number, mobile_money_network, ai_tools_used, instagram_url, facebook_url, twitter_url, tiktok_url, youtube_url")
-          .eq("user_id", u.user.id)
-          .maybeSingle();
+        const { data: a, error: artistError } = await withTimeout(
+          supabase
+            .from("artists")
+            .select("id, display_name, slug, monthly_listeners, avatar_url, banner_url, bio, contact_email, country, mobile_money_number, mobile_money_network, ai_tools_used, instagram_url, facebook_url, twitter_url, tiktok_url, youtube_url")
+            .eq("user_id", user.id)
+            .maybeSingle(),
+          "Artist profile request",
+        );
 
         if (artistError) throw artistError;
         if (!a) return;
@@ -82,12 +121,15 @@ function DashboardPage() {
         const artistRow = a as ArtistRow;
         setArtist(artistRow);
 
-        const { data: t, error: trackError } = await supabase
-          .from("tracks")
-          .select("id, title, cover_url, audio_url, duration_seconds, genre, mood, ai_tool, lyrics, explicit, plays_count, release_date, artist_id, album_id, artwork_shape, artists(display_name, slug, verified)")
-          .eq("artist_id", artistRow.id)
-          .order("plays_count", { ascending: false })
-          .limit(20);
+        const { data: t, error: trackError } = await withTimeout(
+          supabase
+            .from("tracks")
+            .select("id, title, cover_url, audio_url, duration_seconds, genre, mood, ai_tool, lyrics, explicit, plays_count, release_date, artist_id, album_id, artwork_shape, artists(display_name, slug, verified)")
+            .eq("artist_id", artistRow.id)
+            .order("plays_count", { ascending: false })
+            .limit(20),
+          "Artist tracks request",
+        );
 
         if (trackError) {
           setLoadWarning("Some music analytics could not be loaded yet.");
@@ -101,11 +143,15 @@ function DashboardPage() {
 
         const trackIds = trackRows.map((x) => x.id).slice(0, 50);
         if (trackIds.length) {
-          const { data: p, error: playsError } = await supabase
-            .from("plays")
-            .select("country")
-            .in("track_id", trackIds)
-            .limit(300);
+          const { data: p, error: playsError } = await withTimeout(
+            supabase
+              .from("plays")
+              .select("country")
+              .in("track_id", trackIds)
+              .limit(300),
+            "Play analytics request",
+            4000,
+          );
 
           if (!playsError && alive) {
             const m = new Map<string, number>();
@@ -124,14 +170,16 @@ function DashboardPage() {
         console.error("Dashboard failed to load", error);
         if (alive) setLoadWarning("Dashboard data could not be fully loaded. You can still use profile and music controls.");
       } finally {
+        if (forceReadyId) clearTimeout(forceReadyId);
         if (alive) setLoading(false);
       }
     })();
 
     return () => {
       alive = false;
+      if (forceReadyId) clearTimeout(forceReadyId);
     };
-  }, []);
+  }, [authLoading, user]);
 
   if (loading) {
     return (
@@ -147,12 +195,23 @@ function DashboardPage() {
     return (
       <AppShell>
         <EmptyState
-          title="No artist profile"
-          hint="Create your artist profile to access analytics."
+          title={loadWarning ? "Dashboard is still loading data" : "No artist profile"}
+          hint={loadWarning ?? "Create your artist profile to access analytics."}
           action={
-            <Link to="/become-artist" className="inline-flex px-4 py-2 rounded-full bg-gradient-primary text-primary-foreground text-sm font-medium">
-              Become an artist
-            </Link>
+            <div className="flex flex-wrap justify-center gap-2">
+              {loadWarning && (
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="inline-flex px-4 py-2 rounded-full bg-gradient-primary text-primary-foreground text-sm font-medium"
+                >
+                  Retry dashboard
+                </button>
+              )}
+              <Link to="/become-artist" className="inline-flex px-4 py-2 rounded-full bg-surface-elevated hairline text-sm font-medium">
+                Become an artist
+              </Link>
+            </div>
           }
         />
       </AppShell>
