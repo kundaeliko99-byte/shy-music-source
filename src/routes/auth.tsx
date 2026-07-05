@@ -38,6 +38,9 @@ type ContactMethod = "email" | "phone";
 type OtpPurpose = "signin" | "signup" | "phone-reset";
 
 const REMEMBER_KEY = "shy.auth.remembered";
+const SIGNIN_FAILURE_KEY = "shy.auth.failed_signins";
+const MAX_FAILED_SIGNINS = 10;
+const SUPPORT_EMAIL = "support@shymusic.app";
 const DEFAULT_PHONE_PREFIX = "+260 ";
 
 const displayNameSchema = z.string().trim().min(1, "Enter your display name").max(50);
@@ -171,6 +174,10 @@ function AuthPage() {
     setResolvedIdentifier(identifier);
     setResolvedMethod(contactMethod);
     setResolvedHasPassword(true);
+    if (getFailedSigninCount(contactMethod, identifier) >= MAX_FAILED_SIGNINS) {
+      setInlineError(contactSupportMessage(identifier, contactMethod));
+      return;
+    }
     rememberCurrentDetails();
     setStage("password");
   }
@@ -193,9 +200,15 @@ function AuthPage() {
             });
 
       if (error) throw error;
+      clearFailedSignin(resolvedMethod, resolvedIdentifier);
       onSignedIn(data.session);
     } catch (error) {
-      setInlineError(readErrorMessage(error, "Could not sign in."));
+      const attempts = recordFailedSignin(resolvedMethod, resolvedIdentifier);
+      setInlineError(
+        attempts >= MAX_FAILED_SIGNINS
+          ? contactSupportMessage(resolvedIdentifier, resolvedMethod)
+          : `${readErrorMessage(error, "Could not sign in.")} ${MAX_FAILED_SIGNINS - attempts} ${MAX_FAILED_SIGNINS - attempts === 1 ? "try" : "tries"} left before support is required.`,
+      );
     } finally {
       setLoading(false);
     }
@@ -216,7 +229,33 @@ function AuthPage() {
       const identifier = authContactValue(contactMethod, rawContactValue);
       setResolvedIdentifier(identifier);
       setResolvedMethod(contactMethod);
-      await sendOtp(contactMethod, identifier, "signup", false);
+      const signupPayload =
+        contactMethod === "email"
+          ? {
+              email: identifier,
+              password,
+              options: {
+                data: { display_name: displayName.trim(), role },
+                emailRedirectTo: authRedirectUrl(),
+              },
+            }
+          : {
+              phone: identifier,
+              password,
+              options: { data: { display_name: displayName.trim(), role } },
+            };
+      const { data, error } =
+        contactMethod === "email"
+          ? await supabase.auth.signUp(signupPayload)
+          : await (supabase.auth.signUp as any)(signupPayload);
+      if (error) throw error;
+      if (data.session) {
+        onSignedIn(data.session);
+        return;
+      }
+      setPassword("");
+      switchAuthMode("signin");
+      setSuccessMessage("Account created. Sign in with the email or phone and password you just used.");
     } catch (error) {
       setInlineError(readErrorMessage(error, "Could not create the account."));
     } finally {
@@ -230,9 +269,17 @@ function AuthPage() {
     setSuccessMessage("");
     setLoading(true);
     try {
-      await sendOtp(resolvedMethod, resolvedIdentifier, "phone-reset", resolvedHasPassword);
+      if (resolvedMethod === "email") {
+        const { error } = await supabase.auth.resetPasswordForEmail(resolvedIdentifier, {
+          redirectTo: authRedirectUrl(),
+        });
+        if (error) throw error;
+        setSuccessMessage(`Password reset instructions have been sent to ${maskIdentifier(resolvedIdentifier, "email")}.`);
+        return;
+      }
+      setSuccessMessage(`Phone password reset is temporarily unavailable. Contact support at ${SUPPORT_EMAIL}.`);
     } catch (error) {
-      setInlineError(readErrorMessage(error, "Could not send the reset code."));
+      setInlineError(readErrorMessage(error, "Could not send reset instructions."));
     } finally {
       setLoading(false);
     }
@@ -369,6 +416,7 @@ function AuthPage() {
           contactValue={contactValue}
           contactError={contactError}
           inlineError={inlineError}
+          successMessage={successMessage}
           loading={loading}
           rememberMe={rememberMe}
           onSubmit={submitIdentifier}
@@ -412,15 +460,6 @@ function AuthPage() {
             setInlineError("");
             setSuccessMessage("");
             setStage("forgot");
-          }}
-          onUseCode={() => {
-            setInlineError("");
-            setLoading(true);
-            sendOtp(resolvedMethod, resolvedIdentifier, "signin", true)
-              .catch((error) =>
-                setInlineError(readErrorMessage(error, "Could not send the code.")),
-              )
-              .finally(() => setLoading(false));
           }}
           onSubmit={submitPasswordSignin}
         />
@@ -508,6 +547,7 @@ function IdentifierGate({
   contactValue,
   contactError,
   inlineError,
+  successMessage,
   loading,
   rememberMe,
   onSubmit,
@@ -522,6 +562,7 @@ function IdentifierGate({
   contactValue: string;
   contactError: string;
   inlineError: string;
+  successMessage: string;
   loading: boolean;
   rememberMe: boolean;
   onSubmit: (event: FormEvent) => void;
@@ -535,6 +576,11 @@ function IdentifierGate({
     <form onSubmit={onSubmit} className="space-y-5">
       <AuthHeading title="Welcome Back" subtitle="Enter your email or phone number to continue." />
       <InlineBanner message={inlineError} onDismiss={onDismissError} />
+      {successMessage && (
+        <div className="rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-xs leading-relaxed text-foreground">
+          {successMessage}
+        </div>
+      )}
 
       <ContactMethodToggle contactMethod={contactMethod} onChange={onContactMethodChange} />
 
@@ -642,7 +688,6 @@ function PasswordScreen({
   onBack,
   onDismissError,
   onForgot,
-  onUseCode,
   onSubmit,
 }: {
   identifier: string;
@@ -654,7 +699,6 @@ function PasswordScreen({
   onBack: () => void;
   onDismissError: () => void;
   onForgot: () => void;
-  onUseCode: () => void;
   onSubmit: (event: FormEvent) => void;
 }) {
   return (
@@ -684,14 +728,6 @@ function PasswordScreen({
       <PrimaryButton loading={loading} disabled={!password} loadingLabel="Logging in...">
         Log in
       </PrimaryButton>
-      <button
-        type="button"
-        onClick={onUseCode}
-        disabled={loading}
-        className="w-full text-center text-xs font-semibold text-primary-glow hover:text-foreground disabled:opacity-50"
-      >
-        Use a code instead
-      </button>
     </form>
   );
 }
@@ -739,7 +775,7 @@ function SignupScreen({
 }) {
   return (
     <form onSubmit={onSubmit} className="space-y-5">
-      <AuthHeading title="Create Your Account" subtitle="SHY will send a code to verify this account." />
+      <AuthHeading title="Create Your Account" subtitle="Create your SHY account with email or phone and a password." />
       {identifier ? (
         <IdentifierBadge identifier={identifier} method={method} />
       ) : (
@@ -798,7 +834,7 @@ function SignupScreen({
           ))}
         </div>
       </div>
-      <PrimaryButton loading={loading} disabled={!displayName.trim() || !password} loadingLabel="Sending code...">
+      <PrimaryButton loading={loading} disabled={!displayName.trim() || !password} loadingLabel="Creating account...">
         Create account
       </PrimaryButton>
       <button
@@ -1360,6 +1396,40 @@ function readRememberedDetails() {
     // Ignore invalid saved data.
   }
   return null;
+}
+
+function failedSigninKey(method: ContactMethod, identifier: string) {
+  return `${SIGNIN_FAILURE_KEY}:${method}:${identifier.toLowerCase()}`;
+}
+
+function getFailedSigninCount(method: ContactMethod, identifier: string) {
+  try {
+    return Number(window.localStorage.getItem(failedSigninKey(method, identifier)) ?? "0") || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function recordFailedSignin(method: ContactMethod, identifier: string) {
+  try {
+    const next = Math.min(MAX_FAILED_SIGNINS, getFailedSigninCount(method, identifier) + 1);
+    window.localStorage.setItem(failedSigninKey(method, identifier), String(next));
+    return next;
+  } catch {
+    return MAX_FAILED_SIGNINS;
+  }
+}
+
+function clearFailedSignin(method: ContactMethod, identifier: string) {
+  try {
+    window.localStorage.removeItem(failedSigninKey(method, identifier));
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function contactSupportMessage(identifier: string, method: ContactMethod) {
+  return `Too many wrong password attempts for ${maskIdentifier(identifier, method)}. Contact support at ${SUPPORT_EMAIL}.`;
 }
 
 function authRedirectUrl() {
