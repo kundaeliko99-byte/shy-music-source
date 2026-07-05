@@ -62,6 +62,7 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const navigate = useNavigate();
+  const [isMounted, setIsMounted] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>("signin");
   const [stage, setStage] = useState<AuthStage>("identifier");
   const [contactMethod, setContactMethod] = useState<ContactMethod>("email");
@@ -88,6 +89,7 @@ function AuthPage() {
   } | null>(null);
 
   useEffect(() => {
+    setIsMounted(true);
     const remembered = readRememberedDetails();
     if (!remembered) return;
     setRememberMe(true);
@@ -356,6 +358,17 @@ function AuthPage() {
 
   return (
     <AuthFrame>
+      {!isMounted && (
+        <div className="space-y-5">
+          <AuthHeading title="Welcome Back" subtitle="Preparing sign in..." />
+          <div className="h-11 rounded-full bg-surface-elevated" />
+          <div className="h-14 rounded-xl bg-background" />
+          <div className="h-12 rounded-full bg-surface-elevated" />
+        </div>
+      )}
+
+      {isMounted && (
+        <>
       {(stage === "identifier" || stage === "signup") && !otpRequest && (
         <AuthTabs authMode={authMode} onChange={switchAuthMode} />
       )}
@@ -493,6 +506,8 @@ function AuthPage() {
           onDismissError={() => setInlineError("")}
           onSubmit={setRecoveredPassword}
         />
+      )}
+        </>
       )}
     </AuthFrame>
   );
@@ -1187,11 +1202,11 @@ function AuthHeading({ title, subtitle }: { title: string; subtitle: string }) {
 
 function Field({ label, error, children }: { label: string; error?: string; children: ReactNode }) {
   return (
-    <label className="block">
+    <div className="block">
       <div className="mb-1.5 text-[11px] text-muted-foreground">{label}</div>
       {children}
       {error && <div className="mt-1.5 text-[11px] text-primary-glow">{error}</div>}
-    </label>
+    </div>
   );
 }
 
