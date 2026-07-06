@@ -1,0 +1,30 @@
+{
+  "name": "SHYMusic Creative",
+  "short_name": "SHYMusic",
+  "description": "SHYMusic Creative is a marketplace and creative platform for songwriters, releases, fan support, and music buyer opportunities.",
+  "start_url": "/shy-music-source/",
+  "scope": "/shy-music-source/",
+  "display": "standalone",
+  "background_color": "#0A0A0F",
+  "theme_color": "#0A0A0F",
+  "icons": [
+    {
+      "src": "/shy-music-source/assets/brand/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/shy-music-source/assets/brand/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/shy-music-source/assets/brand/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
