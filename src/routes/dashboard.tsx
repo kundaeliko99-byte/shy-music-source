@@ -86,7 +86,18 @@ function DashboardPage() {
     let alive = true;
     let forceReadyId: ReturnType<typeof setTimeout> | undefined;
 
-    if (authLoading) return () => { alive = false; };
+    if (authLoading && !user) {
+      const authReadyId = setTimeout(() => {
+        if (!alive) return;
+        setLoading(false);
+        setLoadWarning("Dashboard session is taking too long to refresh. Sign in again if this keeps happening.");
+      }, DASHBOARD_TIMEOUT_MS);
+
+      return () => {
+        alive = false;
+        clearTimeout(authReadyId);
+      };
+    }
 
     if (!user) {
       setLoading(false);
