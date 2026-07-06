@@ -118,7 +118,7 @@ export function TopNav() {
               <a
                 href={withVersionedBasePath("/dashboard/")}
                 title="Open dashboard"
-                className="inline-flex h-8 w-8 lg:h-auto lg:w-auto items-center justify-center lg:gap-1.5 lg:px-3 lg:py-1.5 text-xs rounded-full bg-surface-elevated text-foreground font-medium hairline hover:text-primary-glow"
+                className="relative inline-flex h-8 w-8 lg:h-auto lg:w-auto items-center justify-center lg:gap-1.5 lg:px-3 lg:py-1.5 text-xs rounded-full bg-surface-elevated text-foreground font-medium hairline hover:text-primary-glow before:absolute before:-top-1 before:left-3 before:right-3 before:h-0.5 before:rounded-full before:bg-red-500"
               >
                 <BarChart3 className="w-3.5 h-3.5" />
                 <span className="hidden lg:inline">Dashboard</span>

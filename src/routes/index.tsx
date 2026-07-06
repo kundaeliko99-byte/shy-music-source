@@ -8,6 +8,7 @@ import { TrackCard } from "@/components/TrackCard";
 import { ShyLogo } from "@/components/ShyLogo";
 import { HorizontalRow, EmptyState, Skeleton } from "@/components/HorizontalRow";
 import { usePlayer } from "@/contexts/PlayerContext";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   fetchNewThisWeek,
   fetchTopTrack,
@@ -43,6 +44,7 @@ function HomePage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const { playTrack } = usePlayer();
+  const { isArtist } = useAuth();
 
   useEffect(() => {
     let alive = true;
@@ -278,12 +280,14 @@ function HomePage() {
           <h2 className="text-base font-semibold flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-primary-glow" /> WATCH OUT
           </h2>
-          <Link
-            to="/upload"
-            className="inline-flex items-center gap-2 rounded-full bg-surface-elevated px-3 py-1.5 text-xs font-medium text-foreground hairline hover:text-primary-glow"
-          >
-            <CalendarClock className="h-3.5 w-3.5" /> Schedule a release
-          </Link>
+          {isArtist && (
+            <Link
+              to="/upload"
+              className="inline-flex items-center gap-2 rounded-full bg-surface-elevated px-3 py-1.5 text-xs font-medium text-foreground hairline hover:text-primary-glow"
+            >
+              <CalendarClock className="h-3.5 w-3.5" /> Schedule a release
+            </Link>
+          )}
         </div>
         {loading ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
