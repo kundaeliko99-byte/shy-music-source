@@ -196,6 +196,42 @@ html { color-scheme: dark; }
     border-color: var(--color-ring);
     box-shadow: 0 0 0 2px oklch(0.58 0.24 295 / 0.2);
   }
+  .mini-button,
+  .mini-primary,
+  .mini-danger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: 999px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    transition: opacity 160ms ease, background 160ms ease, color 160ms ease, border-color 160ms ease;
+  }
+  .mini-button {
+    border: 0.5px solid var(--color-border);
+    background: var(--color-surface-elevated);
+    color: var(--color-foreground);
+  }
+  .mini-button:hover {
+    color: var(--color-primary-glow);
+  }
+  .mini-primary {
+    background: var(--gradient-primary);
+    color: var(--color-primary-foreground);
+    box-shadow: var(--shadow-glow-soft);
+  }
+  .mini-primary:hover {
+    opacity: 0.92;
+  }
+  .mini-danger {
+    border: 0.5px solid oklch(0.58 0.22 25 / 0.4);
+    background: oklch(0.58 0.22 25 / 0.12);
+    color: oklch(0.78 0.18 25);
+  }
+  .mini-danger:hover {
+    background: oklch(0.58 0.22 25 / 0.18);
+  }
   @media (hover: none) {
     .hover-play-control {
       opacity: 1;
