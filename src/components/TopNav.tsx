@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ShyLogo } from "./ShyLogo";
 import { NotificationsBell } from "./NotificationsBell";
 import { useAuth } from "@/contexts/AuthContext";
-import { withBasePath } from "@/lib/assets";
+import { withBasePath, withVersionedBasePath } from "@/lib/assets";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -163,7 +163,7 @@ export function TopNav() {
             )}
             {isArtist && (
               <a
-                href={withBasePath("/dashboard/")}
+                href={withVersionedBasePath("/dashboard/")}
                 title="Open dashboard"
                 className="inline-flex h-8 w-8 lg:h-auto lg:w-auto items-center justify-center lg:gap-1.5 lg:px-3 lg:py-1.5 text-xs rounded-full bg-surface-elevated text-foreground font-medium hairline hover:text-primary-glow"
               >
@@ -173,7 +173,7 @@ export function TopNav() {
             )}
             {isAdmin && (
               <a
-                href={withBasePath("/admin/")}
+                href={withVersionedBasePath("/admin/")}
                 title="Open admin"
                 className="inline-flex h-8 w-8 lg:h-auto lg:w-auto items-center justify-center lg:gap-1.5 lg:px-3 lg:py-1.5 text-xs rounded-full bg-surface-elevated text-foreground font-medium hairline hover:text-primary-glow"
               >
@@ -212,12 +212,12 @@ export function TopNav() {
                     <Library className="h-3.5 w-3.5" /> Library
                   </a>
                   {isArtist && (
-                    <a onClick={() => setProfileOpen(false)} href={withBasePath("/dashboard/")} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-surface-elevated">
+                    <a onClick={() => setProfileOpen(false)} href={withVersionedBasePath("/dashboard/")} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-surface-elevated">
                       <UserCircle className="h-3.5 w-3.5" /> Artist dashboard
                     </a>
                   )}
                   {isAdmin && (
-                    <a onClick={() => setProfileOpen(false)} href={withBasePath("/admin/")} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-surface-elevated">
+                    <a onClick={() => setProfileOpen(false)} href={withVersionedBasePath("/admin/")} className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm hover:bg-surface-elevated">
                       <Shield className="h-3.5 w-3.5" /> Admin control panel
                     </a>
                   )}

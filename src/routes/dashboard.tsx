@@ -4,7 +4,7 @@ import { BarChart3, TrendingUp, Users, Music2, Pencil, Save, ShoppingBag, Tags }
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { Cover } from "@/components/Cover";
-import { Skeleton, EmptyState } from "@/components/HorizontalRow";
+import { EmptyState } from "@/components/HorizontalRow";
 import { supabase } from "@/integrations/supabase/client";
 import { fmtCount } from "@/lib/format";
 import type { TrackRow } from "@/lib/api";
@@ -192,25 +192,19 @@ function DashboardPage() {
     };
   }, [authLoading, user]);
 
-  if (loading) {
-    return (
-      <AppShell>
-        <Skeleton className="h-32 mb-6" />
-        <Skeleton className="h-40 mb-6" />
-        <Skeleton className="h-40" />
-      </AppShell>
-    );
-  }
-
   if (!artist) {
     return (
       <AppShell>
         <EmptyState
-          title={loadWarning ? "Dashboard is still loading data" : "No artist profile"}
-          hint={loadWarning ?? "Create your artist profile to access analytics."}
+          title={loading ? "Opening dashboard" : loadWarning ? "Dashboard needs a retry" : "No artist profile"}
+          hint={
+            loading
+              ? "SHY is loading your artist profile and songs. This screen will recover automatically instead of staying blank."
+              : loadWarning ?? "Create your artist profile to access analytics."
+          }
           action={
             <div className="flex flex-wrap justify-center gap-2">
-              {loadWarning && (
+              {(loading || loadWarning) && (
                 <button
                   type="button"
                   onClick={() => window.location.reload()}
