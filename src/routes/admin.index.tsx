@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { fmtCount } from "@/lib/format";
 import { useAuth } from "@/contexts/AuthContext";
+import { withTimeout } from "@/lib/request";
 
 export const Route = createFileRoute("/admin/")({
   component: AdminOverview,
@@ -33,6 +34,24 @@ interface AdminTrackRow { id: string; title: string; artist_id: string; plays_co
 interface PurchaseRow { id: string; track_id: string; artist_id: string; buyer_name: string | null; buyer_contact: string | null; proposed_price: number | null; currency: string | null; status: string; created_at: string }
 interface AuditLogRow { id: string; action: string; target_table: string; note: string | null; created_at: string }
 
+function emptyStats(): Stats {
+  return {
+    users: 0,
+    artists: 0,
+    songs: 0,
+    albums: 0,
+    streamsToday: 0,
+    streamsWeek: 0,
+    streamsAll: 0,
+    downloadsToday: 0,
+    downloadsWeek: 0,
+    downloadsAll: 0,
+    motivations: 0,
+    subsByPlan: [],
+    foundingRemaining: 0,
+  };
+}
+
 function startOf(period: "day" | "week"): string {
   const d = new Date();
   if (period === "day") d.setHours(0, 0, 0, 0);
@@ -57,40 +76,47 @@ function AdminOverview() {
   const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogRow[]>([]);
   const [busy, setBusy] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    (async () => {
-      const today = startOf("day");
-      const week = startOf("week");
-      const [
-        { count: users },
-        { count: artists },
-        { count: songs },
-        { count: albums },
-        streamsToday, streamsWeek, streamsAll,
-        downloadsToday, downloadsWeek, downloadsAll,
-        { count: motivations },
-        { data: subs },
-        { data: plansData },
-        { data: settings },
-        { count: foundingCount },
-      ] = await Promise.all([
-        supabase.from("profiles").select("*", { count: "exact", head: true }),
-        supabase.from("artists").select("*", { count: "exact", head: true }),
-        supabase.from("tracks").select("*", { count: "exact", head: true }),
-        supabase.from("albums").select("*", { count: "exact", head: true }),
-        countSince("plays", today),
-        countSince("plays", week),
-        countSince("plays"),
-        countSince("downloads", today),
-        countSince("downloads", week),
-        countSince("downloads"),
-        supabase.from("motivations").select("*", { count: "exact", head: true }),
-        supabase.from("subscriptions").select("plan_id, subscription_plans(name)"),
-        supabase.from("subscription_plans").select("id, name"),
-        supabase.from("platform_settings").select("founding_artist_cap").maybeSingle(),
-        supabase.from("subscriptions").select("*", { count: "exact", head: true }).eq("is_founding", true),
-      ]);
+    let alive = true;
+
+    async function loadAdmin() {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const today = startOf("day");
+        const week = startOf("week");
+        const [
+          { count: users },
+          { count: artists },
+          { count: songs },
+          { count: albums },
+          streamsToday, streamsWeek, streamsAll,
+          downloadsToday, downloadsWeek, downloadsAll,
+          { count: motivations },
+          { data: subs },
+          { data: plansData },
+          { data: settings },
+          { count: foundingCount },
+        ] = await withTimeout(Promise.all([
+          supabase.from("profiles").select("*", { count: "exact", head: true }),
+          supabase.from("artists").select("*", { count: "exact", head: true }),
+          supabase.from("tracks").select("*", { count: "exact", head: true }),
+          supabase.from("albums").select("*", { count: "exact", head: true }),
+          countSince("plays", today),
+          countSince("plays", week),
+          countSince("plays"),
+          countSince("downloads", today),
+          countSince("downloads", week),
+          countSince("downloads"),
+          supabase.from("motivations").select("*", { count: "exact", head: true }),
+          supabase.from("subscriptions").select("plan_id, subscription_plans(name)"),
+          supabase.from("subscription_plans").select("id, name"),
+          supabase.from("platform_settings").select("founding_artist_cap").maybeSingle(),
+          supabase.from("subscriptions").select("*", { count: "exact", head: true }).eq("is_founding", true),
+        ]), "Admin metrics", 9000);
 
       const planCounts = new Map<string, number>();
       for (const r of (subs ?? []) as Array<{ plan_id: string; subscription_plans: { name: string } | null }>) {
@@ -101,27 +127,28 @@ function AdminOverview() {
       for (const p of plansData ?? []) if (!planCounts.has(p.name)) planCounts.set(p.name, 0);
 
       const cap = settings?.founding_artist_cap ?? 100;
-      setS({
-        users: users ?? 0,
-        artists: artists ?? 0,
-        songs: songs ?? 0,
-        albums: albums ?? 0,
-        streamsToday, streamsWeek, streamsAll,
-        downloadsToday, downloadsWeek, downloadsAll,
-        motivations: motivations ?? 0,
-        subsByPlan: [...planCounts.entries()].map(([plan, count]) => ({ plan, count })),
-        foundingRemaining: Math.max(0, cap - (foundingCount ?? 0)),
-      });
+        if (!alive) return;
+        setS({
+          users: users ?? 0,
+          artists: artists ?? 0,
+          songs: songs ?? 0,
+          albums: albums ?? 0,
+          streamsToday, streamsWeek, streamsAll,
+          downloadsToday, downloadsWeek, downloadsAll,
+          motivations: motivations ?? 0,
+          subsByPlan: [...planCounts.entries()].map(([plan, count]) => ({ plan, count })),
+          foundingRemaining: Math.max(0, cap - (foundingCount ?? 0)),
+        });
 
-      // Activity feed: pull recent rows from various tables
-      const [{ data: plays }, { data: dls }, { data: mot }, { data: apps }, { data: newArtists }, { data: newTracks }] = await Promise.all([
-        supabase.from("plays").select("id, played_at, track_id, tracks(title)").order("played_at", { ascending: false }).limit(10),
-        supabase.from("downloads").select("id, created_at, track_id").order("created_at", { ascending: false }).limit(10),
-        supabase.from("motivations").select("id, created_at, artist_id").order("created_at", { ascending: false }).limit(10),
-        supabase.from("subscription_applications").select("id, submitted_at, status, artist_id").order("submitted_at", { ascending: false }).limit(10),
-        supabase.from("artists").select("id, created_at, display_name").order("created_at", { ascending: false }).limit(10),
-        supabase.from("tracks").select("id, created_at, title").order("created_at", { ascending: false }).limit(10),
-      ]);
+        // Activity feed: pull recent rows from various tables
+        const [{ data: plays }, { data: dls }, { data: mot }, { data: apps }, { data: newArtists }, { data: newTracks }] = await withTimeout(Promise.all([
+          supabase.from("plays").select("id, played_at, track_id, tracks(title)").order("played_at", { ascending: false }).limit(10),
+          supabase.from("downloads").select("id, created_at, track_id").order("created_at", { ascending: false }).limit(10),
+          supabase.from("motivations").select("id, created_at, artist_id").order("created_at", { ascending: false }).limit(10),
+          supabase.from("subscription_applications").select("id, submitted_at, status, artist_id").order("submitted_at", { ascending: false }).limit(10),
+          supabase.from("artists").select("id, created_at, display_name").order("created_at", { ascending: false }).limit(10),
+          supabase.from("tracks").select("id, created_at, title").order("created_at", { ascending: false }).limit(10),
+        ]), "Admin activity", 9000);
 
       // Resolve artist names for motivations + applications in one query
       const artistIds = Array.from(new Set([
@@ -147,21 +174,36 @@ function AdminOverview() {
         ...(newArtists ?? []).map((a) => ({ id: `na${a.id}`, kind: "New artist", label: a.display_name, at: a.created_at })),
         ...(newTracks ?? []).map((t) => ({ id: `nt${t.id}`, kind: "New track", label: t.title, at: t.created_at })),
       ].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 30);
-      setFeed(items);
+        if (alive) setFeed(items);
 
-      const [{ data: profileRows }, { data: artistRows }, { data: trackRows }, { data: purchaseRows }, { data: logs }] = await Promise.all([
-        (supabase as any).from("profiles").select("id, display_name, username, avatar_url, account_status, created_at").order("created_at", { ascending: false }).limit(12),
-        (supabase as any).from("artists").select("id, display_name, slug, verified, moderation_status, created_at").order("created_at", { ascending: false }).limit(12),
-        (supabase as any).from("tracks").select("id, title, artist_id, plays_count, moderation_status, artists(display_name)").order("created_at", { ascending: false }).limit(12),
-        (supabase as any).from("song_purchase_requests").select("id, track_id, artist_id, buyer_name, buyer_contact, proposed_price, currency, status, created_at").order("created_at", { ascending: false }).limit(12),
-        (supabase as any).from("admin_action_logs").select("id, action, target_table, note, created_at").order("created_at", { ascending: false }).limit(12),
-      ]);
-      setUsers(profileRows ?? []);
-      setArtists(artistRows ?? []);
-      setTracks(trackRows ?? []);
-      setPurchases(purchaseRows ?? []);
-      setAuditLogs(logs ?? []);
-    })();
+        const [{ data: profileRows }, { data: artistRows }, { data: trackRows }, { data: purchaseRows }, { data: logs }] = await withTimeout(Promise.all([
+          (supabase as any).from("profiles").select("id, display_name, username, avatar_url, account_status, created_at").order("created_at", { ascending: false }).limit(12),
+          (supabase as any).from("artists").select("id, display_name, slug, verified, moderation_status, created_at").order("created_at", { ascending: false }).limit(12),
+          (supabase as any).from("tracks").select("id, title, artist_id, plays_count, moderation_status, artists(display_name)").order("created_at", { ascending: false }).limit(12),
+          (supabase as any).from("song_purchase_requests").select("id, track_id, artist_id, buyer_name, buyer_contact, proposed_price, currency, status, created_at").order("created_at", { ascending: false }).limit(12),
+          (supabase as any).from("admin_action_logs").select("id, action, target_table, note, created_at").order("created_at", { ascending: false }).limit(12),
+        ]), "Admin control tables", 9000);
+        if (!alive) return;
+        setUsers(profileRows ?? []);
+        setArtists(artistRows ?? []);
+        setTracks(trackRows ?? []);
+        setPurchases(purchaseRows ?? []);
+        setAuditLogs(logs ?? []);
+      } catch (error) {
+        console.warn("[admin] overview failed to load", error);
+        if (!alive) return;
+        setS(emptyStats());
+        setFeed([]);
+        setLoadError("Something went wrong while loading admin data. Please try again.");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    }
+
+    loadAdmin();
+    return () => {
+      alive = false;
+    };
   }, []);
 
   async function logAction(action: string, targetTable: string, targetId: string, nextValue: unknown, note?: string) {
@@ -216,40 +258,47 @@ function AdminOverview() {
     toast.success(`Purchase request marked ${status}`);
   }
 
-  if (!s) return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (loading && !s) return <div className="text-sm text-muted-foreground">Loading…</div>;
+
+  const stats = s ?? emptyStats();
 
   return (
     <div className="space-y-6">
+      {loadError && (
+        <div className="rounded-xl bg-surface p-4 text-sm text-muted-foreground hairline">
+          {loadError}
+        </div>
+      )}
       <h1 className="text-2xl font-semibold">Overview</h1>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Stat icon={<Users className="w-4 h-4" />} label="Users" value={fmtCount(s.users)} />
-        <Stat icon={<Users className="w-4 h-4" />} label="Artists" value={fmtCount(s.artists)} />
-        <Stat icon={<Music2 className="w-4 h-4" />} label="Songs" value={fmtCount(s.songs)} />
-        <Stat icon={<Disc3 className="w-4 h-4" />} label="Albums" value={fmtCount(s.albums)} />
+        <Stat icon={<Users className="w-4 h-4" />} label="Users" value={fmtCount(stats.users)} />
+        <Stat icon={<Users className="w-4 h-4" />} label="Artists" value={fmtCount(stats.artists)} />
+        <Stat icon={<Music2 className="w-4 h-4" />} label="Songs" value={fmtCount(stats.songs)} />
+        <Stat icon={<Disc3 className="w-4 h-4" />} label="Albums" value={fmtCount(stats.albums)} />
       </div>
 
       <Section title="Streams" icon={<Play className="w-4 h-4" />}>
-        <Stat label="Today" value={fmtCount(s.streamsToday)} />
-        <Stat label="This week" value={fmtCount(s.streamsWeek)} />
-        <Stat label="All time" value={fmtCount(s.streamsAll)} />
+        <Stat label="Today" value={fmtCount(stats.streamsToday)} />
+        <Stat label="This week" value={fmtCount(stats.streamsWeek)} />
+        <Stat label="All time" value={fmtCount(stats.streamsAll)} />
       </Section>
 
       <Section title="Downloads" icon={<Download className="w-4 h-4" />}>
-        <Stat label="Today" value={fmtCount(s.downloadsToday)} />
-        <Stat label="This week" value={fmtCount(s.downloadsWeek)} />
-        <Stat label="All time" value={fmtCount(s.downloadsAll)} />
+        <Stat label="Today" value={fmtCount(stats.downloadsToday)} />
+        <Stat label="This week" value={fmtCount(stats.downloadsWeek)} />
+        <Stat label="All time" value={fmtCount(stats.downloadsAll)} />
       </Section>
 
       <Section title="Engagement" icon={<Heart className="w-4 h-4" />}>
-        <Stat label="Motivation clicks" value={fmtCount(s.motivations)} />
-        <Stat label="Founding slots left" value={String(s.foundingRemaining)} />
+        <Stat label="Motivation clicks" value={fmtCount(stats.motivations)} />
+        <Stat label="Founding slots left" value={String(stats.foundingRemaining)} />
       </Section>
 
       <div>
         <h2 className="text-sm font-semibold mb-3 flex items-center gap-2"><Crown className="w-4 h-4 text-[#FFD166]" /> Active subscriptions</h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {s.subsByPlan.map((p) => <Stat key={p.plan} label={p.plan} value={String(p.count)} />)}
+          {stats.subsByPlan.map((p) => <Stat key={p.plan} label={p.plan} value={String(p.count)} />)}
         </div>
       </div>
 

@@ -46,11 +46,15 @@ export function TopNav() {
   const [q, setQ] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
-  const normalizedPath = location.pathname.replace(/\/+$/, "").toLowerCase();
-  const isDashboardRoute =
-    normalizedPath === "/dashboard" ||
-    normalizedPath.endsWith("/dashboard") ||
-    normalizedPath.includes("/dashboard/");
+  const pathCandidates = [
+    location.pathname,
+    typeof window !== "undefined" ? window.location.pathname : "",
+  ].map((path) => path.replace(/\/+$/, "").toLowerCase());
+  const isDashboardRoute = pathCandidates.some((path) =>
+    path === "/dashboard" ||
+    path.endsWith("/dashboard") ||
+    path.includes("/dashboard/")
+  );
 
   const onSearch = (e: FormEvent) => {
     e.preventDefault();
@@ -92,7 +96,7 @@ export function TopNav() {
           className="shrink-0 group relative rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
         >
           <div className="absolute inset-0 rounded-lg bg-primary-glow/0 blur-xl transition-all duration-300 group-hover:bg-primary-glow/40 group-focus-visible:bg-primary-glow/40" />
-          <ShyLogo size={26} className="relative" />
+          <ShyLogo size={26} showTagline={!isDashboardRoute} className="relative" />
         </Link>
 
         <nav className="hidden md:flex items-center gap-1 ml-2">

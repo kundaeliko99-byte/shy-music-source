@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { withTimeout } from "@/lib/request";
 
 export type AppRole = "listener" | "artist" | "admin";
 
@@ -23,8 +24,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let alive = true;
+
     // Set up listener FIRST
     const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      if (!alive) return;
       setSession(newSession);
       setUser(newSession?.user ?? null);
       if (newSession?.user) {
@@ -36,19 +40,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     // THEN check existing session
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-      if (s?.user) fetchRoles(s.user.id);
-      setLoading(false);
-    });
+    (async () => {
+      try {
+        const { data: { session: s } } = await withTimeout(supabase.auth.getSession(), "Auth session restore", 5000);
+        if (!alive) return;
+        setSession(s);
+        setUser(s?.user ?? null);
+        if (s?.user) await fetchRoles(s.user.id);
+      } catch (error) {
+        console.warn("[auth] session restore failed", error);
+        if (alive) {
+          setSession(null);
+          setUser(null);
+          setRoles([]);
+        }
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
 
-    return () => sub.subscription.unsubscribe();
+    return () => {
+      alive = false;
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   async function fetchRoles(userId: string) {
-    const { data } = await supabase.from("user_roles").select("role").eq("user_id", userId);
-    setRoles((data ?? []).map((r) => r.role as AppRole));
+    try {
+      const { data } = await withTimeout(
+        supabase.from("user_roles").select("role").eq("user_id", userId),
+        "User role check",
+        5000,
+      );
+      setRoles((data ?? []).map((r) => r.role as AppRole));
+    } catch (error) {
+      console.warn("[auth] role check failed", error);
+      setRoles([]);
+    }
   }
 
   async function signOut() {

@@ -7,6 +7,7 @@ interface ShyLogoProps {
   size?: number;
   /** Kept for API compatibility with existing call sites. */
   showWordmark?: boolean;
+  showTagline?: boolean;
   variant?: "compact" | "lockup";
   className?: string;
 }
@@ -15,7 +16,7 @@ interface ShyLogoProps {
  * SHY Music official brand mark.
  * `size` controls the rendered height in px.
  */
-export function ShyLogo({ size = 28, showWordmark = true, variant = "compact", className = "" }: ShyLogoProps) {
+export function ShyLogo({ size = 28, showWordmark = true, showTagline = true, variant = "compact", className = "" }: ShyLogoProps) {
   if (variant === "lockup") {
     return (
       <img
@@ -54,7 +55,7 @@ export function ShyLogo({ size = 28, showWordmark = true, variant = "compact", c
       {showWordmark && (
         <span className="flex flex-col leading-none">
           <span className="text-sm font-semibold tracking-normal text-foreground">SHY</span>
-          <span className="mt-0.5 text-[9px] font-medium tracking-[0.22em] text-primary-glow">MUSIC</span>
+          {showTagline && <span className="mt-0.5 text-[9px] font-medium tracking-[0.22em] text-primary-glow">MUSIC</span>}
         </span>
       )}
     </span>

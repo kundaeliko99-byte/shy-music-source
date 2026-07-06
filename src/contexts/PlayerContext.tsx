@@ -11,6 +11,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { bumpStreamCount } from "@/hooks/useTrackStreams";
 import { resolveAudioUrl } from "@/lib/media";
+import { withTimeout } from "@/lib/request";
 
 import type { ArtworkShape } from "@/components/Cover";
 
@@ -152,21 +153,29 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     exclude.add(from.id);
 
     if (from.album_id) {
-      const { data } = await supabase
-        .from("tracks")
-        .select(TRACK_SELECT_MIN)
-        .eq("album_id", from.album_id)
-        .limit(20);
+      const { data } = await withTimeout(
+        supabase
+          .from("tracks")
+          .select(TRACK_SELECT_MIN)
+          .eq("album_id", from.album_id)
+          .limit(20),
+        "Player album fallback",
+        4500,
+      ).catch(() => ({ data: null }));
       const pick = (data as unknown as RawTrack[] | null)?.find((t) => !exclude.has(t.id));
       if (pick) return rawToPlayer(pick);
     }
     if (from.genre) {
-      const { data } = await supabase
-        .from("tracks")
-        .select(TRACK_SELECT_MIN)
-        .eq("genre", from.genre as never)
-        .order("plays_count", { ascending: false })
-        .limit(30);
+      const { data } = await withTimeout(
+        supabase
+          .from("tracks")
+          .select(TRACK_SELECT_MIN)
+          .eq("genre", from.genre as never)
+          .order("plays_count", { ascending: false })
+          .limit(30),
+        "Player genre fallback",
+        4500,
+      ).catch(() => ({ data: null }));
       const pick = (data as unknown as RawTrack[] | null)?.find((t) => !exclude.has(t.id));
       if (pick) return rawToPlayer(pick);
     }
@@ -187,6 +196,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       signedSrc = await resolveAudioUrl(t.audio_url);
     } catch (error) {
       console.warn("[player] failed to resolve audio URL", error);
+      setIsPlaying(false);
       return;
     }
     if (playbackRequestRef.current !== requestId) return;
@@ -195,7 +205,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       a.src = signedSrc;
       a.load();
     }
-    a.play().catch(() => {});
+    a.play().catch((error) => {
+      console.warn("[player] playback failed", error);
+      setIsPlaying(false);
+    });
   }, []);
 
 
@@ -209,7 +222,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
     if (mode === "one") {
       a.currentTime = 0;
-      a.play().catch(() => {});
+      a.play().catch((error) => {
+        console.warn("[player] repeat playback failed", error);
+        setIsPlaying(false);
+      });
       return;
     }
 
@@ -278,6 +294,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const onDuration = () => setDuration(a.duration || 0);
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
+    const onError = () => {
+      console.warn("[player] audio element error", a.error);
+      setIsPlaying(false);
+    };
     const onEnded = () => {
       setIsPlaying(false);
       advance();
@@ -287,14 +307,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     a.addEventListener("loadedmetadata", onDuration);
     a.addEventListener("play", onPlay);
     a.addEventListener("pause", onPause);
+    a.addEventListener("error", onError);
     a.addEventListener("ended", onEnded);
 
     return () => {
       a.pause();
+      a.removeAttribute("src");
+      a.load();
       a.removeEventListener("timeupdate", onTime);
       a.removeEventListener("loadedmetadata", onDuration);
       a.removeEventListener("play", onPlay);
       a.removeEventListener("pause", onPause);
+      a.removeEventListener("error", onError);
       a.removeEventListener("ended", onEnded);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -341,7 +365,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         : [],
     });
     const handlers: Array<[MediaSessionAction, () => void]> = [
-      ["play", () => audioRef.current?.play().catch(() => {})],
+      ["play", () => audioRef.current?.play().catch((error) => {
+        console.warn("[player] media session play failed", error);
+        setIsPlaying(false);
+      })],
       ["pause", () => audioRef.current?.pause()],
       ["previoustrack", () => handlePrevRef.current?.()],
       ["nexttrack", () => handleNextRef.current?.()],
@@ -397,7 +424,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const togglePlay = useCallback(() => {
     const a = audioRef.current;
     if (!a || !current) return;
-    if (a.paused) a.play().catch(() => {});
+    if (a.paused) a.play().catch((error) => {
+      console.warn("[player] resume failed", error);
+      setIsPlaying(false);
+    });
     else a.pause();
   }, [current]);
 

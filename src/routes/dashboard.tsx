@@ -26,6 +26,7 @@ import { Cover } from "@/components/Cover";
 import { supabase } from "@/integrations/supabase/client";
 import { fmtCount } from "@/lib/format";
 import { useAuth } from "@/contexts/AuthContext";
+import { withVersionedBasePath } from "@/lib/assets";
 
 const REQUEST_TIMEOUT_MS = 6000;
 const DASHBOARD_TABS = ["overview", "songs", "albums", "watch", "sales", "gifts", "analytics", "messages", "profile", "settings"] as const;
@@ -410,10 +411,9 @@ function DashboardFrame({ active, children }: { active: DashboardTab; children: 
           {MENU.map((item) => {
             const Icon = item.icon;
             return (
-              <Link
+              <a
                 key={item.id}
-                to="/dashboard"
-                search={{ tab: item.id } as never}
+                href={withVersionedBasePath(`/dashboard/?tab=${item.id}`)}
                 aria-current={active === item.id ? "page" : undefined}
                 data-dashboard-tab={item.id}
                 className={`flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition ${
@@ -422,7 +422,7 @@ function DashboardFrame({ active, children }: { active: DashboardTab; children: 
               >
                 <Icon className="h-4 w-4" />
                 {item.label}
-              </Link>
+              </a>
             );
           })}
         </nav>

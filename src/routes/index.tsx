@@ -41,26 +41,40 @@ function HomePage() {
   const [upcoming, setUpcoming] = useState<UpcomingRelease[]>([]);
   const [now, setNow] = useState(Date.now());
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const { playTrack } = usePlayer();
 
   useEffect(() => {
+    let alive = true;
     (async () => {
-      const [t, n, tr, r, al, up] = await Promise.all([
-        fetchTopTrack(),
-        fetchNewThisWeek(12),
-        fetchTrendingTracks(12),
-        fetchRisingArtists(10),
-        fetchAlbumSpotlights(10),
-        fetchUpcomingReleases(8),
-      ]);
-      setTop(t);
-      setNewWeek(n);
-      setTrending(tr);
-      setRising(r);
-      setAlbums(al);
-      setUpcoming(up);
-      setLoading(false);
+      setLoading(true);
+      setLoadError(null);
+      try {
+        const [t, n, tr, r, al, up] = await Promise.all([
+          fetchTopTrack(),
+          fetchNewThisWeek(12),
+          fetchTrendingTracks(12),
+          fetchRisingArtists(10),
+          fetchAlbumSpotlights(10),
+          fetchUpcomingReleases(8),
+        ]);
+        if (!alive) return;
+        setTop(t);
+        setNewWeek(n);
+        setTrending(tr);
+        setRising(r);
+        setAlbums(al);
+        setUpcoming(up);
+      } catch (error) {
+        console.warn("[home] failed to load", error);
+        if (alive) setLoadError("Some SHY sections could not be loaded. Please refresh or try again.");
+      } finally {
+        if (alive) setLoading(false);
+      }
     })();
+    return () => {
+      alive = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -70,6 +84,11 @@ function HomePage() {
 
   return (
     <AppShell>
+      {loadError && (
+        <div className="mb-4 rounded-xl bg-surface p-3 text-sm text-muted-foreground hairline">
+          {loadError}
+        </div>
+      )}
       {/* HERO */}
       {loading && !top ? (
         <Skeleton className="h-44 sm:h-48 w-full mb-8" />

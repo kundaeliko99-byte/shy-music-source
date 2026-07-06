@@ -50,6 +50,7 @@ function DiscoverPage() {
   const [tracks, setTracks] = useState<TrackRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const effectiveGenres = useMemo(() => {
     const set = new Set<string>(search.genres);
@@ -61,17 +62,32 @@ function DiscoverPage() {
   }, [search.vibes, search.genres]);
 
   useEffect(() => {
+    let alive = true;
     setLoading(true);
+    setLoadError(null);
     fetchAllTracks({
       q: search.q || undefined,
       genres: effectiveGenres.length > 0 ? effectiveGenres : undefined,
       mood: search.mood || undefined,
       ai_tool: search.ai_tool || undefined,
       limit: 60,
-    }).then((d) => {
-      setTracks(d);
-      setLoading(false);
-    });
+    })
+      .then((d) => {
+        if (!alive) return;
+        setTracks(d);
+      })
+      .catch((error) => {
+        console.warn("[discover] failed to load tracks", error);
+        if (!alive) return;
+        setTracks([]);
+        setLoadError("Something went wrong while loading songs. Please try again.");
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
   }, [search.q, search.mood, search.ai_tool, effectiveGenres]);
 
   const toggleList = (key: "vibes" | "genres", value: string) => {
@@ -178,6 +194,11 @@ function DiscoverPage() {
       <FilterRow label="AI Tool" options={TOOLS} active={search.ai_tool ? [search.ai_tool] : []} onClick={(v) => setSingle("ai_tool", v)} pretty={prettyTool} />
 
       <div className="mt-6">
+        {loadError && (
+          <div className="mb-4 rounded-xl bg-surface p-3 text-sm text-muted-foreground hairline">
+            {loadError}
+          </div>
+        )}
         {loading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {Array.from({ length: 10 }).map((_, i) => <Skeleton key={i} className="aspect-square" />)}

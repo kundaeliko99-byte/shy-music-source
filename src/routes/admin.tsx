@@ -3,16 +3,21 @@ import { LayoutDashboard, CreditCard } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { withTimeout } from "@/lib/request";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({ meta: [{ title: "Admin — SHY" }] }),
   beforeLoad: async () => {
-    const { data } = await supabase.auth.getUser();
+    const { data } = await withTimeout(supabase.auth.getUser(), "Admin auth check", 5000);
     if (!data.user) throw redirect({ to: "/auth" });
-    const { data: roles } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", data.user.id);
+    const { data: roles } = await withTimeout(
+      supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", data.user.id),
+      "Admin role check",
+      5000,
+    );
     if (!roles?.some((r) => r.role === "admin")) throw redirect({ to: "/" });
   },
   component: AdminLayout,

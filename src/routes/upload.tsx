@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 import { prettyGenre } from "@/lib/vibes";
 import { assertAudioFile, assertImageFile, safeMediaExtension } from "@/lib/media";
+import { withTimeout } from "@/lib/request";
 
 const GENRES = [
   "ambient","electronic","hiphop","afrobeats","classical","pop","lofi","experimental","cinematic","world",
@@ -70,10 +71,26 @@ function UploadPage() {
 
   useEffect(() => {
     if (!user) return;
-    supabase.from("artists").select("id").eq("user_id", user.id).maybeSingle().then(({ data }) => {
-      setArtistId(data?.id ?? null);
-      setArtistChecked(true);
-    });
+    let alive = true;
+    withTimeout(
+      supabase.from("artists").select("id").eq("user_id", user.id).maybeSingle(),
+      "Upload artist profile",
+      6000,
+    )
+      .then(({ data }) => {
+        if (!alive) return;
+        setArtistId(data?.id ?? null);
+      })
+      .catch((error) => {
+        console.warn("[upload] artist profile check failed", error);
+        if (alive) setArtistId(null);
+      })
+      .finally(() => {
+        if (alive) setArtistChecked(true);
+      });
+    return () => {
+      alive = false;
+    };
   }, [user]);
 
   if (authLoading || !artistChecked) {
@@ -161,10 +178,18 @@ function ShapePicker({ value, onChange }: { value: ArtworkShape; onChange: (s: A
 async function getDuration(file: File): Promise<number> {
   return new Promise((resolve) => {
     const a = new Audio();
+    const url = URL.createObjectURL(file);
+    const finish = (duration: number) => {
+      window.clearTimeout(timeout);
+      URL.revokeObjectURL(url);
+      a.removeAttribute("src");
+      resolve(duration);
+    };
+    const timeout = window.setTimeout(() => finish(0), 6000);
     a.preload = "metadata";
-    a.onloadedmetadata = () => resolve(Math.floor(a.duration || 0));
-    a.onerror = () => resolve(0);
-    a.src = URL.createObjectURL(file);
+    a.onloadedmetadata = () => finish(Math.floor(a.duration || 0));
+    a.onerror = () => finish(0);
+    a.src = url;
   });
 }
 
@@ -172,10 +197,14 @@ async function uploadAudio(userId: string, file: File): Promise<string> {
   assertAudioFile(file);
   const ext = safeMediaExtension(file, "mp3");
   const path = `${userId}/${crypto.randomUUID()}.${ext}`;
-  const { error } = await supabase.storage.from("audio").upload(path, file, {
-    cacheControl: "31536000",
-    contentType: file.type || "audio/mpeg",
-  });
+  const { error } = await withTimeout(
+    supabase.storage.from("audio").upload(path, file, {
+      cacheControl: "31536000",
+      contentType: file.type || "audio/mpeg",
+    }),
+    "Audio upload",
+    30000,
+  );
   if (error) throw error;
   return path;
 }
@@ -184,10 +213,14 @@ async function uploadCover(userId: string, file: File): Promise<string> {
   assertImageFile(file);
   const ext = safeMediaExtension(file, "jpg");
   const path = `${userId}/${crypto.randomUUID()}.${ext}`;
-  const { error } = await supabase.storage.from("covers").upload(path, file, {
-    cacheControl: "31536000",
-    contentType: file.type || "image/jpeg",
-  });
+  const { error } = await withTimeout(
+    supabase.storage.from("covers").upload(path, file, {
+      cacheControl: "31536000",
+      contentType: file.type || "image/jpeg",
+    }),
+    "Cover upload",
+    20000,
+  );
   if (error) throw error;
   return supabase.storage.from("covers").getPublicUrl(path).data.publicUrl;
 }
@@ -208,6 +241,12 @@ function SingleUpload({ artistId, userId, onBack }: { artistId: string; userId: 
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
 
+  useEffect(() => {
+    return () => {
+      if (coverPreview) URL.revokeObjectURL(coverPreview);
+    };
+  }, [coverPreview]);
+
   function onCover(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -223,6 +262,7 @@ function SingleUpload({ artistId, userId, onBack }: { artistId: string; userId: 
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (loading) return;
     if (!audioFile) { toast.error("Add an audio file"); return; }
     setLoading(true);
     setProgress(10);
@@ -233,23 +273,27 @@ function SingleUpload({ artistId, userId, onBack }: { artistId: string; userId: 
       const coverUrl = coverFile ? await uploadCover(userId, coverFile) : null;
       setProgress(85);
       const duration = await getDuration(audioFile);
-      const { data: track, error } = await supabase
-        .from("tracks")
-        .insert({
-          artist_id: artistId,
-          title: parsed.title,
-          audio_url: audioUrl,
-          cover_url: coverUrl,
-          genre: parsed.genre as never,
-          mood: (parsed.mood || null) as never,
-          ai_tool: parsed.ai_tool as never,
-          lyrics: parsed.lyrics || null,
-          explicit: parsed.explicit,
-          duration_seconds: duration,
-          artwork_shape: shape as never,
-        })
-        .select("id")
-        .single();
+      const { data: track, error } = await withTimeout(
+        supabase
+          .from("tracks")
+          .insert({
+            artist_id: artistId,
+            title: parsed.title,
+            audio_url: audioUrl,
+            cover_url: coverUrl,
+            genre: parsed.genre as never,
+            mood: (parsed.mood || null) as never,
+            ai_tool: parsed.ai_tool as never,
+            lyrics: parsed.lyrics || null,
+            explicit: parsed.explicit,
+            duration_seconds: duration,
+            artwork_shape: shape as never,
+          })
+          .select("id")
+          .single(),
+        "Track publish",
+        10000,
+      );
       if (error) throw error;
       setProgress(100);
       toast.success("Track uploaded!");
@@ -424,6 +468,12 @@ function AlbumUpload({ artistId, userId, onBack }: { artistId: string; userId: s
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
 
+  useEffect(() => {
+    return () => {
+      if (coverPreview) URL.revokeObjectURL(coverPreview);
+    };
+  }, [coverPreview]);
+
   function onCover(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -457,6 +507,7 @@ function AlbumUpload({ artistId, userId, onBack }: { artistId: string; userId: s
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (loading) return;
     if (!albumTitle.trim()) { toast.error("Add an album title"); return; }
     if (!coverFile) { toast.error("Add album artwork"); return; }
     const ready = tracks.filter((t) => t.title.trim() && t.audioFile);
@@ -468,19 +519,23 @@ function AlbumUpload({ artistId, userId, onBack }: { artistId: string; userId: s
       const coverUrl = await uploadCover(userId, coverFile);
       setProgress(15);
 
-      const { data: album, error: albumErr } = await supabase
-        .from("albums")
-        .insert({
-          artist_id: artistId,
-          title: albumTitle.trim(),
-          cover_url: coverUrl,
-          ai_tool: albumTool as never,
-          album_type: releaseType,
-          release_type: releaseType,
-          artwork_shape: shape as never,
-        })
-        .select("id")
-        .single();
+      const { data: album, error: albumErr } = await withTimeout(
+        supabase
+          .from("albums")
+          .insert({
+            artist_id: artistId,
+            title: albumTitle.trim(),
+            cover_url: coverUrl,
+            ai_tool: albumTool as never,
+            album_type: releaseType,
+            release_type: releaseType,
+            artwork_shape: shape as never,
+          })
+          .select("id")
+          .single(),
+        "Album publish",
+        10000,
+      );
       if (albumErr) throw albumErr;
       setProgress(25);
 
@@ -492,21 +547,25 @@ function AlbumUpload({ artistId, userId, onBack }: { artistId: string; userId: s
         const insertGenre = (t.genre || albumGenre) as never;
         const insertMood = (t.mood || albumMood) ? ((t.mood || albumMood) as never) : null;
         const insertTool = (t.ai_tool || albumTool) as never;
-        const { error: trackErr } = await supabase.from("tracks").insert({
-          artist_id: artistId,
-          album_id: album.id,
-          title: t.title.trim(),
-          audio_url: audioUrl,
-          cover_url: coverUrl,
-          genre: insertGenre,
-          mood: insertMood,
-          ai_tool: insertTool,
-          lyrics: t.lyrics || null,
-          explicit: t.explicit,
-          duration_seconds: duration,
-          position_in_album: i + 1,
-          artwork_shape: shape as never,
-        });
+        const { error: trackErr } = await withTimeout(
+          supabase.from("tracks").insert({
+            artist_id: artistId,
+            album_id: album.id,
+            title: t.title.trim(),
+            audio_url: audioUrl,
+            cover_url: coverUrl,
+            genre: insertGenre,
+            mood: insertMood,
+            ai_tool: insertTool,
+            lyrics: t.lyrics || null,
+            explicit: t.explicit,
+            duration_seconds: duration,
+            position_in_album: i + 1,
+            artwork_shape: shape as never,
+          }),
+          "Album track publish",
+          10000,
+        );
         if (trackErr) throw trackErr;
         i++;
         setProgress(25 + Math.floor((i / total) * 70));
