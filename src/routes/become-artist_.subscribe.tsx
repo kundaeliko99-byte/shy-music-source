@@ -88,7 +88,7 @@ function SubscribePage() {
     setSubmitting(false);
     if (error) return toast.error(error.message);
     toast.success("Welcome, Founding Artist!");
-    navigate({ to: "/dashboard" });
+    navigate({ to: "/dashboard", search: { tab: "overview" } });
   }
 
   async function submitPaid(e: FormEvent) {
@@ -115,7 +115,7 @@ function SubscribePage() {
         }).eq("id", artist.id);
       }
       toast.success("Application submitted. We'll notify you once it's reviewed.");
-      navigate({ to: "/dashboard" });
+      navigate({ to: "/dashboard", search: { tab: "overview" } });
     } catch (err) {
       const msg = err instanceof z.ZodError ? err.issues[0].message : err instanceof Error ? err.message : "Failed";
       toast.error(msg);
@@ -141,7 +141,7 @@ function SubscribePage() {
         <div className="max-w-md mx-auto text-center py-10">
           <CheckCircle2 className="w-10 h-10 mx-auto text-green-400 mb-3" />
           <h1 className="text-xl font-semibold">You're subscribed to {currentSub.plan_name}{currentSub.is_founding ? " (Founding Artist)" : ""}</h1>
-          <Link to="/dashboard" className="inline-block mt-4 px-4 py-2 rounded-full bg-gradient-primary text-primary-foreground text-sm">Go to dashboard</Link>
+          <Link to="/dashboard" search={{ tab: "overview" }} className="inline-block mt-4 px-4 py-2 rounded-full bg-gradient-primary text-primary-foreground text-sm">Go to dashboard</Link>
         </div>
       </AppShell>
     );

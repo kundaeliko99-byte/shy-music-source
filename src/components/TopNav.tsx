@@ -46,7 +46,11 @@ export function TopNav() {
   const [q, setQ] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
-  const isDashboardRoute = location.pathname === "/dashboard" || location.pathname.startsWith("/dashboard/");
+  const normalizedPath = location.pathname.replace(/\/+$/, "").toLowerCase();
+  const isDashboardRoute =
+    normalizedPath === "/dashboard" ||
+    normalizedPath.endsWith("/dashboard") ||
+    normalizedPath.includes("/dashboard/");
 
   const onSearch = (e: FormEvent) => {
     e.preventDefault();

@@ -76,6 +76,7 @@ function DiscoverPage() {
 
   const toggleList = (key: "vibes" | "genres", value: string) => {
     navigate({
+      to: "/discover",
       search: (prev) => {
         const cur = parseList((prev as Record<string, unknown>)[key]);
         const next = cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value];
@@ -86,6 +87,7 @@ function DiscoverPage() {
 
   const setSingle = (key: "mood" | "ai_tool", value: string) => {
     navigate({
+      to: "/discover",
       search: (prev) => {
         const p = prev as Record<string, string>;
         return { ...prev, [key]: p[key] === value ? "" : value } as never;
@@ -94,11 +96,11 @@ function DiscoverPage() {
   };
 
   const resetAll = () => {
-    navigate({ search: { q: "", vibes: [], genres: [], mood: "", ai_tool: "" } as never });
+    navigate({ to: "/discover", search: { q: "", vibes: [], genres: [], mood: "", ai_tool: "" } as never });
   };
 
   const applyDrawer = (vibes: string[], genres: string[]) => {
-    navigate({ search: (prev) => ({ ...prev, vibes, genres }) as never });
+    navigate({ to: "/discover", search: (prev) => ({ ...prev, vibes, genres }) as never });
     setDrawerOpen(false);
   };
 
@@ -112,7 +114,7 @@ function DiscoverPage() {
         <div className="flex items-center gap-2">
           <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
             <SheetTrigger asChild>
-              <button className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full hairline hover:bg-surface transition-colors">
+              <button type="button" className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full hairline hover:bg-surface transition-colors">
                 <SlidersHorizontal className="w-3.5 h-3.5" />
                 Filters
                 {vgCount > 0 && (
@@ -131,6 +133,7 @@ function DiscoverPage() {
           </Sheet>
           {activeCount > 0 && (
             <button
+              type="button"
               onClick={resetAll}
               className="text-xs px-3 py-1.5 rounded-full hairline text-muted-foreground hover:text-foreground transition-colors"
             >
@@ -142,7 +145,7 @@ function DiscoverPage() {
 
       <input
         value={search.q}
-        onChange={(e) => navigate({ search: (prev) => ({ ...prev, q: e.target.value }) as never })}
+        onChange={(e) => navigate({ to: "/discover", search: (prev) => ({ ...prev, q: e.target.value }) as never })}
         placeholder="Search by title, lyric snippet, or songwriter…"
         className="w-full bg-surface hairline rounded-full px-4 py-2 text-sm mb-5 focus:outline-none focus:ring-2 focus:ring-ring/50"
       />
@@ -225,6 +228,7 @@ function FilterDrawer({
       <SheetHeader className="sticky top-0 z-10 px-4 py-3 border-b border-border bg-background flex-row items-center justify-between space-y-0">
         <SheetTitle className="text-base">Filters</SheetTitle>
         <button
+          type="button"
           onClick={onClose}
           aria-label="Close filters"
           className="w-8 h-8 -mr-1 rounded-full inline-flex items-center justify-center hover:bg-surface transition-colors"
@@ -255,6 +259,7 @@ function FilterDrawer({
 
       <div className="sticky bottom-0 z-10 px-4 py-3 border-t border-border bg-background flex items-center gap-2">
         <button
+          type="button"
           onClick={() => {
             setVibes([]);
             setGenres([]);
@@ -264,6 +269,7 @@ function FilterDrawer({
           Clear
         </button>
         <button
+          type="button"
           onClick={() => onApply(vibes, genres)}
           className="flex-1 text-sm font-medium px-4 py-2.5 rounded-full bg-primary text-primary-foreground hover:opacity-90 transition-opacity"
         >
@@ -303,6 +309,7 @@ function ChipGrid({
         const isActive = active.includes(o);
         return (
           <button
+            type="button"
             key={o}
             onClick={() => onClick(o)}
             aria-pressed={isActive}
@@ -321,6 +328,7 @@ function ChipGrid({
 function ActivePill({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
     <button
+      type="button"
       onClick={onRemove}
       className="group inline-flex items-center gap-1.5 text-xs px-3 py-1 rounded-full bg-primary/15 text-primary-glow border border-primary/30 hover:bg-primary/25 transition-colors"
     >
@@ -351,6 +359,7 @@ function FilterRow({
           const isActive = active.includes(o);
           return (
             <button
+              type="button"
               key={o}
               onClick={() => onClick(o)}
               aria-pressed={isActive}

@@ -28,6 +28,13 @@ import { fmtCount } from "@/lib/format";
 import { useAuth } from "@/contexts/AuthContext";
 
 const REQUEST_TIMEOUT_MS = 6000;
+const DASHBOARD_TABS = ["overview", "songs", "albums", "watch", "sales", "gifts", "analytics", "messages", "profile", "settings"] as const;
+
+type DashboardTab = (typeof DASHBOARD_TABS)[number];
+
+function isDashboardTab(tab: unknown): tab is DashboardTab {
+  return typeof tab === "string" && (DASHBOARD_TABS as readonly string[]).includes(tab);
+}
 
 async function withTimeout<T>(request: PromiseLike<T>, label: string, ms = REQUEST_TIMEOUT_MS): Promise<T> {
   let id: ReturnType<typeof setTimeout> | undefined;
@@ -61,10 +68,11 @@ export const Route = createFileRoute("/dashboard")({
     const isArtist = (roles ?? []).some((row) => row.role === "artist");
     if (!isArtist) throw redirect({ to: "/become-artist" });
   },
+  validateSearch: (search: Record<string, unknown>) => ({
+    tab: isDashboardTab(search.tab) ? search.tab : "overview",
+  }),
   component: ArtistDashboardPage,
 });
-
-type DashboardTab = "overview" | "songs" | "albums" | "watch" | "sales" | "gifts" | "analytics" | "messages" | "profile" | "settings";
 
 type ArtistRow = {
   id: string;
@@ -168,7 +176,7 @@ const PAYMENT_METHODS = ["Airtel Money", "MTN Mobile Money", "Visa", "Payoneer"]
 
 function ArtistDashboardPage() {
   const { user, isArtist, loading: authLoading } = useAuth();
-  const [active, setActive] = useState<DashboardTab>("overview");
+  const { tab: active } = Route.useSearch();
   const [artist, setArtist] = useState<ArtistRow | null>(null);
   const [tracks, setTracks] = useState<TrackRow[]>([]);
   const [albums, setAlbums] = useState<AlbumRow[]>([]);
@@ -316,7 +324,7 @@ function ArtistDashboardPage() {
   if (loading) {
     return (
       <AppShell>
-        <DashboardFrame active={active} setActive={setActive}>
+        <DashboardFrame active={active}>
           <div className="rounded-xl bg-surface p-6 hairline">
             <div className="text-sm font-semibold">Opening artist dashboard</div>
             <p className="mt-1 text-sm text-muted-foreground">Loading songwriter tools, songs, albums, requests, gifts, and profile settings.</p>
@@ -336,7 +344,7 @@ function ArtistDashboardPage() {
 
   return (
     <AppShell>
-      <DashboardFrame active={active} setActive={setActive}>
+      <DashboardFrame active={active}>
         <ArtistHeader artist={artist} warning={warning} />
         {active === "overview" && <OverviewSection stats={stats} tracks={tracks} purchases={purchases} motivations={motivations} notifications={notifications} upcoming={upcoming} />}
         {active === "songs" && <SongsSection artist={artist} tracks={tracks} setTracks={setTracks} />}
@@ -390,7 +398,7 @@ function buildStats(tracks: TrackRow[], albums: AlbumRow[], purchases: PurchaseR
   };
 }
 
-function DashboardFrame({ active, setActive, children }: { active: DashboardTab; setActive: (tab: DashboardTab) => void; children: React.ReactNode }) {
+function DashboardFrame({ active, children }: { active: DashboardTab; children: React.ReactNode }) {
   return (
     <div className="grid gap-5 lg:grid-cols-[230px_1fr]">
       <aside className="lg:sticky lg:top-20 h-fit rounded-xl bg-surface p-2 hairline">
@@ -402,17 +410,19 @@ function DashboardFrame({ active, setActive, children }: { active: DashboardTab;
           {MENU.map((item) => {
             const Icon = item.icon;
             return (
-              <button
+              <Link
                 key={item.id}
-                type="button"
-                onClick={() => setActive(item.id)}
+                to="/dashboard"
+                search={{ tab: item.id } as never}
+                aria-current={active === item.id ? "page" : undefined}
+                data-dashboard-tab={item.id}
                 className={`flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition ${
                   active === item.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-surface-elevated hover:text-foreground"
                 }`}
               >
                 <Icon className="h-4 w-4" />
                 {item.label}
-              </button>
+              </Link>
             );
           })}
         </nav>
