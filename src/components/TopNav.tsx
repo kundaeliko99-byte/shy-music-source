@@ -46,6 +46,7 @@ export function TopNav() {
   const [q, setQ] = useState("");
   const [profileOpen, setProfileOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
+  const isDashboardRoute = location.pathname === "/dashboard" || location.pathname.startsWith("/dashboard/");
 
   const onSearch = (e: FormEvent) => {
     e.preventDefault();
@@ -106,36 +107,38 @@ export function TopNav() {
               </Link>
             );
           })}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors ${
-                ["/fresh-ink"].some((path) => location.pathname.startsWith(path))
-                  ? "bg-surface-elevated text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Music2 className="h-3.5 w-3.5" />
-              Music
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-64 bg-surface p-2 text-foreground hairline">
-              {MUSIC_NAV_GROUPS.map((group, groupIndex) => (
-                <div key={group.label}>
-                  {groupIndex > 0 && <DropdownMenuSeparator className="my-2" />}
-                  <DropdownMenuLabel className="px-2 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                    {group.label}
-                  </DropdownMenuLabel>
-                  {group.items.map((item) => (
-                    <DropdownMenuItem key={item.href} asChild>
-                      <a href={item.href.startsWith("/") ? withBasePath(item.href) : item.href} className="flex flex-col items-start gap-0.5 rounded-lg px-2 py-2">
-                        <span className="text-sm font-medium">{item.label}</span>
-                        <span className="text-[11px] text-muted-foreground">{item.description}</span>
-                      </a>
-                    </DropdownMenuItem>
-                  ))}
-                </div>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {!isDashboardRoute && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors ${
+                  ["/fresh-ink"].some((path) => location.pathname.startsWith(path))
+                    ? "bg-surface-elevated text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Music2 className="h-3.5 w-3.5" />
+                Music
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-64 bg-surface p-2 text-foreground hairline">
+                {MUSIC_NAV_GROUPS.map((group, groupIndex) => (
+                  <div key={group.label}>
+                    {groupIndex > 0 && <DropdownMenuSeparator className="my-2" />}
+                    <DropdownMenuLabel className="px-2 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                      {group.label}
+                    </DropdownMenuLabel>
+                    {group.items.map((item) => (
+                      <DropdownMenuItem key={item.href} asChild>
+                        <a href={item.href.startsWith("/") ? withBasePath(item.href) : item.href} className="flex flex-col items-start gap-0.5 rounded-lg px-2 py-2">
+                          <span className="text-sm font-medium">{item.label}</span>
+                          <span className="text-[11px] text-muted-foreground">{item.description}</span>
+                        </a>
+                      </DropdownMenuItem>
+                    ))}
+                  </div>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </nav>
 
         <form onSubmit={onSearch} className="flex-1 max-w-md ml-auto md:ml-4">
@@ -260,30 +263,32 @@ export function TopNav() {
             </Link>
           );
         })}
-        <DropdownMenu>
-          <DropdownMenuTrigger className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs text-muted-foreground whitespace-nowrap">
-            <Music2 className="h-3 w-3" />
-            Music
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-64 bg-surface p-2 text-foreground hairline">
-            {MUSIC_NAV_GROUPS.map((group, groupIndex) => (
-              <div key={group.label}>
-                {groupIndex > 0 && <DropdownMenuSeparator className="my-2" />}
-                <DropdownMenuLabel className="px-2 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  {group.label}
-                </DropdownMenuLabel>
-                {group.items.map((item) => (
-                  <DropdownMenuItem key={item.href} asChild>
-                    <a href={item.href.startsWith("/") ? withBasePath(item.href) : item.href} className="flex flex-col items-start gap-0.5 rounded-lg px-2 py-2">
-                      <span className="text-sm font-medium">{item.label}</span>
-                      <span className="text-[11px] text-muted-foreground">{item.description}</span>
-                    </a>
-                  </DropdownMenuItem>
-                ))}
-              </div>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {!isDashboardRoute && (
+          <DropdownMenu>
+            <DropdownMenuTrigger className="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs text-muted-foreground whitespace-nowrap">
+              <Music2 className="h-3 w-3" />
+              Music
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-64 bg-surface p-2 text-foreground hairline">
+              {MUSIC_NAV_GROUPS.map((group, groupIndex) => (
+                <div key={group.label}>
+                  {groupIndex > 0 && <DropdownMenuSeparator className="my-2" />}
+                  <DropdownMenuLabel className="px-2 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                    {group.label}
+                  </DropdownMenuLabel>
+                  {group.items.map((item) => (
+                    <DropdownMenuItem key={item.href} asChild>
+                      <a href={item.href.startsWith("/") ? withBasePath(item.href) : item.href} className="flex flex-col items-start gap-0.5 rounded-lg px-2 py-2">
+                        <span className="text-sm font-medium">{item.label}</span>
+                        <span className="text-[11px] text-muted-foreground">{item.description}</span>
+                      </a>
+                    </DropdownMenuItem>
+                  ))}
+                </div>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </nav>
     </header>
   );
