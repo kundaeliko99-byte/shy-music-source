@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 import { Check, Copy, Gift, Heart, X } from "lucide-react";
 import { toast } from "sonner";
 import { Cover } from "./Cover";
@@ -81,7 +80,7 @@ export function MotivateButton({ artist, size = "md", variant = "solid", onMotiv
       : "bg-primary/15 text-primary-glow hairline border-primary/40";
 
   return (
-    <>
+    <span className="relative inline-flex flex-col items-start">
       <button
         type="button"
         onClick={handleOpen}
@@ -92,66 +91,59 @@ export function MotivateButton({ artist, size = "md", variant = "solid", onMotiv
         Motivate Artist
       </button>
 
-      {open && typeof document !== "undefined" && createPortal(
+      {open && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm"
-          role="presentation"
-          onMouseDown={() => setOpen(false)}
+          className="absolute left-0 top-full z-[80] mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-2xl bg-surface p-5 shadow-glow hairline"
+          role="dialog"
+          aria-modal="false"
+          aria-labelledby={`motivate-title-${artist.id}`}
+          onClick={(event) => event.stopPropagation()}
         >
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={`motivate-title-${artist.id}`}
-            className="relative w-full max-w-sm rounded-2xl bg-surface p-6 shadow-glow hairline"
-            onMouseDown={(event) => event.stopPropagation()}
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-surface-elevated text-muted-foreground transition-colors hairline hover:text-foreground"
+            aria-label="Close motivation menu"
           >
+            <X className="h-4 w-4" />
+          </button>
+
+          <div className="flex flex-col items-center text-center">
+            <Cover src={artist.avatar_url} seed={artist.id} size={72} shape="circle" glow />
+            <div className="mt-3 inline-flex items-center gap-1 text-[10px] font-medium tracking-[0.25em] text-primary-glow">
+              <Heart className="h-3 w-3 fill-current" /> MOTIVATE
+            </div>
+            <h3 id={`motivate-title-${artist.id}`} className="mt-1 text-lg font-semibold">{artist.display_name}</h3>
+            <p className="mt-1 max-w-[260px] text-xs text-muted-foreground">
+              Send your appreciation directly to {artist.display_name} via mobile money.
+            </p>
+          </div>
+
+          <div className="mt-5 rounded-xl bg-surface-elevated p-4 text-center hairline">
+            <div className="text-[10px] font-medium tracking-[0.2em] text-muted-foreground">
+              {networkLabel(artist.mobile_money_network).toUpperCase()}
+            </div>
+            <div className="mt-1 select-all text-xl font-semibold tracking-wider">
+              {artist.mobile_money_number}
+            </div>
             <button
               type="button"
-              onClick={() => setOpen(false)}
-              className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-surface-elevated text-muted-foreground transition-colors hairline hover:text-foreground"
-              aria-label="Close motivation menu"
+              onClick={copyNumber}
+              className="mt-3 inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-gradient-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-glow-soft"
             >
-              <X className="h-4 w-4" />
+              {copyState === "copied" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+              {copyState === "copied" ? "Copied" : copyState === "blocked" ? "Copy blocked" : "Copy Number"}
             </button>
+          </div>
 
-            <div className="flex flex-col items-center text-center">
-              <Cover src={artist.avatar_url} seed={artist.id} size={72} shape="circle" glow />
-              <div className="mt-3 inline-flex items-center gap-1 text-[10px] font-medium tracking-[0.25em] text-primary-glow">
-                <Heart className="h-3 w-3 fill-current" /> MOTIVATE
-              </div>
-              <h3 id={`motivate-title-${artist.id}`} className="mt-1 text-lg font-semibold">{artist.display_name}</h3>
-              <p className="mt-1 max-w-[260px] text-xs text-muted-foreground">
-                Send your appreciation directly to {artist.display_name} via mobile money.
-              </p>
-            </div>
-
-            <div className="mt-5 rounded-xl bg-surface-elevated p-4 text-center hairline">
-              <div className="text-[10px] font-medium tracking-[0.2em] text-muted-foreground">
-                {networkLabel(artist.mobile_money_network).toUpperCase()}
-              </div>
-              <div className="mt-1 select-all text-xl font-semibold tracking-wider">
-                {artist.mobile_money_number}
-              </div>
-              <button
-                type="button"
-                onClick={copyNumber}
-                className="mt-3 inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-gradient-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-glow-soft"
-              >
-                {copyState === "copied" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                {copyState === "copied" ? "Copied" : copyState === "blocked" ? "Copy blocked" : "Copy Number"}
-              </button>
-            </div>
-
-            <p className="mt-4 text-center text-[11px] leading-relaxed text-muted-foreground">
-              Open your mobile money app, send any amount to this number, and let your motivation speak.
-            </p>
-            <p className="mt-2 text-center text-[10px] text-muted-foreground/70">
-              SHY does not process this payment. It is a direct transfer to the artist.
-            </p>
-          </section>
-        </div>,
-        document.body,
+          <p className="mt-4 text-center text-[11px] leading-relaxed text-muted-foreground">
+            Open your mobile money app, send any amount to this number, and let your motivation speak.
+          </p>
+          <p className="mt-2 text-center text-[10px] text-muted-foreground/70">
+            SHY does not process this payment. It is a direct transfer to the artist.
+          </p>
+        </div>
       )}
-    </>
+    </span>
   );
 }
