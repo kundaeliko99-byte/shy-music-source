@@ -8,11 +8,11 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import type { TrackRow } from "@/lib/api";
+import { withTimeout } from "@/lib/request";
 import {
   PAYMENT_METHODS,
   buildContractTemplate,
@@ -39,12 +39,30 @@ export function BuySongButton({ track, size = "md" }: BuySongButtonProps) {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("Airtel Money");
   const [buyerName, setBuyerName] = useState("");
   const [buyerContact, setBuyerContact] = useState("");
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [requesting, setRequesting] = useState(false);
   const artistName = track.artists?.display_name ?? "Unknown songwriter";
 
   useEffect(() => {
     if (!open) return;
-    fetchSongSaleTerms(track.id, track.artist_id).then(setTerms);
-    fetchSellerContact(track.artist_id, artistName).then(setSeller);
+    let active = true;
+    setLoadingDetails(true);
+    Promise.allSettled([
+      withTimeout(fetchSongSaleTerms(track.id, track.artist_id), "Song sale terms", 6000),
+      withTimeout(fetchSellerContact(track.artist_id, artistName), "Seller contact", 6000),
+    ]).then(([termsResult, sellerResult]) => {
+      if (!active) return;
+      setTerms(termsResult.status === "fulfilled" ? termsResult.value : null);
+      setSeller(sellerResult.status === "fulfilled" ? sellerResult.value : null);
+      if (termsResult.status === "rejected" || sellerResult.status === "rejected") {
+        toast.warning("Some seller details could not be loaded yet.");
+      }
+    }).finally(() => {
+      if (active) setLoadingDetails(false);
+    });
+    return () => {
+      active = false;
+    };
   }, [artistName, open, track.artist_id, track.id]);
 
   const priceLabel = terms ? formatPrice(terms) : "Price negotiable";
@@ -66,8 +84,12 @@ export function BuySongButton({ track, size = "md" }: BuySongButtonProps) {
   }, [artistName, buyerName, paymentMethod, priceLabel, seller?.display_name, terms, track.title]);
 
   async function copyContract() {
-    await navigator.clipboard.writeText(contract);
-    toast.success("Contract copied");
+    try {
+      await navigator.clipboard.writeText(contract);
+      toast.success("Contract copied");
+    } catch {
+      toast.error("Couldn't copy the contract. Select the text and copy it manually.");
+    }
   }
 
   function downloadContract() {
@@ -81,29 +103,43 @@ export function BuySongButton({ track, size = "md" }: BuySongButtonProps) {
   }
 
   async function requestPurchase() {
+    if (requesting) return;
     if (!user) {
       toast.error("Sign in to request a song purchase.");
       navigate({ to: "/auth" });
       return;
     }
 
-    const { error } = await (supabase as any).from("song_purchase_requests").insert({
-      track_id: track.id,
-      artist_id: track.artist_id,
-      buyer_id: user.id,
-      buyer_name: buyerName || null,
-      buyer_contact: buyerContact || null,
-      requested_payment_method: paymentMethod,
-      proposed_price: terms?.asking_price ?? null,
-      currency: terms?.currency ?? "USD",
-      message: "Buyer requested to purchase song rights from the SHY Buy Song flow.",
-    });
+    setRequesting(true);
+    try {
+      const { error } = await withTimeout<{ error?: { message?: string } | null }>((supabase as any).from("song_purchase_requests").insert({
+        track_id: track.id,
+        artist_id: track.artist_id,
+        buyer_id: user.id,
+        buyer_name: buyerName || null,
+        buyer_contact: buyerContact || null,
+        requested_payment_method: paymentMethod,
+        proposed_price: terms?.asking_price ?? null,
+        currency: terms?.currency ?? "USD",
+        message: "Buyer requested to purchase song rights from the SHY Buy Song flow.",
+      }), "Purchase request", 8000);
 
-    if (error) {
-      toast.error("Purchase request could not be saved yet. Contact the seller directly.");
-      return;
+      if (error) {
+        toast.error("Purchase request could not be saved yet. Contact the seller directly.");
+        return;
+      }
+      toast.success("Purchase request sent to the seller");
+    } catch {
+      toast.error("Purchase request timed out. Contact the seller directly or try again.");
+    } finally {
+      setRequesting(false);
     }
-    toast.success("Purchase request sent to the seller");
+  }
+
+  function openDialog(event: React.MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    setOpen(true);
   }
 
   const buttonClass =
@@ -116,15 +152,15 @@ export function BuySongButton({ track, size = "md" }: BuySongButtonProps) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <button
-          className={`inline-flex items-center rounded-full font-medium bg-surface hairline text-foreground hover:bg-surface-elevated ${buttonClass}`}
-          aria-label={`Buy rights for ${track.title}`}
-        >
-          <ShoppingBag className={size === "sm" ? "w-3 h-3" : "w-3.5 h-3.5"} />
-          Buy Song
-        </button>
-      </DialogTrigger>
+      <button
+        type="button"
+        onClick={openDialog}
+        className={`inline-flex items-center rounded-full font-medium bg-surface hairline text-foreground hover:bg-surface-elevated ${buttonClass}`}
+        aria-label={`Buy rights for ${track.title}`}
+      >
+        <ShoppingBag className={size === "sm" ? "w-3 h-3" : "w-3.5 h-3.5"} />
+        Buy Song
+      </button>
       <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto bg-surface border-border p-0">
         <div className="p-5 sm:p-6">
           <DialogHeader>
@@ -165,12 +201,14 @@ export function BuySongButton({ track, size = "md" }: BuySongButtonProps) {
               </InfoBox>
               <Info label="Price" value={priceLabel} />
               <Info label="Rights" value={terms ? saleTypeLabel(terms.sale_type) : "Negotiable Rights Agreement"} />
+              {loadingDetails && <p className="text-xs text-muted-foreground">Loading seller details...</p>}
 
               <div className="rounded-xl hairline bg-background/50 p-4">
                 <h3 className="text-sm font-semibold">Payment Options</h3>
                 <div className="mt-3 grid gap-2">
                   {PAYMENT_METHODS.map((method) => (
                     <button
+                      type="button"
                       key={method}
                       onClick={() => {
                         setPaymentMethod(method);
@@ -231,8 +269,8 @@ export function BuySongButton({ track, size = "md" }: BuySongButtonProps) {
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="text-sm font-semibold">Song Rights Contract</h3>
                   <div className="flex gap-2">
-                    <button onClick={copyContract} className="icon-action" aria-label="Copy contract"><Copy className="h-4 w-4" /></button>
-                    <button onClick={downloadContract} className="icon-action" aria-label="Download contract"><Download className="h-4 w-4" /></button>
+                    <button type="button" onClick={copyContract} className="icon-action" aria-label="Copy contract"><Copy className="h-4 w-4" /></button>
+                    <button type="button" onClick={downloadContract} className="icon-action" aria-label="Download contract"><Download className="h-4 w-4" /></button>
                   </div>
                 </div>
                 <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-background p-3 text-[11px] leading-relaxed text-muted-foreground">
@@ -244,8 +282,13 @@ export function BuySongButton({ track, size = "md" }: BuySongButtonProps) {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <button onClick={requestPurchase} className="rounded-full bg-gradient-primary px-4 py-2 text-xs font-medium text-primary-foreground shadow-glow-soft">
-                  Request purchase
+                <button
+                  type="button"
+                  onClick={requestPurchase}
+                  disabled={requesting}
+                  className="rounded-full bg-gradient-primary px-4 py-2 text-xs font-medium text-primary-foreground shadow-glow-soft disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {requesting ? "Sending..." : "Request purchase"}
                 </button>
                 {seller?.contact_email && (
                   <a href={`mailto:${seller.contact_email}?subject=Song purchase request: ${encodeURIComponent(track.title)}`} className="rounded-full bg-surface-elevated px-4 py-2 text-xs font-medium hairline">

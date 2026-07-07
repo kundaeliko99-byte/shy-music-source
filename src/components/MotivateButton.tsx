@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Gift, Copy, X, Check, Heart } from "lucide-react";
 import { toast } from "sonner";
 import { Cover } from "./Cover";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { withTimeout } from "@/lib/request";
 
 export interface MotivateArtist {
   id: string;
@@ -35,29 +36,60 @@ interface Props {
 export function MotivateButton({ artist, size = "md", variant = "solid", onMotivated }: Props) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "selected">("idle");
+  const [loggedMotivation, setLoggedMotivation] = useState(false);
+  const numberRef = useRef<HTMLDivElement | null>(null);
 
   if (!artist.mobile_money_number || !artist.mobile_money_network) return null;
 
-  async function handleOpen(e: React.MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
+  function handleOpen(event: React.MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
     setOpen(true);
-    // Log engagement (don't block UI on errors)
-    const { error } = await supabase
-      .from("motivations")
-      .insert({ artist_id: artist.id, fan_id: user?.id ?? null });
-    if (!error) onMotivated?.();
+    if (!loggedMotivation) {
+      setLoggedMotivation(true);
+      void logMotivation();
+    }
+  }
+
+  async function logMotivation() {
+    try {
+      const { error } = await withTimeout(
+        supabase.from("motivations").insert({ artist_id: artist.id, fan_id: user?.id ?? null }),
+        "Motivation log",
+        5000,
+      );
+      if (error) throw error;
+      onMotivated?.();
+    } catch (error) {
+      console.warn("Motivation could not be logged", error);
+      setLoggedMotivation(false);
+    }
   }
 
   async function copyNumber() {
+    const number = artist.mobile_money_number!;
     try {
-      await navigator.clipboard.writeText(artist.mobile_money_number!);
-      setCopied(true);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(number);
+      } else {
+        fallbackCopy(number);
+      }
+      setCopyState("copied");
       toast.success("Number copied");
-      setTimeout(() => setCopied(false), 1800);
+      setTimeout(() => setCopyState("idle"), 1800);
     } catch {
-      toast.error("Couldn't copy — long-press the number to copy");
+      if (fallbackCopy(number)) {
+        setCopyState("copied");
+        toast.success("Number copied");
+        setTimeout(() => setCopyState("idle"), 1800);
+        return;
+      }
+      selectVisibleNumber(numberRef.current);
+      setCopyState("selected");
+      toast.info("Number selected - copy it from the highlighted text.");
+      setTimeout(() => setCopyState("idle"), 2200);
+      return;
     }
   }
 
@@ -74,6 +106,7 @@ export function MotivateButton({ artist, size = "md", variant = "solid", onMotiv
   return (
     <>
       <button
+        type="button"
         onClick={handleOpen}
         className={`inline-flex items-center rounded-full font-medium ${sizeClasses} ${variantClasses}`}
         aria-label={`Motivate ${artist.display_name}`}
@@ -92,6 +125,7 @@ export function MotivateButton({ artist, size = "md", variant = "solid", onMotiv
             onClick={(e) => e.stopPropagation()}
           >
             <button
+              type="button"
               onClick={() => setOpen(false)}
               className="absolute top-3 right-3 w-8 h-8 rounded-full bg-surface-elevated hairline flex items-center justify-center text-muted-foreground hover:text-foreground"
               aria-label="Close"
@@ -114,15 +148,16 @@ export function MotivateButton({ artist, size = "md", variant = "solid", onMotiv
               <div className="text-[10px] tracking-[0.2em] text-muted-foreground font-medium">
                 {networkLabel(artist.mobile_money_network).toUpperCase()}
               </div>
-              <div className="text-xl font-semibold tracking-wider mt-1 select-all">
+              <div ref={numberRef} className="text-xl font-semibold tracking-wider mt-1 select-all">
                 {artist.mobile_money_number}
               </div>
               <button
+                type="button"
                 onClick={copyNumber}
                 className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-gradient-primary text-primary-foreground shadow-glow-soft"
               >
-                {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                {copied ? "Copied" : "Copy Number"}
+                {copyState === "copied" ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                {copyState === "copied" ? "Copied" : copyState === "selected" ? "Selected" : "Copy Number"}
               </button>
             </div>
 
@@ -137,4 +172,31 @@ export function MotivateButton({ artist, size = "md", variant = "solid", onMotiv
       )}
     </>
   );
+}
+
+function fallbackCopy(value: string) {
+  if (typeof document === "undefined") return false;
+  const input = document.createElement("textarea");
+  input.value = value;
+  input.setAttribute("readonly", "true");
+  input.style.position = "fixed";
+  input.style.left = "-9999px";
+  input.style.top = "0";
+  document.body.appendChild(input);
+  input.focus();
+  input.select();
+  try {
+    return document.execCommand("copy");
+  } finally {
+    document.body.removeChild(input);
+  }
+}
+
+function selectVisibleNumber(element: HTMLElement | null) {
+  if (!element || typeof window === "undefined") return;
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
 }
