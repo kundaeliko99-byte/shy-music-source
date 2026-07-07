@@ -3,9 +3,6 @@ import { createPortal } from "react-dom";
 import { Check, Copy, Gift, Heart, X } from "lucide-react";
 import { toast } from "sonner";
 import { Cover } from "./Cover";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
-import { withTimeout } from "@/lib/request";
 
 export interface MotivateArtist {
   id: string;
@@ -35,10 +32,8 @@ interface Props {
 
 /** Renders nothing if the artist hasn't published a motivation number. */
 export function MotivateButton({ artist, size = "md", variant = "solid", onMotivated }: Props) {
-  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "blocked">("idle");
-  const [loggedMotivation, setLoggedMotivation] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -55,25 +50,6 @@ export function MotivateButton({ artist, size = "md", variant = "solid", onMotiv
     event.preventDefault();
     event.stopPropagation();
     setOpen(true);
-    if (!loggedMotivation) {
-      setLoggedMotivation(true);
-      window.setTimeout(() => void logMotivation(), 0);
-    }
-  }
-
-  async function logMotivation() {
-    try {
-      const { error } = await withTimeout(
-        supabase.from("motivations").insert({ artist_id: artist.id, fan_id: user?.id ?? null }),
-        "Motivation log",
-        5000,
-      );
-      if (error) throw error;
-      onMotivated?.();
-    } catch (error) {
-      console.warn("Motivation could not be logged", error);
-      setLoggedMotivation(false);
-    }
   }
 
   async function copyNumber() {
@@ -85,6 +61,7 @@ export function MotivateButton({ artist, size = "md", variant = "solid", onMotiv
       await navigator.clipboard.writeText(number);
       setCopyState("copied");
       toast.success("Number copied");
+      onMotivated?.();
       window.setTimeout(() => setCopyState("idle"), 1800);
     } catch {
       setCopyState("blocked");
