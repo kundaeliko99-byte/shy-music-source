@@ -1,14 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Copy, Download, Mail, MessageCircle, Phone, ShoppingBag } from "lucide-react";
+import { Copy, Download, Mail, MessageCircle, Phone, ShoppingBag, X } from "lucide-react";
 import { toast } from "sonner";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import type { TrackRow } from "@/lib/api";
@@ -42,6 +36,15 @@ export function BuySongButton({ track, size = "md" }: BuySongButtonProps) {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [requesting, setRequesting] = useState(false);
   const artistName = track.artists?.display_name ?? "Unknown songwriter";
+
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -136,7 +139,7 @@ export function BuySongButton({ track, size = "md" }: BuySongButtonProps) {
     }
   }
 
-  function openDialog(event: React.MouseEvent<HTMLButtonElement>) {
+  function openModal(event: React.MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
     setOpen(true);
@@ -151,156 +154,181 @@ export function BuySongButton({ track, size = "md" }: BuySongButtonProps) {
   const phone = seller?.public_phone || seller?.mobile_money_number;
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <>
       <button
         type="button"
-        onClick={openDialog}
+        onClick={openModal}
         className={`inline-flex cursor-pointer items-center rounded-full font-medium bg-surface hairline text-foreground hover:bg-surface-elevated ${buttonClass}`}
         aria-label={`Buy rights for ${track.title}`}
       >
         <ShoppingBag className={size === "sm" ? "w-3 h-3" : "w-3.5 h-3.5"} />
         Buy Song
       </button>
-      <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto bg-surface border-border p-0">
-        <div className="p-5 sm:p-6">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ShoppingBag className="h-5 w-5 text-primary-glow" />
-              Buy This Song
-            </DialogTitle>
-            <DialogDescription>
-              Review price, contact options, payment placeholders, and a basic song-rights agreement.
-            </DialogDescription>
-          </DialogHeader>
 
-          <div className="mt-5 grid gap-4 md:grid-cols-[1fr_1.2fr]">
-            <section className="space-y-3">
-              <InfoBox label="Song">
-                <Link
-                  to="/tracks/$id"
-                  params={{ id: track.id }}
-                  aria-label={`Open song page for ${track.title}`}
-                  className="hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-                >
-                  {track.title}
-                </Link>
-              </InfoBox>
-              <InfoBox label="Writer / Seller">
-                {track.artists?.slug ? (
-                  <Link
-                    to="/artists/$slug"
-                    params={{ slug: track.artists.slug }}
-                    aria-label={`Open artist profile for ${seller?.display_name ?? artistName}`}
-                    className="hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-                  >
-                    {seller?.display_name ?? artistName}
-                  </Link>
-                ) : (
-                  seller?.display_name ?? artistName
-                )}
-              </InfoBox>
-              <Info label="Price" value={priceLabel} />
-              <Info label="Rights" value={terms ? saleTypeLabel(terms.sale_type) : "Negotiable Rights Agreement"} />
-              {loadingDetails && <p className="text-xs text-muted-foreground">Loading seller details...</p>}
+      {open && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm"
+          role="presentation"
+          onMouseDown={() => setOpen(false)}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`buy-song-title-${track.id}`}
+            className="relative max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-surface p-0 shadow-glow hairline"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-surface-elevated text-muted-foreground transition-colors hairline hover:text-foreground"
+              aria-label="Close buy song menu"
+            >
+              <X className="h-4 w-4" />
+            </button>
 
-              <div className="rounded-xl hairline bg-background/50 p-4">
-                <h3 className="text-sm font-semibold">Payment Options</h3>
-                <div className="mt-3 grid gap-2">
-                  {PAYMENT_METHODS.map((method) => (
-                    <button
-                      type="button"
-                      key={method}
-                      onClick={() => {
-                        setPaymentMethod(method);
-                        toast.info("Payment integration coming soon. Contact the songwriter/seller to complete this purchase.");
-                      }}
-                      className={`rounded-lg hairline px-3 py-2 text-left text-xs transition-colors ${
-                        paymentMethod === method ? "border-primary bg-primary/15 text-primary-glow" : "bg-surface"
-                      }`}
-                    >
-                      {method}
-                      <span className="block pt-0.5 text-[10px] text-muted-foreground">
-                        Integration coming soon. Contact seller to complete purchase.
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-xl hairline bg-background/50 p-4">
-                <h3 className="text-sm font-semibold">Contact Seller</h3>
-                {hasContact ? (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {seller?.contact_email && (
-                      <a className="contact-action" href={`mailto:${seller.contact_email}?subject=Song purchase request: ${encodeURIComponent(track.title)}`}>
-                        <Mail className="h-3.5 w-3.5" /> Email seller
-                      </a>
-                    )}
-                    {phone && (
-                      <a className="contact-action" href={`tel:${phone}`}>
-                        <Phone className="h-3.5 w-3.5" /> Call seller
-                      </a>
-                    )}
-                    {phone && (
-                      <a className="contact-action" href={`https://wa.me/${phone.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">
-                        <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
-                      </a>
-                    )}
-                  </div>
-                ) : (
-                  <p className="mt-2 text-xs text-muted-foreground">Seller contact details are not available yet.</p>
-                )}
-              </div>
-            </section>
-
-            <section className="space-y-3">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="space-y-1">
-                  <span className="text-[11px] text-muted-foreground">Buyer name</span>
-                  <input value={buyerName} onChange={(e) => setBuyerName(e.target.value)} className="input-lite" placeholder="Your name" />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-[11px] text-muted-foreground">Buyer contact</span>
-                  <input value={buyerContact} onChange={(e) => setBuyerContact(e.target.value)} className="input-lite" placeholder="Email or phone" />
-                </label>
-              </div>
-
-              <div className="rounded-xl hairline bg-background/60 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-semibold">Song Rights Contract</h3>
-                  <div className="flex gap-2">
-                    <button type="button" onClick={copyContract} className="icon-action" aria-label="Copy contract"><Copy className="h-4 w-4" /></button>
-                    <button type="button" onClick={downloadContract} className="icon-action" aria-label="Download contract"><Download className="h-4 w-4" /></button>
-                  </div>
-                </div>
-                <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-background p-3 text-[11px] leading-relaxed text-muted-foreground">
-                  {contract || "Loading contract..."}
-                </pre>
-                <p className="mt-2 text-[10px] text-muted-foreground">
-                  This is a basic contract template and should be reviewed before use.
+            <div className="p-5 sm:p-6">
+              <div>
+                <h2 id={`buy-song-title-${track.id}`} className="flex items-center gap-2 text-lg font-semibold">
+                  <ShoppingBag className="h-5 w-5 text-primary-glow" />
+                  Buy This Song
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Review price, contact options, payment placeholders, and a basic song-rights agreement.
                 </p>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={requestPurchase}
-                  disabled={requesting}
-                  className="rounded-full bg-gradient-primary px-4 py-2 text-xs font-medium text-primary-foreground shadow-glow-soft disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {requesting ? "Sending..." : "Request purchase"}
-                </button>
-                {seller?.contact_email && (
-                  <a href={`mailto:${seller.contact_email}?subject=Song purchase request: ${encodeURIComponent(track.title)}`} className="rounded-full bg-surface-elevated px-4 py-2 text-xs font-medium hairline">
-                    Contact seller
-                  </a>
-                )}
+              <div className="mt-5 grid gap-4 md:grid-cols-[1fr_1.2fr]">
+                <section className="space-y-3">
+                  <InfoBox label="Song">
+                    <Link
+                      to="/tracks/$id"
+                      params={{ id: track.id }}
+                      aria-label={`Open song page for ${track.title}`}
+                      className="hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                    >
+                      {track.title}
+                    </Link>
+                  </InfoBox>
+                  <InfoBox label="Writer / Seller">
+                    {track.artists?.slug ? (
+                      <Link
+                        to="/artists/$slug"
+                        params={{ slug: track.artists.slug }}
+                        aria-label={`Open artist profile for ${seller?.display_name ?? artistName}`}
+                        className="hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                      >
+                        {seller?.display_name ?? artistName}
+                      </Link>
+                    ) : (
+                      seller?.display_name ?? artistName
+                    )}
+                  </InfoBox>
+                  <Info label="Price" value={priceLabel} />
+                  <Info label="Rights" value={terms ? saleTypeLabel(terms.sale_type) : "Negotiable Rights Agreement"} />
+                  {loadingDetails && <p className="text-xs text-muted-foreground">Loading seller details...</p>}
+
+                  <div className="rounded-xl bg-background/50 p-4 hairline">
+                    <h3 className="text-sm font-semibold">Payment Options</h3>
+                    <div className="mt-3 grid gap-2">
+                      {PAYMENT_METHODS.map((method) => (
+                        <button
+                          type="button"
+                          key={method}
+                          onClick={() => {
+                            setPaymentMethod(method);
+                            toast.info("Payment integration coming soon. Contact the songwriter/seller to complete this purchase.");
+                          }}
+                          className={`rounded-lg px-3 py-2 text-left text-xs transition-colors hairline ${
+                            paymentMethod === method ? "border-primary bg-primary/15 text-primary-glow" : "bg-surface"
+                          }`}
+                        >
+                          {method}
+                          <span className="block pt-0.5 text-[10px] text-muted-foreground">
+                            Integration coming soon. Contact seller to complete purchase.
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl bg-background/50 p-4 hairline">
+                    <h3 className="text-sm font-semibold">Contact Seller</h3>
+                    {hasContact ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {seller?.contact_email && (
+                          <a className="contact-action" href={`mailto:${seller.contact_email}?subject=Song purchase request: ${encodeURIComponent(track.title)}`}>
+                            <Mail className="h-3.5 w-3.5" /> Email seller
+                          </a>
+                        )}
+                        {phone && (
+                          <a className="contact-action" href={`tel:${phone}`}>
+                            <Phone className="h-3.5 w-3.5" /> Call seller
+                          </a>
+                        )}
+                        {phone && (
+                          <a className="contact-action" href={`https://wa.me/${phone.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">
+                            <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+                          </a>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-xs text-muted-foreground">Seller contact details are not available yet.</p>
+                    )}
+                  </div>
+                </section>
+
+                <section className="space-y-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="space-y-1">
+                      <span className="text-[11px] text-muted-foreground">Buyer name</span>
+                      <input value={buyerName} onChange={(e) => setBuyerName(e.target.value)} className="input-lite" placeholder="Your name" />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[11px] text-muted-foreground">Buyer contact</span>
+                      <input value={buyerContact} onChange={(e) => setBuyerContact(e.target.value)} className="input-lite" placeholder="Email or phone" />
+                    </label>
+                  </div>
+
+                  <div className="rounded-xl bg-background/60 p-4 hairline">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-semibold">Song Rights Contract</h3>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={copyContract} className="icon-action" aria-label="Copy contract"><Copy className="h-4 w-4" /></button>
+                        <button type="button" onClick={downloadContract} className="icon-action" aria-label="Download contract"><Download className="h-4 w-4" /></button>
+                      </div>
+                    </div>
+                    <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-background p-3 text-[11px] leading-relaxed text-muted-foreground">
+                      {contract || "Loading contract..."}
+                    </pre>
+                    <p className="mt-2 text-[10px] text-muted-foreground">
+                      This is a basic contract template and should be reviewed before use.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={requestPurchase}
+                      disabled={requesting}
+                      className="rounded-full bg-gradient-primary px-4 py-2 text-xs font-medium text-primary-foreground shadow-glow-soft disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {requesting ? "Sending..." : "Request purchase"}
+                    </button>
+                    {seller?.contact_email && (
+                      <a href={`mailto:${seller.contact_email}?subject=Song purchase request: ${encodeURIComponent(track.title)}`} className="rounded-full bg-surface-elevated px-4 py-2 text-xs font-medium hairline">
+                        Contact seller
+                      </a>
+                    )}
+                  </div>
+                </section>
               </div>
-            </section>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+            </div>
+          </section>
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 
@@ -314,7 +342,7 @@ function Info({ label, value }: { label: string; value: string }) {
 
 function InfoBox({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="rounded-xl hairline bg-background/50 p-3">
+    <div className="rounded-xl bg-background/50 p-3 hairline">
       <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
       <div className="mt-1 text-sm font-medium">{children}</div>
     </div>

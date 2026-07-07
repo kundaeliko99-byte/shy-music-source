@@ -1,17 +1,11 @@
-import { useState } from "react";
-import { Check, Copy, Gift, Heart } from "lucide-react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { Check, Copy, Gift, Heart, X } from "lucide-react";
 import { toast } from "sonner";
 import { Cover } from "./Cover";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { withTimeout } from "@/lib/request";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 
 export interface MotivateArtist {
   id: string;
@@ -46,6 +40,15 @@ export function MotivateButton({ artist, size = "md", variant = "solid", onMotiv
   const [copyState, setCopyState] = useState<"idle" | "copied" | "blocked">("idle");
   const [loggedMotivation, setLoggedMotivation] = useState(false);
 
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
   if (!artist.mobile_money_number || !artist.mobile_money_network) return null;
 
   function handleOpen(event: React.MouseEvent<HTMLButtonElement>) {
@@ -54,7 +57,7 @@ export function MotivateButton({ artist, size = "md", variant = "solid", onMotiv
     setOpen(true);
     if (!loggedMotivation) {
       setLoggedMotivation(true);
-      void logMotivation();
+      window.setTimeout(() => void logMotivation(), 0);
     }
   }
 
@@ -76,23 +79,16 @@ export function MotivateButton({ artist, size = "md", variant = "solid", onMotiv
   async function copyNumber() {
     const number = artist.mobile_money_number!;
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(number);
-      } else if (!fallbackCopy(number)) {
+      if (!navigator.clipboard?.writeText) {
         throw new Error("Clipboard blocked");
       }
+      await navigator.clipboard.writeText(number);
       setCopyState("copied");
       toast.success("Number copied");
       window.setTimeout(() => setCopyState("idle"), 1800);
     } catch {
-      if (fallbackCopy(number)) {
-        setCopyState("copied");
-        toast.success("Number copied");
-        window.setTimeout(() => setCopyState("idle"), 1800);
-        return;
-      }
       setCopyState("blocked");
-      toast.error("Copy was blocked. Long-press or manually select the number.");
+      toast.error("Copy was blocked. Manually copy the number shown.");
       window.setTimeout(() => setCopyState("idle"), 2200);
     }
   }
@@ -108,7 +104,7 @@ export function MotivateButton({ artist, size = "md", variant = "solid", onMotiv
       : "bg-primary/15 text-primary-glow hairline border-primary/40";
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <>
       <button
         type="button"
         onClick={handleOpen}
@@ -119,69 +115,66 @@ export function MotivateButton({ artist, size = "md", variant = "solid", onMotiv
         Motivate Artist
       </button>
 
-      <DialogContent className="max-w-sm bg-surface p-0 hairline">
-        <div className="p-6">
-          <DialogHeader className="sr-only">
-            <DialogTitle>Motivate {artist.display_name}</DialogTitle>
-            <DialogDescription>
-              Send mobile money support directly to this artist.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex flex-col items-center text-center">
-            <Cover src={artist.avatar_url} seed={artist.id} size={72} shape="circle" glow />
-            <div className="text-[10px] tracking-[0.25em] text-primary-glow font-medium mt-3 inline-flex items-center gap-1">
-              <Heart className="w-3 h-3 fill-current" /> MOTIVATE
-            </div>
-            <h3 className="text-lg font-semibold mt-1">{artist.display_name}</h3>
-            <p className="text-xs text-muted-foreground mt-1 max-w-[260px]">
-              Send your appreciation directly to {artist.display_name} via mobile money.
-            </p>
-          </div>
-
-          <div className="bg-surface-elevated hairline rounded-xl p-4 mt-5 text-center">
-            <div className="text-[10px] tracking-[0.2em] text-muted-foreground font-medium">
-              {networkLabel(artist.mobile_money_network).toUpperCase()}
-            </div>
-            <div className="text-xl font-semibold tracking-wider mt-1 select-all">
-              {artist.mobile_money_number}
-            </div>
+      {open && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm"
+          role="presentation"
+          onMouseDown={() => setOpen(false)}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`motivate-title-${artist.id}`}
+            className="relative w-full max-w-sm rounded-2xl bg-surface p-6 shadow-glow hairline"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
             <button
               type="button"
-              onClick={copyNumber}
-              className="mt-3 inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-gradient-primary text-primary-foreground shadow-glow-soft"
+              onClick={() => setOpen(false)}
+              className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-surface-elevated text-muted-foreground transition-colors hairline hover:text-foreground"
+              aria-label="Close motivation menu"
             >
-              {copyState === "copied" ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-              {copyState === "copied" ? "Copied" : copyState === "blocked" ? "Copy blocked" : "Copy Number"}
+              <X className="h-4 w-4" />
             </button>
-          </div>
 
-          <p className="text-[11px] text-muted-foreground text-center mt-4 leading-relaxed">
-            Open your mobile money app, send any amount to this number, and let your motivation speak.
-          </p>
-          <p className="text-[10px] text-muted-foreground/70 text-center mt-2">
-            SHY does not process this payment. It is a direct transfer to the artist.
-          </p>
-        </div>
-      </DialogContent>
-    </Dialog>
+            <div className="flex flex-col items-center text-center">
+              <Cover src={artist.avatar_url} seed={artist.id} size={72} shape="circle" glow />
+              <div className="mt-3 inline-flex items-center gap-1 text-[10px] font-medium tracking-[0.25em] text-primary-glow">
+                <Heart className="h-3 w-3 fill-current" /> MOTIVATE
+              </div>
+              <h3 id={`motivate-title-${artist.id}`} className="mt-1 text-lg font-semibold">{artist.display_name}</h3>
+              <p className="mt-1 max-w-[260px] text-xs text-muted-foreground">
+                Send your appreciation directly to {artist.display_name} via mobile money.
+              </p>
+            </div>
+
+            <div className="mt-5 rounded-xl bg-surface-elevated p-4 text-center hairline">
+              <div className="text-[10px] font-medium tracking-[0.2em] text-muted-foreground">
+                {networkLabel(artist.mobile_money_network).toUpperCase()}
+              </div>
+              <div className="mt-1 select-all text-xl font-semibold tracking-wider">
+                {artist.mobile_money_number}
+              </div>
+              <button
+                type="button"
+                onClick={copyNumber}
+                className="mt-3 inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-gradient-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-glow-soft"
+              >
+                {copyState === "copied" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                {copyState === "copied" ? "Copied" : copyState === "blocked" ? "Copy blocked" : "Copy Number"}
+              </button>
+            </div>
+
+            <p className="mt-4 text-center text-[11px] leading-relaxed text-muted-foreground">
+              Open your mobile money app, send any amount to this number, and let your motivation speak.
+            </p>
+            <p className="mt-2 text-center text-[10px] text-muted-foreground/70">
+              SHY does not process this payment. It is a direct transfer to the artist.
+            </p>
+          </section>
+        </div>,
+        document.body,
+      )}
+    </>
   );
-}
-
-function fallbackCopy(value: string) {
-  if (typeof document === "undefined") return false;
-  const input = document.createElement("textarea");
-  input.value = value;
-  input.setAttribute("readonly", "true");
-  input.style.position = "fixed";
-  input.style.left = "-9999px";
-  input.style.top = "0";
-  document.body.appendChild(input);
-  input.focus();
-  input.select();
-  try {
-    return document.execCommand("copy");
-  } finally {
-    document.body.removeChild(input);
-  }
 }
