@@ -1,6 +1,5 @@
 import { Link } from "@tanstack/react-router";
 import { Headphones } from "lucide-react";
-import { BuySongButton } from "./BuySongButton";
 import { Cover } from "./Cover";
 import { HoverPlayIcon } from "./HoverPlayIcon";
 import { MotivateButton } from "./MotivateButton";
@@ -71,14 +70,8 @@ export function TrackCard({ track, queue }: TrackCardProps) {
         {fmtCount(liveStreams)} streams
       </div>
       {motivateArtist && (
-        <div className="mt-2 flex flex-col gap-1.5">
-          <MotivateButton artist={motivateArtist} size="sm" />
-          <BuySongButton track={track} size="sm" />
-        </div>
-      )}
-      {!motivateArtist && (
         <div className="mt-2">
-          <BuySongButton track={track} size="sm" />
+          <MotivateButton artist={motivateArtist} size="sm" />
         </div>
       )}
     </div>

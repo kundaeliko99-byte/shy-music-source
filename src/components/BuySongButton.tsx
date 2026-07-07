@@ -155,7 +155,7 @@ export function BuySongButton({ track, size = "md" }: BuySongButtonProps) {
       <button
         type="button"
         onClick={openDialog}
-        className={`inline-flex items-center rounded-full font-medium bg-surface hairline text-foreground hover:bg-surface-elevated ${buttonClass}`}
+        className={`inline-flex cursor-pointer items-center rounded-full font-medium bg-surface hairline text-foreground hover:bg-surface-elevated ${buttonClass}`}
         aria-label={`Buy rights for ${track.title}`}
       >
         <ShoppingBag className={size === "sm" ? "w-3 h-3" : "w-3.5 h-3.5"} />

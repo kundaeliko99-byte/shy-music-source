@@ -96,26 +96,26 @@ export function HorizontalRow({ title, action, children, controls = true }: RowP
         {controls && (
           <>
             {hasOverflow && (
-              <div className="absolute inset-y-0 left-0 z-10 hidden w-16 items-center sm:flex">
+              <div className="pointer-events-none absolute inset-y-0 left-0 z-10 hidden w-16 items-center sm:flex">
                 <button
                   type="button"
                   onClick={() => scrollByPage(-1)}
                   disabled={!canScrollLeft}
                   aria-label={`Scroll ${title} left`}
-                  className="ml-1 inline-flex h-10 w-10 items-center justify-center rounded-full hairline bg-background/75 text-foreground/70 opacity-0 backdrop-blur-md transition hover:bg-background/95 hover:text-foreground group-hover/row:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:pointer-events-none disabled:text-muted-foreground/35 disabled:opacity-0 group-hover/row:disabled:opacity-45"
+                  className="pointer-events-auto ml-1 inline-flex h-10 w-10 items-center justify-center rounded-full hairline bg-background/75 text-foreground/70 opacity-0 backdrop-blur-md transition hover:bg-background/95 hover:text-foreground group-hover/row:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:pointer-events-none disabled:text-muted-foreground/35 disabled:opacity-0 group-hover/row:disabled:opacity-45"
                 >
                   <ChevronLeft className="h-5 w-5" />
                 </button>
               </div>
             )}
             {hasOverflow && (
-              <div className="absolute inset-y-0 right-0 z-10 hidden w-16 items-center justify-end sm:flex">
+              <div className="pointer-events-none absolute inset-y-0 right-0 z-10 hidden w-16 items-center justify-end sm:flex">
                 <button
                   type="button"
                   onClick={() => scrollByPage(1)}
                   disabled={!canScrollRight}
                   aria-label={`Scroll ${title} right`}
-                  className="mr-1 inline-flex h-10 w-10 items-center justify-center rounded-full hairline bg-background/75 text-foreground/70 opacity-0 backdrop-blur-md transition hover:bg-background/95 hover:text-foreground group-hover/row:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:pointer-events-none disabled:text-muted-foreground/35 disabled:opacity-0 group-hover/row:disabled:opacity-45"
+                  className="pointer-events-auto mr-1 inline-flex h-10 w-10 items-center justify-center rounded-full hairline bg-background/75 text-foreground/70 opacity-0 backdrop-blur-md transition hover:bg-background/95 hover:text-foreground group-hover/row:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:pointer-events-none disabled:text-muted-foreground/35 disabled:opacity-0 group-hover/row:disabled:opacity-45"
                 >
                   <ChevronRight className="h-5 w-5" />
                 </button>
