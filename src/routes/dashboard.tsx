@@ -26,7 +26,6 @@ import { Cover } from "@/components/Cover";
 import { supabase } from "@/integrations/supabase/client";
 import { fmtCount } from "@/lib/format";
 import { useAuth } from "@/contexts/AuthContext";
-import { withVersionedBasePath } from "@/lib/assets";
 
 const REQUEST_TIMEOUT_MS = 6000;
 const DASHBOARD_TABS = ["overview", "songs", "albums", "watch", "sales", "gifts", "analytics", "messages", "profile", "settings"] as const;
@@ -61,13 +60,6 @@ export const Route = createFileRoute("/dashboard")({
   beforeLoad: async () => {
     const { data } = await withTimeout(supabase.auth.getUser(), "Dashboard auth");
     if (!data.user) throw redirect({ to: "/auth" });
-
-    const { data: roles } = await withTimeout(
-      supabase.from("user_roles").select("role").eq("user_id", data.user.id),
-      "Artist role check",
-    );
-    const isArtist = (roles ?? []).some((row) => row.role === "artist");
-    if (!isArtist) throw redirect({ to: "/become-artist" });
   },
   validateSearch: (search: Record<string, unknown>) => ({
     tab: isDashboardTab(search.tab) ? search.tab : "overview",
@@ -176,7 +168,7 @@ const GENRES = ["afrobeats", "amapiano", "hiphop", "zed_hiphop", "gospel", "rnb"
 const PAYMENT_METHODS = ["Airtel Money", "MTN Mobile Money", "Visa", "Payoneer"];
 
 function ArtistDashboardPage() {
-  const { user, isArtist, loading: authLoading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { tab: active } = Route.useSearch();
   const [artist, setArtist] = useState<ArtistRow | null>(null);
   const [tracks, setTracks] = useState<TrackRow[]>([]);
@@ -197,11 +189,6 @@ function ArtistDashboardPage() {
         setLoading(false);
         return;
       }
-      if (!isArtist) {
-        setLoading(false);
-        return;
-      }
-
       setLoading(true);
       setWarning(null);
 
@@ -303,7 +290,7 @@ function ArtistDashboardPage() {
     return () => {
       alive = false;
     };
-  }, [authLoading, isArtist, user]);
+  }, [authLoading, user]);
 
   const stats = useMemo(() => buildStats(tracks, albums, purchases, motivations, notifications), [tracks, albums, purchases, motivations, notifications]);
   const upcoming = useMemo(() => {
@@ -314,7 +301,7 @@ function ArtistDashboardPage() {
     ].sort((a, b) => a.release_date.localeCompare(b.release_date));
   }, [albums, tracks]);
 
-  if (!authLoading && !isArtist) {
+  if (!authLoading && !user) {
     return (
       <AppShell>
         <ArtistOnlyNotice />
@@ -411,9 +398,10 @@ function DashboardFrame({ active, children }: { active: DashboardTab; children: 
           {MENU.map((item) => {
             const Icon = item.icon;
             return (
-              <a
+              <Link
                 key={item.id}
-                href={withVersionedBasePath(`/dashboard/?tab=${item.id}`)}
+                to="/dashboard"
+                search={{ tab: item.id }}
                 aria-current={active === item.id ? "page" : undefined}
                 data-dashboard-tab={item.id}
                 className={`flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition ${
@@ -422,7 +410,7 @@ function DashboardFrame({ active, children }: { active: DashboardTab; children: 
               >
                 <Icon className="h-4 w-4" />
                 {item.label}
-              </a>
+              </Link>
             );
           })}
         </nav>

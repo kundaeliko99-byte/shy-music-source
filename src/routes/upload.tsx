@@ -60,7 +60,7 @@ type ReleaseKind = null | "single" | "album";
 
 function UploadPage() {
   const navigate = useNavigate();
-  const { user, isArtist, loading: authLoading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [artistId, setArtistId] = useState<string | null>(null);
   const [artistChecked, setArtistChecked] = useState(false);
   const [kind, setKind] = useState<ReleaseKind>(null);
@@ -70,7 +70,12 @@ function UploadPage() {
   }, [authLoading, user, navigate]);
 
   useEffect(() => {
-    if (!user) return;
+    setArtistChecked(false);
+    setArtistId(null);
+    if (!user) {
+      setArtistChecked(true);
+      return;
+    }
     let alive = true;
     withTimeout(
       supabase.from("artists").select("id").eq("user_id", user.id).maybeSingle(),
@@ -96,7 +101,7 @@ function UploadPage() {
   if (authLoading || !artistChecked) {
     return <AppShell><div className="text-sm text-muted-foreground">Loading…</div></AppShell>;
   }
-  if (!isArtist || !artistId) {
+  if (!artistId) {
     return (
       <AppShell>
         <div className="max-w-md mx-auto text-center bg-surface hairline rounded-xl p-8">
@@ -120,10 +125,6 @@ function UploadPage() {
         {kind === "single" && <SingleUpload artistId={artistId} userId={user!.id} onBack={() => setKind(null)} />}
         {kind === "album" && <AlbumUpload artistId={artistId} userId={user!.id} onBack={() => setKind(null)} />}
       </div>
-      <style>{`
-        .input { width:100%; background: var(--color-background); border:0.5px solid var(--color-border); border-radius:8px; padding:8px 12px; font-size:13px; color:var(--color-foreground); outline:none; }
-        .input:focus { border-color: var(--color-ring); box-shadow: 0 0 0 2px oklch(0.58 0.24 295 / 0.2); }
-      `}</style>
     </AppShell>
   );
 }
@@ -332,23 +333,23 @@ function SingleUpload({ artistId, userId, onBack }: { artistId: string; userId: 
 
           <div className="space-y-3">
             <Field label="Title">
-              <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={100} required className="input" />
+              <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={100} required className="input-lite" />
             </Field>
             <div className="grid grid-cols-2 gap-2">
               <Field label="Genre">
-                <select value={genre} onChange={(e) => setGenre(e.target.value)} className="input">
+                <select value={genre} onChange={(e) => setGenre(e.target.value)} className="input-lite">
                   {GENRES.map((g) => <option key={g} value={g}>{prettyGenre(g)}</option>)}
                 </select>
               </Field>
               <Field label="Mood (optional)">
-                <select value={mood} onChange={(e) => setMood(e.target.value)} className="input">
+                <select value={mood} onChange={(e) => setMood(e.target.value)} className="input-lite">
                   <option value="">—</option>
                   {MOODS.map((m) => <option key={m} value={m}>{m}</option>)}
                 </select>
               </Field>
             </div>
             <Field label="AI tool used">
-              <select value={aiTool} onChange={(e) => setAiTool(e.target.value)} className="input">
+              <select value={aiTool} onChange={(e) => setAiTool(e.target.value)} className="input-lite">
                 {TOOLS.map((t) => <option key={t.v} value={t.v}>{t.l}</option>)}
               </select>
             </Field>
@@ -407,7 +408,7 @@ function SingleUpload({ artistId, userId, onBack }: { artistId: string; userId: 
             rows={4}
             maxLength={5000}
             placeholder="Paste lyrics here…"
-            className="input resize-none"
+            className="input-lite resize-none"
           />
         </Field>
 
@@ -609,30 +610,30 @@ function AlbumUpload({ artistId, userId, onBack }: { artistId: string; userId: s
 
           <div className="space-y-3">
             <Field label="Project title">
-              <input value={albumTitle} onChange={(e) => setAlbumTitle(e.target.value)} maxLength={100} required className="input" />
+              <input value={albumTitle} onChange={(e) => setAlbumTitle(e.target.value)} maxLength={100} required className="input-lite" />
             </Field>
             <div className="grid grid-cols-3 gap-2">
               <Field label="Type">
-                <select value={releaseType} onChange={(e) => setReleaseType(e.target.value as never)} className="input">
+                <select value={releaseType} onChange={(e) => setReleaseType(e.target.value as never)} className="input-lite">
                   <option value="album">Album</option>
                   <option value="ep">EP</option>
                   <option value="mixtape">Mixtape</option>
                 </select>
               </Field>
               <Field label="Default genre">
-                <select value={albumGenre} onChange={(e) => setAlbumGenre(e.target.value)} className="input">
+                <select value={albumGenre} onChange={(e) => setAlbumGenre(e.target.value)} className="input-lite">
                   {GENRES.map((g) => <option key={g} value={g}>{g}</option>)}
                 </select>
               </Field>
               <Field label="Default mood">
-                <select value={albumMood} onChange={(e) => setAlbumMood(e.target.value)} className="input">
+                <select value={albumMood} onChange={(e) => setAlbumMood(e.target.value)} className="input-lite">
                   <option value="">—</option>
                   {MOODS.map((m) => <option key={m} value={m}>{m}</option>)}
                 </select>
               </Field>
             </div>
             <Field label="Default AI tool">
-              <select value={albumTool} onChange={(e) => setAlbumTool(e.target.value)} className="input">
+              <select value={albumTool} onChange={(e) => setAlbumTool(e.target.value)} className="input-lite">
                 {TOOLS.map((t) => <option key={t.v} value={t.v}>{t.l}</option>)}
               </select>
             </Field>
@@ -672,7 +673,7 @@ function AlbumUpload({ artistId, userId, onBack }: { artistId: string; userId: s
               </div>
 
               <Field label="Title">
-                <input value={t.title} onChange={(e) => updateTrack(t.id, { title: e.target.value })} maxLength={100} className="input" />
+                <input value={t.title} onChange={(e) => updateTrack(t.id, { title: e.target.value })} maxLength={100} className="input-lite" />
               </Field>
 
               <label className="cursor-pointer block">
@@ -706,26 +707,26 @@ function AlbumUpload({ artistId, userId, onBack }: { artistId: string; userId: s
                 <div className="mt-3 space-y-2">
                   <div className="grid grid-cols-3 gap-2">
                     <Field label={`Genre (default ${albumGenre})`}>
-                      <select value={t.genre} onChange={(e) => updateTrack(t.id, { genre: e.target.value })} className="input">
+                      <select value={t.genre} onChange={(e) => updateTrack(t.id, { genre: e.target.value })} className="input-lite">
                         <option value="">Inherit</option>
                         {GENRES.map((g) => <option key={g} value={g}>{prettyGenre(g)}</option>)}
                       </select>
                     </Field>
                     <Field label={`Mood (default ${albumMood || "—"})`}>
-                      <select value={t.mood} onChange={(e) => updateTrack(t.id, { mood: e.target.value })} className="input">
+                      <select value={t.mood} onChange={(e) => updateTrack(t.id, { mood: e.target.value })} className="input-lite">
                         <option value="">Inherit</option>
                         {MOODS.map((m) => <option key={m} value={m}>{m}</option>)}
                       </select>
                     </Field>
                     <Field label={`Tool (default ${albumTool})`}>
-                      <select value={t.ai_tool} onChange={(e) => updateTrack(t.id, { ai_tool: e.target.value })} className="input">
+                      <select value={t.ai_tool} onChange={(e) => updateTrack(t.id, { ai_tool: e.target.value })} className="input-lite">
                         <option value="">Inherit</option>
                         {TOOLS.map((tt) => <option key={tt.v} value={tt.v}>{tt.l}</option>)}
                       </select>
                     </Field>
                   </div>
                   <Field label="Lyrics (optional)">
-                    <textarea value={t.lyrics} onChange={(e) => updateTrack(t.id, { lyrics: e.target.value })} rows={3} maxLength={5000} className="input resize-none" />
+                    <textarea value={t.lyrics} onChange={(e) => updateTrack(t.id, { lyrics: e.target.value })} rows={3} maxLength={5000} className="input-lite resize-none" />
                   </Field>
                   <label className="flex items-center gap-2 text-muted-foreground">
                     <input type="checkbox" checked={t.explicit} onChange={(e) => updateTrack(t.id, { explicit: e.target.checked })} />
