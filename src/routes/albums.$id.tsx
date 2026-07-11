@@ -263,15 +263,28 @@ function AlbumSongRow({
 
   return (
     <div
+      role="button"
+      tabIndex={0}
+      onClick={playOrPause}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          playOrPause();
+        }
+      }}
       onContextMenu={(event) => {
         event.preventDefault();
         setMenuOpen(true);
       }}
-      className={`group grid grid-cols-[2rem_4.25rem_1fr] items-center gap-3 rounded-lg bg-surface p-3 hairline transition-colors hover:bg-surface-elevated sm:grid-cols-[2rem_5rem_1fr_auto] ${isCurrent ? "border-primary/40" : ""}`}
+      aria-label={`${isCurrent && isPlaying ? "Pause" : "Play"} ${track.title}`}
+      className={`group grid cursor-pointer grid-cols-[2rem_4.25rem_1fr] items-center gap-3 rounded-lg bg-surface p-3 hairline transition-colors hover:bg-surface-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 sm:grid-cols-[2rem_5rem_1fr_auto] ${isCurrent ? "border-primary/40" : ""}`}
     >
       <button
         type="button"
-        onClick={playOrPause}
+        onClick={(event) => {
+          event.stopPropagation();
+          playOrPause();
+        }}
         aria-label={`${isCurrent && isPlaying ? "Pause" : "Play"} ${track.title}`}
         className="flex h-8 w-8 items-center justify-center rounded-full text-xs text-muted-foreground transition-transform active:scale-90 group-hover:text-primary"
       >
@@ -280,36 +293,19 @@ function AlbumSongRow({
         </span>
         <Play className="hidden h-4 w-4 fill-current group-hover:block" />
       </button>
-      <div className="relative">
-        <Link to="/tracks/$id" params={{ id: track.id }} aria-label={`Open song ${track.title}`}>
-          <Cover src={track.cover_url} seed={track.id} shape={track.artwork_shape ?? "circle"} className="aspect-square w-full" />
-        </Link>
-        <HoverPlayIcon
-          label={`Play ${track.title}`}
-          text="Play song"
-          active={isCurrent}
-          playing={isPlaying}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            playOrPause();
-          }}
-        />
+      <div className="relative" aria-hidden="true">
+        <Cover src={track.cover_url} seed={track.id} shape={track.artwork_shape ?? "circle"} className="aspect-square w-full" />
       </div>
       <div className="min-w-0">
-        <Link
-          to="/tracks/$id"
-          params={{ id: track.id }}
-          aria-label={`Open song page for ${track.title}`}
-          className="block truncate text-sm font-medium hover:text-primary-glow hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-        >
+        <div className={`truncate text-sm font-medium transition-colors ${isCurrent && isPlaying ? "text-primary-glow" : ""}`}>
           {track.title}
-        </Link>
+        </div>
         {track.artists && (
           <Link
             to="/artists/$slug"
             params={{ slug: track.artists.slug }}
             aria-label={`Open artist profile for ${track.artists.display_name}`}
+            onClick={(event) => event.stopPropagation()}
             className="block truncate text-xs text-muted-foreground hover:text-foreground hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
           >
             {track.artists.display_name}
@@ -320,7 +316,10 @@ function AlbumSongRow({
       <div className="col-span-3 flex flex-wrap items-center gap-2 sm:col-span-1 sm:justify-end">
         <button
           type="button"
-          onClick={() => setSaved((value) => !value)}
+          onClick={(event) => {
+            event.stopPropagation();
+            setSaved((value) => !value);
+          }}
           aria-label={saved ? `Remove ${track.title} from saved songs` : `Save ${track.title}`}
           aria-pressed={saved}
           className={`h-8 w-8 rounded-full hairline flex items-center justify-center opacity-0 transition active:scale-90 group-hover:opacity-100 focus:opacity-100 ${saved ? "text-primary bg-primary/15 border-primary/40 opacity-100" : "text-muted-foreground hover:text-foreground"}`}
@@ -340,8 +339,12 @@ function AlbumSongRow({
           onShare={shareTrack}
         />
         <span className="min-w-10 text-right text-xs text-muted-foreground">{fmtTime(track.duration_seconds)}</span>
-        <DownloadButton trackId={track.id} title={track.title} audioUrl={track.audio_url} artistId={track.artist_id} size="sm" />
-        <BuySongButton track={track} size="sm" />
+        <span onClick={(event) => event.stopPropagation()}>
+          <DownloadButton trackId={track.id} title={track.title} audioUrl={track.audio_url} artistId={track.artist_id} size="sm" />
+        </span>
+        <span onClick={(event) => event.stopPropagation()}>
+          <BuySongButton track={track} size="sm" />
+        </span>
       </div>
     </div>
   );
@@ -369,6 +372,7 @@ function TrackOptionsMenu({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
+          onClick={(event) => event.stopPropagation()}
           aria-label={`More options for ${track.title}`}
           className="h-8 w-8 rounded-full hairline flex items-center justify-center text-muted-foreground opacity-0 transition hover:text-foreground active:scale-90 group-hover:opacity-100 focus:opacity-100"
         >
