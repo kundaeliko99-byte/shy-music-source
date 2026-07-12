@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Share2, Copy, X, Check, Instagram, Music2 } from "lucide-react";
 import { toast } from "sonner";
+import { copyText } from "@/lib/clipboard";
 
 interface Props {
   url: string;
@@ -39,16 +40,24 @@ export function ShareMenu({ url, title, artist }: Props) {
   }
 
   async function copyLink() {
-    await navigator.clipboard.writeText(url);
-    setCopied(true);
-    toast.success("Link copied");
-    setTimeout(() => setCopied(false), 1500);
+    try {
+      await copyText(url);
+      setCopied(true);
+      toast.success("Link copied");
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error("Copy was blocked. Try sharing manually.");
+    }
   }
 
   async function copyCaption(platform: string) {
-    await navigator.clipboard.writeText(caption);
-    toast.success(`Caption copied — open ${platform} and paste`);
-    setOpen(false);
+    try {
+      await copyText(caption);
+      toast.success(`Caption copied — open ${platform} and paste`);
+      setOpen(false);
+    } catch {
+      toast.error("Copy was blocked. Try sharing manually.");
+    }
   }
 
   function openIntent(href: string) {

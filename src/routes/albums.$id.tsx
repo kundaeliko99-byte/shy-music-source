@@ -13,6 +13,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAlbumById, fetchAlbumTracks, toPlayerTrack, type AlbumDetail, type TrackRow } from "@/lib/api";
+import { copyText } from "@/lib/clipboard";
 import { fmtCount, fmtTime } from "@/lib/format";
 import { resolveAudioUrl } from "@/lib/media";
 import { withTimeout } from "@/lib/request";
@@ -240,7 +241,7 @@ function AlbumSongRow({
   const shareTrack = async () => {
     const url = `${window.location.origin}/tracks/${track.id}`;
     try {
-      await navigator.clipboard.writeText(url);
+      await copyText(url);
       toast.success("Track link copied");
     } catch {
       toast.info(url);

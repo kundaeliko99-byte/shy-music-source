@@ -4,6 +4,7 @@ import { Copy, Download, Mail, MessageCircle, Phone, ShoppingBag, X } from "luci
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { copyText } from "@/lib/clipboard";
 import type { TrackRow } from "@/lib/api";
 import { withTimeout } from "@/lib/request";
 import {
@@ -87,7 +88,7 @@ export function BuySongButton({ track, size = "md" }: BuySongButtonProps) {
 
   async function copyContract() {
     try {
-      await navigator.clipboard.writeText(contract);
+      await copyText(contract);
       toast.success("Contract copied");
     } catch {
       toast.error("Couldn't copy the contract. Select the text and copy it manually.");
