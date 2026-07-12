@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
 import { Disc3, Home, LayoutDashboard, Music, UploadCloud } from "lucide-react";
@@ -94,6 +94,22 @@ const albumSchema = z.object({
 
 type ReleaseKind = "single" | "album";
 type SubmitState = { busy: boolean; text: string; progress: number };
+type UploadFrameTrack = { title?: string; lyrics?: string; explicit?: string; audio?: unknown };
+type UploadFrameSubmit = {
+  source: "shy-upload-frame";
+  kind: "single-submit" | "album-submit";
+  fields: Record<string, string>;
+  files: Record<string, unknown>;
+  tracks?: UploadFrameTrack[];
+};
+type UploadFrameMessage = {
+  source?: string;
+  kind?: string;
+  fields?: Record<string, string>;
+  files?: Record<string, unknown>;
+  tracks?: UploadFrameTrack[];
+  height?: number;
+};
 
 export const Route = createFileRoute("/upload")({
   head: () => ({
@@ -273,15 +289,13 @@ function BareUploadShell({ children, artistSlug }: { children: ReactNode; artist
 
 function SingleUpload({ artistId, userId }: { artistId: string; userId: string }) {
   const navigate = useNavigate();
-  const formRef = useRef<HTMLFormElement | null>(null);
   const [submit, setSubmit] = useState<SubmitState>({ busy: false, text: "", progress: 0 });
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleFrameSubmit(message: UploadFrameSubmit) {
     if (submit.busy) return;
 
-    const form = new FormData(event.currentTarget);
-    const audio = getFile(form, "audio");
+    const { fields, files } = message;
+    const audio = asFile(files.audio);
     if (!audio) {
       toast.error("Add an audio file.");
       return;
@@ -289,17 +303,17 @@ function SingleUpload({ artistId, userId }: { artistId: string; userId: string }
 
     try {
       assertAudioFile(audio);
-      const cover = getFile(form, "cover");
+      const cover = asFile(files.cover);
       if (cover) assertImageFile(cover);
 
       const parsed = trackSchema.parse({
-        title: readString(form, "title"),
-        genre: readString(form, "genre"),
-        mood: optionalString(form, "mood"),
-        ai_tool: readString(form, "ai_tool"),
-        lyrics: optionalString(form, "lyrics"),
-        explicit: form.get("explicit") === "on",
-        artwork_shape: readString(form, "artwork_shape"),
+        title: fields.title ?? "",
+        genre: fields.genre ?? "",
+        mood: optionalField(fields.mood),
+        ai_tool: fields.ai_tool ?? "",
+        lyrics: optionalField(fields.lyrics),
+        explicit: fields.explicit === "on",
+        artwork_shape: fields.artwork_shape ?? "",
       });
 
       setSubmit({ busy: true, text: "Uploading audio...", progress: 15 });
@@ -337,7 +351,6 @@ function SingleUpload({ artistId, userId }: { artistId: string; userId: string }
 
       setSubmit({ busy: false, text: "Done", progress: 100 });
       toast.success("Track uploaded.");
-      formRef.current?.reset();
       navigate({ to: "/tracks/$id", params: { id: data.id } });
     } catch (error) {
       setSubmit({ busy: false, text: "", progress: 0 });
@@ -347,63 +360,24 @@ function SingleUpload({ artistId, userId }: { artistId: string; userId: string }
 
   return (
     <Panel>
-      <form ref={formRef} onSubmit={onSubmit} className="space-y-6">
+      <div className="space-y-5">
         <SectionTitle icon={<Music className="h-5 w-5" />} title="Single details" />
-        <div className="grid gap-5 lg:grid-cols-[220px_1fr]">
-          <FileBox name="cover" label="Cover art" accept="image/jpeg,image/png,image/webp" helper="JPG, PNG, or WebP. Square artwork works best." />
-          <div className="space-y-4">
-            <Field label="Title">
-              <input name="title" maxLength={100} required autoComplete="off" className={inputClass} />
-            </Field>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Genre">
-                <GenreSelect name="genre" />
-              </Field>
-              <Field label="Mood (optional)">
-                <MoodSelect name="mood" />
-              </Field>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="AI tool used">
-                <ToolSelect name="ai_tool" />
-              </Field>
-              <Field label="Artwork shape in SHY">
-                <ShapeSelect name="artwork_shape" />
-              </Field>
-            </div>
-            <label className="flex items-center gap-3 text-sm text-muted-foreground">
-              <input type="checkbox" name="explicit" className="h-4 w-4 accent-primary" />
-              Contains explicit content
-            </label>
-          </div>
-        </div>
-
-        <FileBox name="audio" label="Audio file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg,audio/webm" helper="MP3, WAV, M4A, AAC, OGG, or WebM. Max 50MB." required />
-
-        <Field label="Lyrics (optional)">
-          <textarea name="lyrics" rows={5} maxLength={5000} className={`${inputClass} resize-none`} />
-        </Field>
-
-        <SubmitBar submit={submit} idleText="Publish single" />
-      </form>
+        <UploadFrame title="Single upload form" srcDoc={singleFrameHtml()} onSubmit={handleFrameSubmit} />
+        <ProgressOnly submit={submit} />
+      </div>
     </Panel>
   );
 }
 
 function AlbumUpload({ artistId, userId, artistSlug }: { artistId: string; userId: string; artistSlug: string | null }) {
   const navigate = useNavigate();
-  const formRef = useRef<HTMLFormElement | null>(null);
-  const [trackCount, setTrackCount] = useState(3);
   const [submit, setSubmit] = useState<SubmitState>({ busy: false, text: "", progress: 0 });
 
-  const trackIndexes = useMemo(() => Array.from({ length: trackCount }, (_, index) => index), [trackCount]);
-
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleFrameSubmit(message: UploadFrameSubmit) {
     if (submit.busy) return;
 
-    const form = new FormData(event.currentTarget);
-    const cover = getFile(form, "cover");
+    const { fields, files, tracks: frameTracks = [] } = message;
+    const cover = asFile(files.cover);
     if (!cover) {
       toast.error("Add project artwork.");
       return;
@@ -412,25 +386,21 @@ function AlbumUpload({ artistId, userId, artistSlug }: { artistId: string; userI
     try {
       assertImageFile(cover);
       const album = albumSchema.parse({
-        title: readString(form, "album_title"),
-        album_type: readString(form, "album_type"),
-        genre: readString(form, "album_genre"),
-        mood: optionalString(form, "album_mood"),
-        ai_tool: readString(form, "album_ai_tool"),
-        artwork_shape: readString(form, "artwork_shape"),
+        title: fields.album_title ?? "",
+        album_type: fields.album_type ?? "",
+        genre: fields.album_genre ?? "",
+        mood: optionalField(fields.album_mood),
+        ai_tool: fields.album_ai_tool ?? "",
+        artwork_shape: fields.artwork_shape ?? "",
       });
 
-      const tracks = trackIndexes
-        .map((index) => {
-          const audio = getFile(form, `track_audio_${index}`);
-          const title = readString(form, `track_title_${index}`).trim();
-          return {
-            title,
-            audio,
-            lyrics: optionalString(form, `track_lyrics_${index}`),
-            explicit: form.get(`track_explicit_${index}`) === "on",
-          };
-        })
+      const tracks = frameTracks
+        .map((track) => ({
+          title: (track.title ?? "").trim(),
+          audio: asFile(track.audio),
+          lyrics: optionalField(track.lyrics),
+          explicit: track.explicit === "on",
+        }))
         .filter((track) => track.title || track.audio);
 
       if (tracks.length === 0) {
@@ -501,7 +471,6 @@ function AlbumUpload({ artistId, userId, artistSlug }: { artistId: string; userI
 
       setSubmit({ busy: false, text: "Done", progress: 100 });
       toast.success("Project uploaded.");
-      formRef.current?.reset();
       if (artistSlug) navigate({ to: "/artists/$slug", params: { slug: artistSlug } });
       else navigate({ to: "/dashboard", search: { tab: "overview" } });
     } catch (error) {
@@ -512,92 +481,304 @@ function AlbumUpload({ artistId, userId, artistSlug }: { artistId: string; userI
 
   return (
     <Panel>
-      <form ref={formRef} onSubmit={onSubmit} className="space-y-6">
+      <div className="space-y-5">
         <SectionTitle icon={<Disc3 className="h-5 w-5" />} title="Project details" />
-        <div className="grid gap-5 lg:grid-cols-[220px_1fr]">
-          <FileBox name="cover" label="Project cover" accept="image/jpeg,image/png,image/webp" helper="Shared artwork for this album or EP." required />
-          <div className="space-y-4">
-            <Field label="Album / EP title">
-              <input name="album_title" maxLength={100} required autoComplete="off" className={inputClass} />
-            </Field>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Type">
-                <select name="album_type" defaultValue="album" className={inputClass}>
-                  <option value="album">Album</option>
-                  <option value="ep">EP</option>
-                  <option value="mixtape">Mixtape</option>
-                </select>
-              </Field>
-              <Field label="Default genre">
-                <GenreSelect name="album_genre" />
-              </Field>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Default mood">
-                <MoodSelect name="album_mood" />
-              </Field>
-              <Field label="Default AI tool">
-                <ToolSelect name="album_ai_tool" />
-              </Field>
-            </div>
-            <Field label="Artwork shape in SHY">
-              <ShapeSelect name="artwork_shape" />
-            </Field>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <SectionTitle icon={<Music className="h-5 w-5" />} title={`Tracks (${trackCount})`} />
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setTrackCount((count) => Math.max(1, count - 1))}
-                className="rounded-full border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
-              >
-                Remove last
-              </button>
-              <button
-                type="button"
-                onClick={() => setTrackCount((count) => Math.min(30, count + 1))}
-                className="rounded-full border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
-              >
-                Add track
-              </button>
-            </div>
-          </div>
-
-          {trackIndexes.map((index) => (
-            <div key={index} className="rounded-xl border border-border bg-background/70 p-4">
-              <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-primary-glow">Track {index + 1}</div>
-              <div className="grid gap-4 lg:grid-cols-[1fr_260px]">
-                <div className="space-y-4">
-                  <Field label="Title">
-                    <input name={`track_title_${index}`} maxLength={100} autoComplete="off" className={inputClass} />
-                  </Field>
-                  <Field label="Lyrics (optional)">
-                    <textarea name={`track_lyrics_${index}`} rows={3} maxLength={5000} className={`${inputClass} resize-none`} />
-                  </Field>
-                  <label className="flex items-center gap-3 text-sm text-muted-foreground">
-                    <input type="checkbox" name={`track_explicit_${index}`} className="h-4 w-4 accent-primary" />
-                    Explicit
-                  </label>
-                </div>
-                <FileBox
-                  name={`track_audio_${index}`}
-                  label="Audio"
-                  accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg,audio/webm"
-                  helper="Add this track's audio file."
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <SubmitBar submit={submit} idleText="Publish project" />
-      </form>
+        <UploadFrame title="Album upload form" srcDoc={albumFrameHtml()} onSubmit={handleFrameSubmit} />
+        <ProgressOnly submit={submit} />
+      </div>
     </Panel>
   );
+}
+
+function UploadFrame({ title, srcDoc, onSubmit }: { title: string; srcDoc: string; onSubmit: (message: UploadFrameSubmit) => void }) {
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const [height, setHeight] = useState(980);
+
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      if (event.source !== iframeRef.current?.contentWindow) return;
+      const data = event.data as UploadFrameMessage;
+      if (data.source !== "shy-upload-frame") return;
+      if (data.kind === "height" && typeof data.height === "number") {
+        setHeight(Math.max(720, Math.min(2200, Math.ceil(data.height))));
+        return;
+      }
+      if (data.kind === "single-submit" || data.kind === "album-submit") {
+        onSubmit(data as UploadFrameSubmit);
+      }
+    }
+
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [onSubmit]);
+
+  return (
+    <iframe
+      ref={iframeRef}
+      title={title}
+      srcDoc={srcDoc}
+      className="block w-full rounded-2xl border border-border bg-background"
+      style={{ height }}
+      sandbox="allow-scripts allow-forms"
+    />
+  );
+}
+
+function ProgressOnly({ submit }: { submit: SubmitState }) {
+  if (!submit.busy && submit.progress <= 0) return null;
+  return (
+    <div>
+      <div className="mb-2 flex justify-between text-xs text-muted-foreground">
+        <span>{submit.text || "Working..."}</span>
+        <span>{submit.progress}%</span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-background">
+        <div className="h-full rounded-full bg-gradient-primary transition-all" style={{ width: `${submit.progress}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function singleFrameHtml() {
+  return frameDocument(`
+    <form id="single-form" class="space">
+      <div class="grid header-grid">
+        ${fileField("cover", "Cover art", "image/jpeg,image/png,image/webp", "JPG, PNG, or WebP. Square artwork works best.")}
+        <div class="space">
+          ${textField("title", "Title", true)}
+          <div class="grid two">${selectField("genre", "Genre", genreOptions(), "electronic")}${selectField("mood", "Mood (optional)", moodOptions(true), "")}</div>
+          <div class="grid two">${selectField("ai_tool", "AI tool used", toolOptions(), "suno")}${selectField("artwork_shape", "Artwork shape in SHY", shapeOptions(), "rounded")}</div>
+          <label class="check"><input type="checkbox" name="explicit" /> Contains explicit content</label>
+        </div>
+      </div>
+      ${fileField("audio", "Audio file", "audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg,audio/webm", "MP3, WAV, M4A, AAC, OGG, or WebM. Max 50MB.", true)}
+      ${textareaField("lyrics", "Lyrics (optional)", 5)}
+      <button class="submit" type="submit">Publish single</button>
+    </form>
+    <script>
+      document.getElementById('single-form').addEventListener('submit', function(event) {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const data = new FormData(form);
+        parent.postMessage({
+          source: 'shy-upload-frame',
+          kind: 'single-submit',
+          fields: Object.fromEntries(Array.from(data.entries()).filter(([_, value]) => typeof value === 'string')),
+          files: {
+            cover: fileFrom(form, 'cover'),
+            audio: fileFrom(form, 'audio')
+          }
+        }, '*');
+      });
+    </script>
+  `);
+}
+
+function albumFrameHtml() {
+  return frameDocument(`
+    <form id="album-form" class="space">
+      <div class="grid header-grid">
+        ${fileField("cover", "Project cover", "image/jpeg,image/png,image/webp", "Shared artwork for this album or EP.", true)}
+        <div class="space">
+          ${textField("album_title", "Album / EP title", true)}
+          <div class="grid two">${selectField("album_type", "Type", `<option value="album">Album</option><option value="ep">EP</option><option value="mixtape">Mixtape</option>`, "album")}${selectField("album_genre", "Default genre", genreOptions(), "electronic")}</div>
+          <div class="grid two">${selectField("album_mood", "Default mood", moodOptions(true), "")}${selectField("album_ai_tool", "Default AI tool", toolOptions(), "suno")}</div>
+          ${selectField("artwork_shape", "Artwork shape in SHY", shapeOptions(), "rounded")}
+        </div>
+      </div>
+      <div class="track-head">
+        <h2>Tracks</h2>
+        <div class="actions">
+          <button type="button" id="remove-track">Remove last</button>
+          <button type="button" id="add-track">Add track</button>
+        </div>
+      </div>
+      <div id="tracks" class="space"></div>
+      <button class="submit" type="submit">Publish project</button>
+    </form>
+    <template id="track-template">
+      <section class="track" data-track>
+        <div class="track-title">Track <span data-number></span></div>
+        <div class="grid track-grid">
+          <div class="space small-gap">
+            ${textField("track_title", "Title", false)}
+            ${textareaField("track_lyrics", "Lyrics (optional)", 3)}
+            <label class="check"><input type="checkbox" name="track_explicit" /> Explicit</label>
+          </div>
+          ${fileField("track_audio", "Audio", "audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/ogg,audio/webm", "Add this track's audio file.")}
+        </div>
+      </section>
+    </template>
+    <script>
+      const tracks = document.getElementById('tracks');
+      const template = document.getElementById('track-template');
+      function addTrack() {
+        if (tracks.children.length >= 30) return;
+        const node = template.content.cloneNode(true);
+        tracks.appendChild(node);
+        renumber();
+        sendHeight();
+      }
+      function removeTrack() {
+        if (tracks.children.length <= 1) return;
+        tracks.lastElementChild.remove();
+        renumber();
+        sendHeight();
+      }
+      function renumber() {
+        Array.from(tracks.children).forEach((track, index) => {
+          track.querySelector('[data-number]').textContent = String(index + 1);
+        });
+      }
+      document.getElementById('add-track').addEventListener('click', addTrack);
+      document.getElementById('remove-track').addEventListener('click', removeTrack);
+      addTrack(); addTrack(); addTrack();
+      document.getElementById('album-form').addEventListener('submit', function(event) {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const data = new FormData(form);
+        parent.postMessage({
+          source: 'shy-upload-frame',
+          kind: 'album-submit',
+          fields: Object.fromEntries(Array.from(data.entries()).filter(([_, value]) => typeof value === 'string' && !String(_).startsWith('track_'))),
+          files: { cover: fileFrom(form, 'cover') },
+          tracks: Array.from(tracks.children).map((track) => ({
+            title: track.querySelector('[name="track_title"]').value,
+            lyrics: track.querySelector('[name="track_lyrics"]').value,
+            explicit: track.querySelector('[name="track_explicit"]').checked ? 'on' : '',
+            audio: fileFrom(track, 'track_audio')
+          }))
+        }, '*');
+      });
+    </script>
+  `);
+}
+
+function frameDocument(body: string) {
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #05050a; color: #f7f3ff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 20px; background: #05050a; color: #f7f3ff; }
+  .space { display: grid; gap: 18px; }
+  .small-gap { gap: 12px; }
+  .grid { display: grid; gap: 16px; }
+  .header-grid { grid-template-columns: 220px minmax(0, 1fr); align-items: start; }
+  .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .track-grid { grid-template-columns: minmax(0, 1fr) 260px; }
+  label span, .label { display: block; margin-bottom: 7px; color: #a9a1bd; font-size: 12px; font-weight: 600; }
+  input, select, textarea {
+    width: 100%;
+    border: 1px solid rgba(135, 119, 170, 0.34);
+    border-radius: 14px;
+    background: #090911;
+    color: #f7f3ff;
+    padding: 13px 14px;
+    font: inherit;
+    font-size: 14px;
+    outline: none;
+  }
+  input:focus, select:focus, textarea:focus { border-color: #8b4cf6; box-shadow: 0 0 0 3px rgba(139, 76, 246, 0.24); }
+  input[type=file] { padding: 12px; min-height: 56px; }
+  input[type=file]::file-selector-button {
+    margin-right: 12px;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(139, 76, 246, 0.24);
+    color: #d9c9ff;
+    padding: 10px 14px;
+    font-weight: 700;
+  }
+  textarea { resize: vertical; min-height: 108px; }
+  .help { display: block; margin-top: 7px; color: #827890; font-size: 12px; line-height: 1.4; }
+  .check { display: flex; align-items: center; gap: 10px; color: #b9b0ce; font-size: 14px; }
+  .check input { width: 16px; height: 16px; accent-color: #8b4cf6; }
+  .submit {
+    width: 100%;
+    border: 0;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #8b4cf6, #a56cff);
+    color: white;
+    padding: 14px 18px;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: 0 18px 45px -28px #a56cff;
+  }
+  .track-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .track-head h2 { margin: 0; font-size: 18px; }
+  .actions { display: flex; gap: 8px; }
+  .actions button { border: 1px solid rgba(135, 119, 170, 0.34); border-radius: 999px; background: transparent; color: #b9b0ce; padding: 9px 13px; cursor: pointer; }
+  .track { border: 1px solid rgba(135, 119, 170, 0.24); border-radius: 18px; padding: 16px; background: rgba(12, 12, 20, 0.82); }
+  .track-title { margin-bottom: 12px; color: #c6b3ff; font-size: 12px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; }
+  @media (max-width: 760px) {
+    body { padding: 14px; }
+    .header-grid, .two, .track-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+${body}
+<script>
+  function fileFrom(root, name) {
+    const input = root.querySelector('[name="' + name + '"]');
+    return input && input.files && input.files[0] && input.files[0].size > 0 ? input.files[0] : null;
+  }
+  function sendHeight() {
+    parent.postMessage({ source: 'shy-upload-frame', kind: 'height', height: document.documentElement.scrollHeight + 8 }, '*');
+  }
+  new ResizeObserver(sendHeight).observe(document.body);
+  addEventListener('load', sendHeight);
+  addEventListener('input', sendHeight);
+</script>
+</body>
+</html>`;
+}
+
+function textField(name: string, label: string, required: boolean) {
+  return `<label><span>${label}</span><input name="${name}" maxlength="100" autocomplete="off" ${required ? "required" : ""} /></label>`;
+}
+
+function textareaField(name: string, label: string, rows: number) {
+  return `<label><span>${label}</span><textarea name="${name}" rows="${rows}" maxlength="5000"></textarea></label>`;
+}
+
+function fileField(name: string, label: string, accept: string, helper: string, required = false) {
+  return `<label><span>${label}</span><input name="${name}" type="file" accept="${accept}" ${required ? "required" : ""} /><small class="help">${helper}</small></label>`;
+}
+
+function selectField(name: string, label: string, options: string, defaultValue: string) {
+  return `<label><span>${label}</span><select name="${name}" data-default="${defaultValue}">${options}</select></label>`;
+}
+
+function genreOptions() {
+  return GENRES.map((genre) => `<option value="${genre}" ${genre === "electronic" ? "selected" : ""}>${prettyGenre(genre)}</option>`).join("");
+}
+
+function moodOptions(includeEmpty = false) {
+  return `${includeEmpty ? '<option value="">No mood</option>' : ""}${MOODS.map((mood) => `<option value="${mood}">${mood}</option>`).join("")}`;
+}
+
+function toolOptions() {
+  return `
+    <option value="suno" selected>Suno</option>
+    <option value="udio">Udio</option>
+    <option value="stable_audio">Stable Audio</option>
+    <option value="custom_model">Custom model</option>
+    <option value="other">Other</option>
+  `;
+}
+
+function shapeOptions() {
+  return `
+    <option value="rounded" selected>Square</option>
+    <option value="circle">Circle</option>
+    <option value="diamond">Diamond</option>
+    <option value="hexagon">Hexagon</option>
+  `;
 }
 
 function Panel({ children, className = "" }: { children: ReactNode; className?: string }) {
@@ -613,114 +794,24 @@ function SectionTitle({ icon, title }: { icon: ReactNode; title: string }) {
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 block text-xs font-medium text-muted-foreground">{label}</span>
-      {children}
-    </label>
-  );
+function asFile(value: unknown): File | null {
+  if (value instanceof File && value.size > 0) return value;
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    Object.prototype.toString.call(value) === "[object File]" &&
+    "size" in value &&
+    typeof value.size === "number" &&
+    value.size > 0
+  ) {
+    return value as File;
+  }
+  return null;
 }
 
-function FileBox({ name, label, accept, helper, required = false }: { name: string; label: string; accept: string; helper: string; required?: boolean }) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 block text-xs font-medium text-muted-foreground">{label}</span>
-      <input name={name} type="file" accept={accept} required={required} className="block w-full rounded-xl border border-border bg-background px-3 py-3 text-sm text-foreground file:mr-4 file:rounded-full file:border-0 file:bg-primary/20 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary-glow hover:border-primary/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30" />
-      <span className="mt-1.5 block text-xs text-muted-foreground">{helper}</span>
-    </label>
-  );
-}
-
-function GenreSelect({ name }: { name: string }) {
-  return (
-    <select name={name} defaultValue="electronic" className={inputClass}>
-      {GENRES.map((genre) => (
-        <option key={genre} value={genre}>
-          {prettyGenre(genre)}
-        </option>
-      ))}
-    </select>
-  );
-}
-
-function MoodSelect({ name }: { name: string }) {
-  return (
-    <select name={name} defaultValue="" className={inputClass}>
-      <option value="">No mood</option>
-      {MOODS.map((mood) => (
-        <option key={mood} value={mood}>
-          {mood}
-        </option>
-      ))}
-    </select>
-  );
-}
-
-function ToolSelect({ name }: { name: string }) {
-  return (
-    <select name={name} defaultValue="suno" className={inputClass}>
-      <option value="suno">Suno</option>
-      <option value="udio">Udio</option>
-      <option value="stable_audio">Stable Audio</option>
-      <option value="custom_model">Custom model</option>
-      <option value="other">Other</option>
-    </select>
-  );
-}
-
-function ShapeSelect({ name }: { name: string }) {
-  return (
-    <select name={name} defaultValue="rounded" className={inputClass}>
-      <option value="rounded">Square</option>
-      <option value="circle">Circle</option>
-      <option value="diamond">Diamond</option>
-      <option value="hexagon">Hexagon</option>
-    </select>
-  );
-}
-
-function SubmitBar({ submit, idleText }: { submit: SubmitState; idleText: string }) {
-  return (
-    <div className="space-y-3">
-      {submit.busy || submit.progress > 0 ? (
-        <div>
-          <div className="mb-2 flex justify-between text-xs text-muted-foreground">
-            <span>{submit.text || "Working..."}</span>
-            <span>{submit.progress}%</span>
-          </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-background">
-            <div className="h-full rounded-full bg-gradient-primary transition-all" style={{ width: `${submit.progress}%` }} />
-          </div>
-        </div>
-      ) : null}
-      <button
-        type="submit"
-        disabled={submit.busy}
-        className="w-full rounded-full bg-gradient-primary px-5 py-3 text-sm font-semibold text-primary-foreground shadow-glow-soft transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {submit.busy ? submit.text || "Uploading..." : idleText}
-      </button>
-    </div>
-  );
-}
-
-const inputClass =
-  "w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-foreground outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/30";
-
-function readString(form: FormData, name: string) {
-  const value = form.get(name);
-  return typeof value === "string" ? value : "";
-}
-
-function optionalString(form: FormData, name: string) {
-  const value = readString(form, name).trim();
-  return value ? value : undefined;
-}
-
-function getFile(form: FormData, name: string) {
-  const file = form.get(name);
-  return file instanceof File && file.size > 0 ? file : null;
+function optionalField(value: string | undefined) {
+  const trimmed = value?.trim() ?? "";
+  return trimmed ? trimmed : undefined;
 }
 
 function errorMessage(error: unknown, fallback: string) {
