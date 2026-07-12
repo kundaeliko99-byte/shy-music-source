@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { BadgeCheck, CalendarDays, Disc3, Headphones, Heart, ListPlus, MoreHorizontal, Play, Share2, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
@@ -14,6 +14,8 @@ import { usePlayer } from "@/contexts/PlayerContext";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAlbumById, fetchAlbumTracks, toPlayerTrack, type AlbumDetail, type TrackRow } from "@/lib/api";
 import { fmtCount, fmtTime } from "@/lib/format";
+import { resolveAudioUrl } from "@/lib/media";
+import { withTimeout } from "@/lib/request";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,6 +48,7 @@ function AlbumDetailPage() {
   const { current, isPlaying, playTrack, togglePlay } = usePlayer();
   const [album, setAlbum] = useState<AlbumDetail | null>(null);
   const [tracks, setTracks] = useState<TrackRow[]>([]);
+  const [streamUrls, setStreamUrls] = useState<Record<string, string>>({});
   const [playlists, setPlaylists] = useState<PlaylistOption[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -72,6 +75,40 @@ function AlbumDetailPage() {
       .then(({ data }) => setPlaylists((data ?? []) as PlaylistOption[]));
   }, [user]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setStreamUrls({});
+    if (tracks.length === 0) return;
+
+    Promise.all(
+      tracks.map(async (track) => {
+        try {
+          const url = await withTimeout(
+            resolveAudioUrl(track.audio_url, 3600),
+            `Prepare audio for ${track.title}`,
+            8000,
+          );
+          return [track.id, url] as const;
+        } catch (error) {
+          console.warn("[album] failed to prepare audio", track.id, error);
+          return null;
+        }
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      setStreamUrls(Object.fromEntries(entries.filter(Boolean) as Array<readonly [string, string]>));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tracks]);
+
+  const playerQueue = useMemo(
+    () => tracks.map((track) => toPlayerTrack(track, streamUrls[track.id])),
+    [tracks, streamUrls],
+  );
+
   if (loading) {
     return (
       <AppShell>
@@ -89,7 +126,6 @@ function AlbumDetailPage() {
   }
 
   const totalPlays = tracks.reduce((sum, track) => sum + (track.plays_count ?? 0), 0);
-  const playerQueue = tracks.map(toPlayerTrack);
   const isActiveAlbum = current?.album_id === album.id;
 
   return (
@@ -106,7 +142,7 @@ function AlbumDetailPage() {
                 event.preventDefault();
                 event.stopPropagation();
                 if (isActiveAlbum) togglePlay();
-                else playTrack(toPlayerTrack(tracks[0]), playerQueue);
+                else playTrack(toPlayerTrack(tracks[0], streamUrls[tracks[0].id]), playerQueue);
               }}
             />
           )}
@@ -160,7 +196,8 @@ function AlbumDetailPage() {
                 userId={user?.id ?? null}
                 playlists={playlists}
                 setPlaylists={setPlaylists}
-                onPlay={() => playTrack(toPlayerTrack(track), playerQueue)}
+                streamUrl={streamUrls[track.id]}
+                onPlay={() => playTrack(toPlayerTrack(track, streamUrls[track.id]), playerQueue)}
               />
             ))}
           </div>
@@ -177,6 +214,7 @@ function AlbumSongRow({
   userId,
   playlists,
   setPlaylists,
+  streamUrl,
   onPlay,
 }: {
   track: TrackRow;
@@ -185,13 +223,14 @@ function AlbumSongRow({
   userId: string | null;
   playlists: PlaylistOption[];
   setPlaylists: Dispatch<SetStateAction<PlaylistOption[]>>;
+  streamUrl?: string;
   onPlay: () => void;
 }) {
   const { current, isPlaying, togglePlay, addToQueue } = usePlayer();
   const [saved, setSaved] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const isCurrent = current?.id === track.id;
-  const playerTrack = toPlayerTrack(track);
+  const playerTrack = toPlayerTrack(track, streamUrl);
 
   const playOrPause = () => {
     if (isCurrent) togglePlay();
@@ -263,20 +302,13 @@ function AlbumSongRow({
 
   return (
     <div
-      role="button"
-      tabIndex={0}
+      data-album-song-row={track.id}
+      data-stream-ready={streamUrl ? "true" : "false"}
       onClick={playOrPause}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          playOrPause();
-        }
-      }}
       onContextMenu={(event) => {
         event.preventDefault();
         setMenuOpen(true);
       }}
-      aria-label={`${isCurrent && isPlaying ? "Pause" : "Play"} ${track.title}`}
       className={`group grid cursor-pointer grid-cols-[2rem_4.25rem_1fr] items-center gap-3 rounded-lg bg-surface p-3 hairline transition-colors hover:bg-surface-elevated focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 sm:grid-cols-[2rem_5rem_1fr_auto] ${isCurrent ? "border-primary/40" : ""}`}
     >
       <button
@@ -301,15 +333,9 @@ function AlbumSongRow({
           {track.title}
         </div>
         {track.artists && (
-          <Link
-            to="/artists/$slug"
-            params={{ slug: track.artists.slug }}
-            aria-label={`Open artist profile for ${track.artists.display_name}`}
-            onClick={(event) => event.stopPropagation()}
-            className="block truncate text-xs text-muted-foreground hover:text-foreground hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-          >
+          <div className="truncate text-xs text-muted-foreground">
             {track.artists.display_name}
-          </Link>
+          </div>
         )}
         <div className="mt-1 text-[11px] text-muted-foreground">{fmtCount(track.plays_count)} streams</div>
       </div>

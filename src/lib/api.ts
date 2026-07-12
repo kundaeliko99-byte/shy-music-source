@@ -77,7 +77,7 @@ export interface UpcomingRelease {
   teaser_url: string | null;
 }
 
-export function toPlayerTrack(t: TrackRow): PlayerTrack {
+export function toPlayerTrack(t: TrackRow, streamUrl?: string | number): PlayerTrack {
   return {
     id: t.id,
     title: t.title,
@@ -91,6 +91,7 @@ export function toPlayerTrack(t: TrackRow): PlayerTrack {
     album_id: t.album_id,
     genre: t.genre,
     artist_id: t.artist_id,
+    stream_url: typeof streamUrl === "string" ? streamUrl : undefined,
   };
 }
 

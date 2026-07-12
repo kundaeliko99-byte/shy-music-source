@@ -30,6 +30,7 @@ export interface PlayerTrack {
   album_id?: string | null;
   genre?: string | null;
   artist_id?: string;
+  stream_url?: string;
 }
 
 interface PlayerContextValue {
@@ -191,9 +192,22 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setCurrentTime(0);
     playCountedRef.current = false;
     historyLoggedRef.current = false;
+    const preparedSrc = t.stream_url;
+    if (preparedSrc) {
+      if (a.src !== preparedSrc) {
+        a.src = preparedSrc;
+        a.load();
+      }
+      a.play().catch((error) => {
+        console.warn("[player] playback failed", error);
+        setIsPlaying(false);
+      });
+      return;
+    }
+
     let signedSrc: string;
     try {
-      signedSrc = await resolveAudioUrl(t.audio_url);
+      signedSrc = await withTimeout(resolveAudioUrl(t.audio_url), "Audio URL signing", 8000);
     } catch (error) {
       console.warn("[player] failed to resolve audio URL", error);
       setIsPlaying(false);
@@ -205,7 +219,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       a.src = signedSrc;
       a.load();
     }
-    a.play().catch((error) => {
+    withTimeout(a.play(), "Audio playback", 8000).catch((error) => {
       console.warn("[player] playback failed", error);
       setIsPlaying(false);
     });
@@ -264,17 +278,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playTrackInternal]);
 
-  // Init audio element once
+  // Wire the mounted audio element once. Keeping the player as a real DOM
+  // element is more reliable in mobile WebViews than a detached `new Audio()`.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const a = new Audio();
-    // "auto" lets the browser buffer further ahead → smoother playback on
-    // flaky connections, fewer mid-song stalls.
+    const a = audioRef.current;
+    if (!a) return;
     a.preload = "auto";
     a.volume = volume;
-    // @ts-expect-error — non-standard but widely supported, hints to mobile browsers
-    a.playsInline = true;
-    audioRef.current = a;
+    a.setAttribute("playsinline", "");
 
     let lastTimeUpdate = 0;
     const onTime = () => {
@@ -334,7 +346,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const link = document.createElement("link");
     link.rel = "prefetch";
     link.as = "audio";
-    resolveAudioUrl(nextTrack.audio_url, 1800)
+    Promise.resolve(nextTrack.stream_url ?? resolveAudioUrl(nextTrack.audio_url, 1800))
       .then((url) => {
         if (cancelled) return;
         link.href = url;
@@ -499,7 +511,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     [current, queue, isPlaying, currentTime, duration, volume, expanded, repeatMode, shuffleMode, playTrack, togglePlay, handleNext, handlePrev, seek, setVolume, cycleRepeatMode, toggleShuffleMode, addToQueue, reorderQueue]
   );
 
-  return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>;
+  return (
+    <PlayerContext.Provider value={value}>
+      {children}
+      <audio ref={audioRef} preload="auto" playsInline className="hidden" />
+    </PlayerContext.Provider>
+  );
 }
 
 export function usePlayer() {
