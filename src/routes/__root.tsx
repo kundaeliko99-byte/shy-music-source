@@ -1,4 +1,4 @@
-import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
+import { Outlet, Link, createRootRoute, HeadContent, Scripts, useRouterState } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import appCss from "../styles.css?url";
@@ -86,6 +86,22 @@ function RootShell({ children }: { children: ReactNode }) {
 }
 
 function RootComponent() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const isUploadRoute =
+    pathname === "/upload" ||
+    pathname.startsWith("/upload/") ||
+    pathname.endsWith("/upload") ||
+    pathname.includes("/upload/");
+
+  if (isUploadRoute) {
+    return (
+      <AuthProvider>
+        <Outlet />
+        <Toaster />
+      </AuthProvider>
+    );
+  }
+
   return (
     <AuthProvider>
       <PlayerProvider>
