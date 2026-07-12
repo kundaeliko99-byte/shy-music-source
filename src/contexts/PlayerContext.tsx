@@ -59,6 +59,8 @@ interface PlayerContextValue {
 const PlayerContext = createContext<PlayerContextValue | undefined>(undefined);
 
 const PLAY_THRESHOLD_SECONDS = 30;
+const MAX_RECOVERY_ATTEMPTS = 4;
+const RECOVERY_DELAYS_MS = [350, 900, 1800, 3200];
 
 const TRACK_SELECT_MIN = `
   id, title, cover_url, audio_url, duration_seconds, artwork_shape, lyrics, album_id, genre, artist_id,
@@ -113,17 +115,29 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const queueRef = useRef<PlayerTrack[]>([]);
   const queueIndexRef = useRef(0);
   const currentRef = useRef<PlayerTrack | null>(null);
+  const currentTimeRef = useRef(0);
   const repeatModeRef = useRef<RepeatMode>("off");
   const shuffleModeRef = useRef(false);
   useEffect(() => { queueRef.current = queue; }, [queue]);
   useEffect(() => { queueIndexRef.current = queueIndex; }, [queueIndex]);
   useEffect(() => { currentRef.current = current; }, [current]);
+  useEffect(() => { currentTimeRef.current = currentTime; }, [currentTime]);
   useEffect(() => { repeatModeRef.current = repeatMode; }, [repeatMode]);
   useEffect(() => { shuffleModeRef.current = shuffleMode; }, [shuffleMode]);
 
   const playCountedRef = useRef(false);
   const historyLoggedRef = useRef(false);
   const playbackRequestRef = useRef(0);
+  const intendedPlayingRef = useRef(false);
+  const recoveryTimerRef = useRef<number | null>(null);
+  const recoveryAttemptRef = useRef(0);
+
+  const clearRecoveryTimer = useCallback(() => {
+    if (recoveryTimerRef.current !== null && typeof window !== "undefined") {
+      window.clearTimeout(recoveryTimerRef.current);
+      recoveryTimerRef.current = null;
+    }
+  }, []);
 
   async function recordPlay(trackId: string) {
     try {
@@ -183,11 +197,78 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return null;
   }
 
+  const schedulePlaybackRecovery = useCallback((reason: string, refreshSource = false) => {
+    if (typeof window === "undefined") return;
+    if (!intendedPlayingRef.current) return;
+
+    const a = audioRef.current;
+    const track = currentRef.current;
+    if (!a || !track) return;
+    if (a.ended) return;
+    if (recoveryTimerRef.current !== null) return;
+
+    const attempt = recoveryAttemptRef.current;
+    if (attempt >= MAX_RECOVERY_ATTEMPTS) {
+      console.warn("[player] playback recovery exhausted", reason);
+      setIsPlaying(false);
+      return;
+    }
+
+    recoveryTimerRef.current = window.setTimeout(async () => {
+      recoveryTimerRef.current = null;
+      if (!intendedPlayingRef.current) return;
+
+      const audio = audioRef.current;
+      const currentTrack = currentRef.current;
+      if (!audio || !currentTrack || audio.ended) return;
+
+      recoveryAttemptRef.current += 1;
+      const resumeAt = Number.isFinite(audio.currentTime) ? audio.currentTime : currentTimeRef.current;
+
+      try {
+        if (refreshSource) {
+          const freshUrl = await withTimeout(
+            resolveAudioUrl(currentTrack.audio_url),
+            "Audio recovery URL signing",
+            8000,
+          );
+          if (!intendedPlayingRef.current || currentRef.current?.id !== currentTrack.id) return;
+          if (audio.src !== freshUrl) {
+            audio.src = freshUrl;
+            audio.load();
+          }
+          if (resumeAt > 0) {
+            try {
+              audio.currentTime = resumeAt;
+            } catch {
+              audio.addEventListener(
+                "loadedmetadata",
+                () => {
+                  try { audio.currentTime = resumeAt; } catch { /* keep playing from start if seek fails */ }
+                },
+                { once: true },
+              );
+            }
+          }
+        }
+
+        await withTimeout(audio.play(), "Audio recovery playback", 8000);
+        setIsPlaying(true);
+      } catch (error) {
+        console.warn("[player] playback recovery failed", reason, error);
+        if (intendedPlayingRef.current) schedulePlaybackRecovery(reason, refreshSource);
+      }
+    }, RECOVERY_DELAYS_MS[Math.min(attempt, RECOVERY_DELAYS_MS.length - 1)]);
+  }, []);
+
   const playTrackInternal = useCallback(async (t: PlayerTrack) => {
     const a = audioRef.current;
     if (!a) return;
     const requestId = playbackRequestRef.current + 1;
     playbackRequestRef.current = requestId;
+    intendedPlayingRef.current = true;
+    recoveryAttemptRef.current = 0;
+    clearRecoveryTimer();
     setCurrent(t);
     setCurrentTime(0);
     playCountedRef.current = false;
@@ -200,6 +281,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
       a.play().catch((error) => {
         console.warn("[player] playback failed", error);
+        intendedPlayingRef.current = false;
         setIsPlaying(false);
       });
       return;
@@ -210,6 +292,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       signedSrc = await withTimeout(resolveAudioUrl(t.audio_url), "Audio URL signing", 8000);
     } catch (error) {
       console.warn("[player] failed to resolve audio URL", error);
+      intendedPlayingRef.current = false;
       setIsPlaying(false);
       return;
     }
@@ -221,9 +304,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
     withTimeout(a.play(), "Audio playback", 8000).catch((error) => {
       console.warn("[player] playback failed", error);
+      intendedPlayingRef.current = false;
       setIsPlaying(false);
     });
-  }, []);
+  }, [clearRecoveryTimer]);
 
 
   const advance = useCallback(async () => {
@@ -236,8 +320,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
     if (mode === "one") {
       a.currentTime = 0;
+      intendedPlayingRef.current = true;
       a.play().catch((error) => {
         console.warn("[player] repeat playback failed", error);
+        schedulePlaybackRecovery("repeat play failed", true);
         setIsPlaying(false);
       });
       return;
@@ -276,7 +362,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
     // else: stop
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playTrackInternal]);
+  }, [playTrackInternal, schedulePlaybackRecovery]);
 
   // Wire the mounted audio element once. Keeping the player as a real DOM
   // element is more reliable in mobile WebViews than a detached `new Audio()`.
@@ -295,6 +381,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // without thrashing the whole player tree on every audio tick.
       if (Math.abs(now - lastTimeUpdate) >= 0.2) {
         lastTimeUpdate = now;
+        currentTimeRef.current = now;
         setCurrentTime(now);
       }
       const cur = currentRef.current;
@@ -304,13 +391,33 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
     };
     const onDuration = () => setDuration(a.duration || 0);
-    const onPlay = () => setIsPlaying(true);
-    const onPause = () => setIsPlaying(false);
-    const onError = () => {
-      console.warn("[player] audio element error", a.error);
+    const onPlay = () => {
+      recoveryAttemptRef.current = 0;
+      clearRecoveryTimer();
+      setIsPlaying(true);
+    };
+    const onPlaying = () => {
+      recoveryAttemptRef.current = 0;
+      clearRecoveryTimer();
+      setIsPlaying(true);
+    };
+    const onPause = () => {
+      if (intendedPlayingRef.current && !a.ended) {
+        schedulePlaybackRecovery("unexpected pause");
+        return;
+      }
       setIsPlaying(false);
     };
+    const onWaiting = () => schedulePlaybackRecovery("audio waiting");
+    const onStalled = () => schedulePlaybackRecovery("audio stalled");
+    const onError = () => {
+      console.warn("[player] audio element error", a.error);
+      if (intendedPlayingRef.current) schedulePlaybackRecovery("audio error", true);
+      else setIsPlaying(false);
+    };
     const onEnded = () => {
+      intendedPlayingRef.current = false;
+      clearRecoveryTimer();
       setIsPlaying(false);
       advance();
     };
@@ -318,7 +425,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     a.addEventListener("timeupdate", onTime);
     a.addEventListener("loadedmetadata", onDuration);
     a.addEventListener("play", onPlay);
+    a.addEventListener("playing", onPlaying);
     a.addEventListener("pause", onPause);
+    a.addEventListener("waiting", onWaiting);
+    a.addEventListener("stalled", onStalled);
     a.addEventListener("error", onError);
     a.addEventListener("ended", onEnded);
 
@@ -329,7 +439,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       a.removeEventListener("timeupdate", onTime);
       a.removeEventListener("loadedmetadata", onDuration);
       a.removeEventListener("play", onPlay);
+      a.removeEventListener("playing", onPlaying);
       a.removeEventListener("pause", onPause);
+      a.removeEventListener("waiting", onWaiting);
+      a.removeEventListener("stalled", onStalled);
       a.removeEventListener("error", onError);
       a.removeEventListener("ended", onEnded);
     };
@@ -379,9 +492,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const handlers: Array<[MediaSessionAction, () => void]> = [
       ["play", () => audioRef.current?.play().catch((error) => {
         console.warn("[player] media session play failed", error);
-        setIsPlaying(false);
+        schedulePlaybackRecovery("media session play failed");
       })],
-      ["pause", () => audioRef.current?.pause()],
+      ["pause", () => {
+        intendedPlayingRef.current = false;
+        clearRecoveryTimer();
+        audioRef.current?.pause();
+      }],
       ["previoustrack", () => handlePrevRef.current?.()],
       ["nexttrack", () => handleNextRef.current?.()],
     ];
@@ -393,7 +510,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         try { navigator.mediaSession.setActionHandler(action, null); } catch { /* noop */ }
       });
     };
-  }, [current]);
+  }, [clearRecoveryTimer, current, schedulePlaybackRecovery]);
 
   // Refs to the latest next/prev so MediaSession handlers stay current
   // without re-registering on every render.
@@ -436,12 +553,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const togglePlay = useCallback(() => {
     const a = audioRef.current;
     if (!a || !current) return;
-    if (a.paused) a.play().catch((error) => {
-      console.warn("[player] resume failed", error);
-      setIsPlaying(false);
-    });
-    else a.pause();
-  }, [current]);
+    if (a.paused) {
+      intendedPlayingRef.current = true;
+      recoveryAttemptRef.current = 0;
+      a.play().catch((error) => {
+        console.warn("[player] resume failed", error);
+        schedulePlaybackRecovery("manual resume failed");
+      });
+    } else {
+      intendedPlayingRef.current = false;
+      clearRecoveryTimer();
+      a.pause();
+    }
+  }, [clearRecoveryTimer, current, schedulePlaybackRecovery]);
 
   const handleNext = useCallback(() => {
     advance();
@@ -452,6 +576,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (!a) return;
     if (a.currentTime > 3 || queueIndex === 0) {
       a.currentTime = 0;
+      if (intendedPlayingRef.current && a.paused) {
+        a.play().catch(() => schedulePlaybackRecovery("previous restart failed"));
+      }
       return;
     }
     const prevIdx = queueIndex - 1;
@@ -468,6 +595,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const a = audioRef.current;
     if (!a) return;
     a.currentTime = seconds;
+    currentTimeRef.current = seconds;
     setCurrentTime(seconds);
   }, []);
 
