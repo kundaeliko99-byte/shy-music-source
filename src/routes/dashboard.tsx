@@ -1,4 +1,4 @@
-import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   Album,
@@ -57,10 +57,6 @@ export const Route = createFileRoute("/dashboard")({
       { name: "description", content: "Artist and songwriter dashboard for managing music, releases, sales, gifts, and profile settings on SHY." },
     ],
   }),
-  beforeLoad: async () => {
-    const { data } = await withTimeout(supabase.auth.getUser(), "Dashboard auth");
-    if (!data.user) throw redirect({ to: "/auth" });
-  },
   validateSearch: (search: Record<string, unknown>) => ({
     tab: isDashboardTab(search.tab) ? search.tab : "overview",
   }),
@@ -168,6 +164,7 @@ const GENRES = ["afrobeats", "amapiano", "hiphop", "zed_hiphop", "gospel", "rnb"
 const PAYMENT_METHODS = ["Airtel Money", "MTN Mobile Money", "Visa", "Payoneer"];
 
 function ArtistDashboardPage() {
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const { tab: active } = Route.useSearch();
   const [artist, setArtist] = useState<ArtistRow | null>(null);
@@ -179,6 +176,10 @@ function ArtistDashboardPage() {
   const [countries, setCountries] = useState<Array<{ country: string; plays: number }>>([]);
   const [loading, setLoading] = useState(true);
   const [warning, setWarning] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!authLoading && !user) navigate({ to: "/auth" });
+  }, [authLoading, user, navigate]);
 
   useEffect(() => {
     let alive = true;
@@ -325,7 +326,9 @@ function ArtistDashboardPage() {
   if (!artist) {
     return (
       <AppShell>
-        <ArtistSetupNotice />
+        <DashboardFrame active={active}>
+          <ArtistSetupNotice />
+        </DashboardFrame>
       </AppShell>
     );
   }
