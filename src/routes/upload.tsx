@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
 import { Upload as UploadIcon, ImageIcon, Music, Disc3, Mic2, Trash2, GripVertical } from "lucide-react";
@@ -229,7 +229,7 @@ async function uploadCover(userId: string, file: File): Promise<string> {
 /* ------------------ SINGLE ------------------ */
 function SingleUpload({ artistId, userId, onBack }: { artistId: string; userId: string; onBack: () => void }) {
   const navigate = useNavigate();
-  const [title, setTitle] = useState("");
+  const titleRef = useRef<HTMLInputElement | null>(null);
   const [genre, setGenre] = useState<string>("electronic");
   const [mood, setMood] = useState<string>("");
   const [aiTool, setAiTool] = useState<string>("suno");
@@ -268,7 +268,14 @@ function SingleUpload({ artistId, userId, onBack }: { artistId: string; userId: 
     setLoading(true);
     setProgress(10);
     try {
-      const parsed = trackSchema.parse({ title, genre, mood: mood || undefined, ai_tool: aiTool, lyrics, explicit });
+      const parsed = trackSchema.parse({
+        title: titleRef.current?.value ?? "",
+        genre,
+        mood: mood || undefined,
+        ai_tool: aiTool,
+        lyrics,
+        explicit,
+      });
       const audioUrl = await uploadAudio(userId, audioFile);
       setProgress(60);
       const coverUrl = coverFile ? await uploadCover(userId, coverFile) : null;
@@ -333,7 +340,7 @@ function SingleUpload({ artistId, userId, onBack }: { artistId: string; userId: 
 
           <div className="space-y-3">
             <Field label="Title">
-              <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={100} required className="input-lite" />
+              <input ref={titleRef} defaultValue="" maxLength={100} required className="input-lite" />
             </Field>
             <div className="grid grid-cols-2 gap-2">
               <Field label="Genre">
@@ -457,7 +464,8 @@ function newDraft(): AlbumTrackDraft {
 
 function AlbumUpload({ artistId, userId, onBack }: { artistId: string; userId: string; onBack: () => void }) {
   const navigate = useNavigate();
-  const [albumTitle, setAlbumTitle] = useState("");
+  const albumTitleRef = useRef<HTMLInputElement | null>(null);
+  const trackTitleRefs = useRef(new Map<string, HTMLInputElement>());
   const [releaseType, setReleaseType] = useState<"album" | "ep" | "mixtape">("album");
   const [albumGenre, setAlbumGenre] = useState<string>("electronic");
   const [albumMood, setAlbumMood] = useState<string>("");
@@ -492,6 +500,7 @@ function AlbumUpload({ artistId, userId, onBack }: { artistId: string; userId: s
     setTracks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   }
   function removeTrack(id: string) {
+    trackTitleRefs.current.delete(id);
     setTracks((prev) => prev.filter((t) => t.id !== id));
   }
   function move(id: string, dir: -1 | 1) {
@@ -509,9 +518,15 @@ function AlbumUpload({ artistId, userId, onBack }: { artistId: string; userId: s
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (loading) return;
-    if (!albumTitle.trim()) { toast.error("Add an album title"); return; }
+    const albumTitle = albumTitleRef.current?.value.trim() ?? "";
+    if (!albumTitle) { toast.error("Add an album title"); return; }
     if (!coverFile) { toast.error("Add album artwork"); return; }
-    const ready = tracks.filter((t) => t.title.trim() && t.audioFile);
+    const ready = tracks
+      .map((track) => ({
+        ...track,
+        title: trackTitleRefs.current.get(track.id)?.value ?? track.title,
+      }))
+      .filter((t) => t.title.trim() && t.audioFile);
     if (ready.length === 0) { toast.error("Add at least one track with audio"); return; }
 
     setLoading(true);
@@ -610,7 +625,7 @@ function AlbumUpload({ artistId, userId, onBack }: { artistId: string; userId: s
 
           <div className="space-y-3">
             <Field label="Project title">
-              <input value={albumTitle} onChange={(e) => setAlbumTitle(e.target.value)} maxLength={100} required className="input-lite" />
+              <input ref={albumTitleRef} defaultValue="" maxLength={100} required className="input-lite" />
             </Field>
             <div className="grid grid-cols-3 gap-2">
               <Field label="Type">
@@ -673,7 +688,16 @@ function AlbumUpload({ artistId, userId, onBack }: { artistId: string; userId: s
               </div>
 
               <Field label="Title">
-                <input value={t.title} onChange={(e) => updateTrack(t.id, { title: e.target.value })} maxLength={100} className="input-lite" />
+                <input
+                  ref={(node) => {
+                    if (node) trackTitleRefs.current.set(t.id, node);
+                    else trackTitleRefs.current.delete(t.id);
+                  }}
+                  defaultValue={t.title}
+                  onBlur={(e) => updateTrack(t.id, { title: e.currentTarget.value })}
+                  maxLength={100}
+                  className="input-lite"
+                />
               </Field>
 
               <label className="cursor-pointer block">
