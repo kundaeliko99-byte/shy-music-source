@@ -3,8 +3,9 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
 import { Upload as UploadIcon, ImageIcon, Music, Disc3, Mic2, Trash2, GripVertical } from "lucide-react";
-import { AppShell } from "@/components/AppShell";
 import { Cover, type ArtworkShape } from "@/components/Cover";
+import { Footer } from "@/components/Footer";
+import { TopNav } from "@/components/TopNav";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -58,6 +59,16 @@ export const Route = createFileRoute("/upload")({
 
 type ReleaseKind = null | "single" | "album";
 
+function UploadShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-background flex flex-col">
+      <TopNav />
+      <main className="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 pb-8">{children}</main>
+      <Footer />
+    </div>
+  );
+}
+
 function UploadPage() {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
@@ -99,11 +110,11 @@ function UploadPage() {
   }, [user]);
 
   if (authLoading || !artistChecked) {
-    return <AppShell><div className="text-sm text-muted-foreground">Loading…</div></AppShell>;
+    return <UploadShell><div className="text-sm text-muted-foreground">Loading…</div></UploadShell>;
   }
   if (!artistId) {
     return (
-      <AppShell>
+      <UploadShell>
         <div className="max-w-md mx-auto text-center bg-surface hairline rounded-xl p-8">
           <UploadIcon className="w-10 h-10 mx-auto text-primary-glow mb-3" />
           <h1 className="text-xl font-semibold mb-2">Set up your artist profile first</h1>
@@ -114,18 +125,18 @@ function UploadPage() {
             Become an artist
           </Link>
         </div>
-      </AppShell>
+      </UploadShell>
     );
   }
 
   return (
-    <AppShell>
+    <UploadShell>
       <div className="max-w-2xl mx-auto">
         {kind === null && <KindChooser onChoose={setKind} />}
         {kind === "single" && <SingleUpload artistId={artistId} userId={user!.id} onBack={() => setKind(null)} />}
         {kind === "album" && <AlbumUpload artistId={artistId} userId={user!.id} onBack={() => setKind(null)} />}
       </div>
-    </AppShell>
+    </UploadShell>
   );
 }
 
