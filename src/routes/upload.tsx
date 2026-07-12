@@ -617,13 +617,13 @@ function albumFrameHtml() {
         const node = template.content.cloneNode(true);
         tracks.appendChild(node);
         renumber();
-        sendHeight();
+        if (typeof sendHeight === 'function') sendHeight();
       }
       function removeTrack() {
         if (tracks.children.length <= 1) return;
         tracks.lastElementChild.remove();
         renumber();
-        sendHeight();
+        if (typeof sendHeight === 'function') sendHeight();
       }
       function renumber() {
         Array.from(tracks.children).forEach((track, index) => {
