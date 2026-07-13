@@ -588,7 +588,7 @@ function ArtistDashboardPage() {
         {active === "albums" && <AlbumsSection artist={artist} albums={albums} setAlbums={setAlbums} tracks={tracks} />}
         {active === "watch" && <WatchOutSection artist={artist} upcoming={releaseEditorItems} tracks={tracks} albums={albums} purchases={purchases} notifications={notifications} setTracks={setTracks} setAlbums={setAlbums} setNotifications={setNotifications} />}
         {active === "sales" && <SalesSection purchases={purchases} setPurchases={setPurchases} tracks={tracks} />}
-        {active === "gifts" && <GiftsSection motivations={motivations} stats={stats} artist={artist} />}
+        {active === "gifts" && <GiftsSection motivations={motivations} stats={stats} artist={artist} purchases={purchases} tracks={tracks} />}
         {active === "analytics" && <AnalyticsSection tracks={tracks} albums={albums} countries={countries} stats={stats} />}
         {active === "messages" && <MessagesSection notifications={notifications} purchases={purchases} />}
         {active === "profile" && <ProfileSection artist={artist} setArtist={setArtist} />}
@@ -2611,7 +2611,7 @@ function StandaloneArtistToolsDataSection({ active, isAdmin }: { active: Dashboa
       {active === "songs" && <StandaloneSongsSection tracks={data.tracks} />}
       {active === "albums" && <StandaloneAlbumsList albums={data.albums} tracks={data.tracks} />}
       {active === "sales" && <StandaloneSalesSection purchases={data.purchases} setPurchases={(purchases) => setData((current) => ({ ...current, purchases }))} tracks={data.tracks} />}
-      {active === "gifts" && <StandaloneGiftsSection motivations={data.motivations} stats={stats} />}
+      {active === "gifts" && <StandaloneGiftsSection motivations={data.motivations} purchases={data.purchases} tracks={data.tracks} stats={stats} />}
       {active === "analytics" && <AnalyticsSection tracks={data.tracks} albums={data.albums} countries={data.countries} stats={stats} />}
       {active === "messages" && <MessagesSection notifications={data.notifications} purchases={data.purchases} />}
       {active === "profile" && <StandaloneProfileSection />}
@@ -2747,20 +2747,8 @@ function StandaloneSalesSection({ purchases, setPurchases, tracks }: { purchases
   return <SalesContractsPanel purchases={purchases} setPurchases={setPurchases} tracks={tracks} />;
 }
 
-function StandaloneGiftsSection({ motivations, stats }: { motivations: MotivationRow[]; stats: ReturnType<typeof buildStats> }) {
-  return (
-    <Panel title="Gifts & Earnings" icon={<Gift className="h-4 w-4" />}>
-      <div className="grid gap-3 md:grid-cols-3">
-        <Metric label="Gifts received" value={stats.gifts} icon={Gift} />
-        <Metric label="Available balance" value="Pending provider" icon={CreditCard} />
-        <Metric label="Payment setup" value="Profile settings" icon={CreditCard} />
-      </div>
-      <div className="mt-4 space-y-2">
-        {motivations.length === 0 && <EmptyPanel text="No gifts yet. Fan motivations will appear here." />}
-        {motivations.map((row) => <ActivityItem key={row.id} text="Fan motivation received" time={row.created_at} />)}
-      </div>
-    </Panel>
-  );
+function StandaloneGiftsSection({ motivations, purchases, tracks, stats }: { motivations: MotivationRow[]; purchases: PurchaseRow[]; tracks: TrackRow[]; stats: ReturnType<typeof buildStats> }) {
+  return <EarningsPanel motivations={motivations} purchases={purchases} tracks={tracks} fallbackGiftCount={stats.gifts} />;
 }
 
 function StandaloneProfileSection() {
@@ -2885,19 +2873,92 @@ function SalesContractsPanel({ purchases, setPurchases, tracks, artistId }: { pu
   );
 }
 
-function GiftsSection({ motivations, stats, artist }: { motivations: MotivationRow[]; stats: ReturnType<typeof buildStats>; artist: ArtistRow }) {
+function GiftsSection({ motivations, stats, artist, purchases, tracks }: { motivations: MotivationRow[]; stats: ReturnType<typeof buildStats>; artist: ArtistRow; purchases: PurchaseRow[]; tracks: TrackRow[] }) {
+  return <EarningsPanel motivations={motivations} purchases={purchases} tracks={tracks} fallbackGiftCount={stats.gifts} paymentLabel={artist.preferred_payment_method || artist.mobile_money_network || "Not set"} />;
+}
+
+function EarningsPanel({
+  motivations,
+  purchases,
+  tracks,
+  fallbackGiftCount = 0,
+  paymentLabel = "Profile settings",
+}: {
+  motivations: MotivationRow[];
+  purchases: PurchaseRow[];
+  tracks: TrackRow[];
+  fallbackGiftCount?: number;
+  paymentLabel?: string;
+}) {
+  const [filter, setFilter] = useState("all");
+  const closedSales = purchases.filter((row) => row.status === "closed");
+  const salesIncome = closedSales.reduce((sum, row) => sum + safeNumber(row.proposed_price), 0);
+  const giftIncome = 0;
+  const totalEarnings = salesIncome + giftIncome;
+  const transactions = [
+    ...closedSales.map((row) => ({
+      id: `sale-${row.id}`,
+      type: "sales",
+      release: trackTitle(tracks, row.track_id),
+      amount: safeNumber(row.proposed_price),
+      currency: row.currency || "USD",
+      status: "closed",
+      date: row.created_at,
+      reference: row.id,
+    })),
+    ...motivations.map((row) => ({
+      id: `gift-${row.id}`,
+      type: "gift",
+      release: "Artist profile",
+      amount: 0,
+      currency: "USD",
+      status: "pending provider",
+      date: row.created_at,
+      reference: row.id,
+    })),
+  ]
+    .filter((item) => filter === "all" || item.type === filter || item.status === filter)
+    .sort((a, b) => releaseTimeFromValue(b.date) - releaseTimeFromValue(a.date))
+    .slice(0, 30);
+
   return (
-    <Panel title="Gifts & Earnings" icon={<Gift className="h-4 w-4" />}>
-      <div className="grid gap-3 md:grid-cols-3">
-        <Metric label="Gifts received" value={stats.gifts} icon={Gift} />
-        <Metric label="Available balance" value="Pending provider" icon={CreditCard} />
-        <Metric label="Payment method" value={artist.preferred_payment_method || artist.mobile_money_network || "Not set"} icon={CreditCard} />
-      </div>
-      <div className="mt-4 space-y-2">
-        {motivations.length === 0 && <EmptyPanel text="No gifts yet. Motivation and payment-provider confirmed gifts will appear here." />}
-        {motivations.map((row) => <ActivityItem key={row.id} text="Fan motivation received" time={row.created_at} />)}
-      </div>
-    </Panel>
+    <div className="space-y-5">
+      <section className="grid gap-3 md:grid-cols-4">
+        <Metric label="Total earnings" value={formatCurrency(totalEarnings)} icon={CreditCard} />
+        <Metric label="Available balance" value={formatCurrency(totalEarnings)} icon={CreditCard} />
+        <Metric label="Pending balance" value={formatCurrency(giftIncome)} icon={Gift} />
+        <Metric label="Gifts received" value={formatMetricNumber(Math.max(motivations.length, fallbackGiftCount))} icon={Gift} />
+      </section>
+      <Panel title="Gifts & Earnings" icon={<Gift className="h-4 w-4" />}>
+        <div className="mb-4 grid gap-3 md:grid-cols-[1fr_220px]">
+          <div className="rounded-lg bg-background/45 p-3 text-sm text-muted-foreground hairline">Payment method: {paymentLabel}</div>
+          <select className="input-lite" value={filter} onChange={(event) => setFilter(event.target.value)}>
+            <option value="all">All activity</option>
+            <option value="sales">Sales income</option>
+            <option value="gift">Gift income</option>
+            <option value="pending provider">Pending provider</option>
+            <option value="closed">Paid / closed</option>
+          </select>
+        </div>
+        {transactions.length === 0 && <EmptyPanel text="No earnings activity yet. Your transactions will appear here." />}
+        <div className="space-y-2">
+          {transactions.map((item) => (
+            <div key={item.id} className="grid gap-2 rounded-lg bg-background/45 p-3 text-sm hairline md:grid-cols-[1fr_140px_140px_120px] md:items-center">
+              <div className="min-w-0">
+                <div className="truncate font-medium">{item.release}</div>
+                <div className="text-xs text-muted-foreground">{item.reference}</div>
+              </div>
+              <div>{pretty(item.type)}</div>
+              <div>{formatCurrency(item.amount, item.currency)}</div>
+              <StatusPill label={pretty(item.status)} />
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 rounded-lg bg-background/45 p-3 text-xs text-muted-foreground hairline">
+          Withdrawal requests are disabled until the payout backend, audit logs, and provider confirmation are connected.
+        </div>
+      </Panel>
+    </div>
   );
 }
 
