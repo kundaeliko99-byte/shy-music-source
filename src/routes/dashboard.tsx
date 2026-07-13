@@ -25,30 +25,16 @@ import { AppShell } from "@/components/AppShell";
 import { Cover } from "@/components/Cover";
 import { supabase } from "@/integrations/supabase/client";
 import { fmtCount } from "@/lib/format";
+import { withTimeout } from "@/lib/request";
 import { useAuth } from "@/contexts/AuthContext";
 import { subscribeToStreamCounts } from "@/hooks/useTrackStreams";
 
-const REQUEST_TIMEOUT_MS = 6000;
 const DASHBOARD_TABS = ["overview", "songs", "albums", "watch", "sales", "gifts", "analytics", "messages", "profile", "settings"] as const;
 
 type DashboardTab = (typeof DASHBOARD_TABS)[number];
 
 function isDashboardTab(tab: unknown): tab is DashboardTab {
   return typeof tab === "string" && (DASHBOARD_TABS as readonly string[]).includes(tab);
-}
-
-async function withTimeout<T>(request: PromiseLike<T>, label: string, ms = REQUEST_TIMEOUT_MS): Promise<T> {
-  let id: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      Promise.resolve(request),
-      new Promise<never>((_, reject) => {
-        id = setTimeout(() => reject(new Error(`${label} timed out`)), ms);
-      }),
-    ]);
-  } finally {
-    if (id) clearTimeout(id);
-  }
 }
 
 export const Route = createFileRoute("/dashboard")({
@@ -62,6 +48,7 @@ export const Route = createFileRoute("/dashboard")({
     tab: isDashboardTab(search.tab) ? search.tab : "overview",
   }),
   component: ArtistDashboardPage,
+  errorComponent: DashboardRouteError,
 });
 
 type ArtistRow = {
@@ -158,7 +145,6 @@ type ScheduledReleaseItem = {
   release_date: string;
   release_at?: string | null;
   cover_url: string | null;
-  localOnly?: boolean;
 };
 
 type StandaloneToolData = {
@@ -205,6 +191,8 @@ function ArtistDashboardPage() {
   const [countries, setCountries] = useState<Array<{ country: string; plays: number }>>([]);
   const [loading, setLoading] = useState(true);
   const [warning, setWarning] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   const authPending = authLoading && !authWaitExpired;
 
   useEffect(() => {
@@ -231,6 +219,7 @@ function ArtistDashboardPage() {
       }
       setLoading(true);
       setWarning(null);
+      setLoadError(null);
 
       try {
         const { data: artistData, error: artistError } = await withTimeout<DbResult>(
@@ -322,7 +311,10 @@ function ArtistDashboardPage() {
         }
       } catch (error) {
         console.error("Artist dashboard load failed", error);
-        if (alive) setWarning("Some artist data could not be loaded. The dashboard is still usable.");
+        if (alive) {
+          setLoadError(errorMessage(error, "Something went wrong while loading this dashboard."));
+          setWarning("Some artist data could not be loaded. Try again if the section looks incomplete.");
+        }
       } finally {
         if (alive) setLoading(false);
       }
@@ -332,7 +324,7 @@ function ArtistDashboardPage() {
     return () => {
       alive = false;
     };
-  }, [authPending, user, isAdmin]);
+  }, [authPending, user, isAdmin, retryCount]);
 
   const trackIdsKey = useMemo(() => tracks.map((track) => track.id).join("|"), [tracks]);
 
@@ -382,6 +374,20 @@ function ArtistDashboardPage() {
     return (
       <AppShell>
         <ArtistOnlyNotice />
+      </AppShell>
+    );
+  }
+
+  if (loadError && !artist) {
+    return (
+      <AppShell>
+        <DashboardFrame active={active}>
+          <DashboardErrorPanel
+            message="Something went wrong while loading this section."
+            detail={loadError}
+            onRetry={() => setRetryCount((count) => count + 1)}
+          />
+        </DashboardFrame>
       </AppShell>
     );
   }
@@ -534,31 +540,6 @@ function buildScheduleItems(tracks: TrackRow[], albums: AlbumRow[]) {
   ].sort((a, b) => releaseTime(a) - releaseTime(b));
 }
 
-function demoScheduleItems(): ScheduledReleaseItem[] {
-  const first = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  const second = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  return [
-    {
-      kind: "track",
-      type: "Song",
-      id: "demo-song",
-      title: "Scheduled song",
-      cover_url: null,
-      localOnly: true,
-      ...schedulePatch(first),
-    },
-    {
-      kind: "album",
-      type: "Album",
-      id: "demo-album",
-      title: "Scheduled album / EP",
-      cover_url: null,
-      localOnly: true,
-      ...schedulePatch(second),
-    },
-  ];
-}
-
 function buildStats(tracks: TrackRow[], albums: AlbumRow[], purchases: PurchaseRow[], motivations: MotivationRow[], notifications: NotificationRow[]) {
   const now = Date.now();
   const totalPlays = tracks.reduce((sum, track) => sum + Number(track.plays_count ?? 0), 0);
@@ -590,16 +571,26 @@ function DashboardFrame({ active, children }: { active: DashboardTab; children: 
         <nav className="grid gap-1">
           {MENU.map((item) => {
             const Icon = item.icon;
+            if (active === item.id) {
+              return (
+                <div
+                  key={item.id}
+                  aria-current="page"
+                  data-dashboard-tab={item.id}
+                  className="flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-left text-sm text-primary-foreground"
+                >
+                  <Icon className="h-4 w-4" />
+                  {item.label}
+                </div>
+              );
+            }
             return (
               <Link
                 key={item.id}
                 to="/dashboard"
                 search={{ tab: item.id }}
-                aria-current={active === item.id ? "page" : undefined}
                 data-dashboard-tab={item.id}
-                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition ${
-                  active === item.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-surface-elevated hover:text-foreground"
-                }`}
+                className="flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-muted-foreground transition hover:bg-surface-elevated hover:text-foreground"
               >
                 <Icon className="h-4 w-4" />
                 {item.label}
@@ -688,72 +679,25 @@ function OverviewSection({
 }
 
 function SongsSection({ artist, tracks, setTracks }: { artist: ArtistRow; tracks: TrackRow[]; setTracks: (tracks: TrackRow[]) => void }) {
-  async function saveTrack(track: TrackRow) {
-    const { error } = await (supabase as any)
-      .from("tracks")
-      .update({
-        title: track.title,
-        genre: track.genre,
-        release_date: track.release_date,
-        lyrics: track.lyrics || null,
-        explicit: track.explicit,
-      })
-      .eq("id", track.id)
-      .eq("artist_id", artist.id);
-
-    if (error) toast.error(error.message);
-    else toast.success("Song saved");
-  }
-
-  async function deleteTrack(track: TrackRow) {
-    if (!window.confirm(`Delete "${track.title}" from SHY?`)) return;
-    const { error } = await (supabase as any).from("tracks").delete().eq("id", track.id).eq("artist_id", artist.id);
-    if (error) toast.error(error.message);
-    else {
-      setTracks(tracks.filter((item) => item.id !== track.id));
-      toast.success("Song deleted");
-    }
-  }
-
   return (
     <Panel title="My Songs" icon={<Music2 className="h-4 w-4" />} action={<Link to="/upload" className="mini-primary"><Plus className="h-3.5 w-3.5" /> Upload song</Link>}>
       <div className="space-y-3">
         {tracks.length === 0 && <EmptyPanel text="No songs uploaded yet. Upload your first song to start building your songwriter catalog." />}
         {tracks.map((track) => (
-          <div key={track.id} className="rounded-xl bg-background/45 p-3 hairline">
-            <div className="grid gap-3 xl:grid-cols-[56px_1.4fr_1fr_150px_120px] xl:items-center">
-              <Cover src={track.cover_url} seed={track.id} size={56} shape={track.artwork_shape ?? "rounded"} />
-              <Field label="Song title">
-                <input className="input-lite" value={track.title} onChange={(e) => patchTrack(track.id, { title: e.target.value }, tracks, setTracks)} />
-              </Field>
-              <Field label="Genre">
-                <select className="input-lite" value={track.genre} onChange={(e) => patchTrack(track.id, { genre: e.target.value }, tracks, setTracks)}>
-                  {GENRES.map((genre) => <option key={genre} value={genre}>{pretty(genre)}</option>)}
-                </select>
-              </Field>
-              <Field label="Release date">
-                <input className="input-lite" type="date" value={track.release_date} onChange={(e) => patchTrack(track.id, { release_date: e.target.value }, tracks, setTracks)} />
-              </Field>
-              <div className="space-y-1">
-                <div className="text-[11px] text-muted-foreground">Status</div>
-                <StatusPill label={trackStatus(track)} />
+          <EditableTrackEditor
+            key={track.id}
+            track={track}
+            artistId={artist.id}
+            onSaved={(saved) => setTracks(tracks.map((item) => item.id === saved.id ? saved : item))}
+            onDeleted={(deleted) => setTracks(tracks.filter((item) => item.id !== deleted.id))}
+            footer={(
+              <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                <span>{fmtCount(track.plays_count)} plays</span>
+                <span>Gift button: ready</span>
+                <span>Buy Song: configure in Sales</span>
               </div>
-            </div>
-            <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
-              <Field label="Lyrics / private notes">
-                <textarea className="input-lite min-h-20" value={track.lyrics ?? ""} onChange={(e) => patchTrack(track.id, { lyrics: e.target.value }, tracks, setTracks)} placeholder="Lyrics, notes, contributors, or private writing details" />
-              </Field>
-              <div className="flex flex-wrap gap-2">
-                <button className="mini-button" onClick={() => saveTrack(track)}><Save className="h-3.5 w-3.5" /> Save</button>
-                <button className="mini-danger" onClick={() => deleteTrack(track)}><Trash2 className="h-3.5 w-3.5" /> Delete</button>
-              </div>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-              <span>{fmtCount(track.plays_count)} plays</span>
-              <span>Gift button: ready</span>
-              <span>Buy Song: configure in Sales</span>
-            </div>
-          </div>
+            )}
+          />
         ))}
       </div>
     </Panel>
@@ -795,17 +739,13 @@ function AlbumsSection({ artist, albums, setAlbums, tracks }: { artist: ArtistRo
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {albums.length === 0 && <EmptyPanel text="No albums yet. Create an album, then add uploaded songs to it from the song metadata tools." />}
         {albums.map((album) => (
-          <div key={album.id} className="rounded-xl bg-background/45 p-3 hairline">
-            <Cover src={album.cover_url} seed={album.id} className="aspect-square w-full rounded-lg" shape="rounded" glow />
-            <div className="mt-3 flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="truncate font-semibold">{album.title}</div>
-                <div className="text-xs text-muted-foreground">{pretty(album.album_type)} - {new Date(album.release_date).toLocaleDateString()}</div>
-              </div>
-              <StatusPill label={album.release_date > new Date().toISOString().slice(0, 10) ? "Draft" : "Published"} />
-            </div>
-            <div className="mt-2 text-xs text-muted-foreground">{tracks.filter((track) => track.album_id === album.id).length} songs attached</div>
-          </div>
+          <EditableAlbumEditor
+            key={album.id}
+            album={album}
+            artistId={artist.id}
+            attachedCount={tracks.filter((track) => track.album_id === album.id).length}
+            onSaved={(saved) => setAlbums(albums.map((item) => item.id === saved.id ? saved : item))}
+          />
         ))}
       </div>
     </Panel>
@@ -949,12 +889,11 @@ function StandaloneArtistToolsDataSection({ active, isAdmin }: { active: Dashboa
 
   const stats = buildStats(data.tracks, data.albums, data.purchases, data.motivations, data.notifications);
   const scheduleItems = buildScheduleItems(data.tracks, data.albums);
-  const visibleScheduleItems = scheduleItems.length ? scheduleItems : demoScheduleItems();
 
   return (
     <>
       {message && <EmptyPanel text={message} />}
-      {active === "overview" && <OverviewSection stats={stats} tracks={data.tracks} purchases={data.purchases} motivations={data.motivations} notifications={data.notifications} upcoming={visibleScheduleItems} />}
+      {active === "overview" && <OverviewSection stats={stats} tracks={data.tracks} purchases={data.purchases} motivations={data.motivations} notifications={data.notifications} upcoming={scheduleItems} />}
       {active === "songs" && <StandaloneSongsSection tracks={data.tracks} setTracks={(tracks) => setData((current) => ({ ...current, tracks }))} />}
       {active === "albums" && <StandaloneAlbumsSection albums={data.albums} setAlbums={(albums) => setData((current) => ({ ...current, albums }))} tracks={data.tracks} />}
       {active === "sales" && <StandaloneSalesSection purchases={data.purchases} setPurchases={(purchases) => setData((current) => ({ ...current, purchases }))} tracks={data.tracks} />}
@@ -1018,12 +957,6 @@ function StandaloneWatchOutSection({ isAdmin, allowSavedLoad = true }: { isAdmin
       const cleanTitle = title.trim();
       if (!cleanTitle) throw new Error("Title is required.");
       const schedule = parseScheduledRelease(value);
-      if (item.localOnly) {
-        const updated = { ...schedulePatch(schedule), title: cleanTitle };
-        setItems((current) => current.map((release) => release.id === item.id ? { ...release, ...updated } : release));
-        toast.info("Upload a release first, then SHY will save schedule changes here.");
-        return;
-      }
       const updated = await updateReleaseSchedule(item.kind === "track" ? "tracks" : "albums", item.id, undefined, schedule, "id", cleanTitle);
       if (item.kind === "album") {
         await updateAlbumTrackSchedules(item.id, undefined, schedule);
@@ -1055,57 +988,16 @@ function StandaloneWatchOutSection({ isAdmin, allowSavedLoad = true }: { isAdmin
 }
 
 function StandaloneSongsSection({ tracks, setTracks }: { tracks: TrackRow[]; setTracks: (tracks: TrackRow[]) => void }) {
-  async function saveTrack(track: TrackRow) {
-    if (!track.title.trim()) {
-      toast.error("Song title is required");
-      return;
-    }
-    const { error } = await (supabase as any)
-      .from("tracks")
-      .update({
-        title: track.title.trim(),
-        genre: track.genre,
-        release_date: track.release_date,
-        lyrics: track.lyrics || null,
-        explicit: track.explicit,
-      })
-      .eq("id", track.id);
-
-    if (error) toast.error(error.message);
-    else toast.success("Song saved");
-  }
-
   return (
     <Panel title="My Songs" icon={<Music2 className="h-4 w-4" />} action={<Link to="/upload" className="mini-primary"><Plus className="h-3.5 w-3.5" /> Upload song</Link>}>
       <div className="space-y-3">
         {tracks.length === 0 && <EmptyPanel text="No songs were found yet. Uploaded songs will appear here for editing." />}
         {tracks.map((track) => (
-          <div key={track.id} className="rounded-xl bg-background/45 p-3 hairline">
-            <div className="grid gap-3 xl:grid-cols-[56px_1.4fr_1fr_150px_120px] xl:items-center">
-              <Cover src={track.cover_url} seed={track.id} size={56} shape={track.artwork_shape ?? "rounded"} />
-              <Field label="Song title">
-                <input className="input-lite" value={track.title} onChange={(e) => patchTrack(track.id, { title: e.target.value }, tracks, setTracks)} />
-              </Field>
-              <Field label="Genre">
-                <select className="input-lite" value={track.genre} onChange={(e) => patchTrack(track.id, { genre: e.target.value }, tracks, setTracks)}>
-                  {GENRES.map((genre) => <option key={genre} value={genre}>{pretty(genre)}</option>)}
-                </select>
-              </Field>
-              <Field label="Release date">
-                <input className="input-lite" type="date" value={track.release_date} onChange={(e) => patchTrack(track.id, { release_date: e.target.value }, tracks, setTracks)} />
-              </Field>
-              <div className="space-y-1">
-                <div className="text-[11px] text-muted-foreground">Status</div>
-                <StatusPill label={trackStatus(track)} />
-              </div>
-            </div>
-            <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
-              <Field label="Lyrics / private notes">
-                <textarea className="input-lite min-h-20" value={track.lyrics ?? ""} onChange={(e) => patchTrack(track.id, { lyrics: e.target.value }, tracks, setTracks)} placeholder="Lyrics, notes, contributors, or private writing details" />
-              </Field>
-              <button className="mini-button" onClick={() => saveTrack(track)}><Save className="h-3.5 w-3.5" /> Save</button>
-            </div>
-          </div>
+          <EditableTrackEditor
+            key={track.id}
+            track={track}
+            onSaved={(saved) => setTracks(tracks.map((item) => item.id === saved.id ? saved : item))}
+          />
         ))}
       </div>
     </Panel>
@@ -1113,48 +1005,204 @@ function StandaloneSongsSection({ tracks, setTracks }: { tracks: TrackRow[]; set
 }
 
 function StandaloneAlbumsSection({ albums, setAlbums, tracks }: { albums: AlbumRow[]; setAlbums: (albums: AlbumRow[]) => void; tracks: TrackRow[] }) {
-  async function saveAlbum(album: AlbumRow) {
-    if (!album.title.trim()) {
-      toast.error("Album title is required");
-      return;
-    }
-    const { error } = await (supabase as any)
-      .from("albums")
-      .update({
-        title: album.title.trim(),
-        cover_url: album.cover_url || null,
-        release_date: album.release_date,
-        album_type: album.album_type,
-      })
-      .eq("id", album.id);
-
-    if (error) toast.error(error.message);
-    else toast.success("Album saved");
-  }
-
   return (
     <Panel title="My Albums" icon={<Album className="h-4 w-4" />}>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {albums.length === 0 && <EmptyPanel text="No albums were found yet. Album and EP releases will appear here." />}
         {albums.map((album) => (
-          <div key={album.id} className="rounded-xl bg-background/45 p-3 hairline">
-            <Cover src={album.cover_url} seed={album.id} className="aspect-square w-full rounded-lg" shape="rounded" glow />
-            <div className="mt-3 grid gap-2">
-              <Field label="Album title">
-                <input className="input-lite" value={album.title} onChange={(e) => setAlbums(albums.map((item) => item.id === album.id ? { ...item, title: e.target.value } : item))} />
-              </Field>
-              <Field label="Release date">
-                <input className="input-lite" type="date" value={album.release_date} onChange={(e) => setAlbums(albums.map((item) => item.id === album.id ? { ...item, release_date: e.target.value } : item))} />
-              </Field>
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs text-muted-foreground">{tracks.filter((track) => track.album_id === album.id).length} songs attached</span>
-                <button className="mini-button" onClick={() => saveAlbum(album)}><Save className="h-3.5 w-3.5" /> Save</button>
-              </div>
-            </div>
-          </div>
+          <EditableAlbumEditor
+            key={album.id}
+            album={album}
+            attachedCount={tracks.filter((track) => track.album_id === album.id).length}
+            onSaved={(saved) => setAlbums(albums.map((item) => item.id === saved.id ? saved : item))}
+          />
         ))}
       </div>
     </Panel>
+  );
+}
+
+function EditableTrackEditor({
+  track,
+  artistId,
+  onSaved,
+  onDeleted,
+  footer,
+}: {
+  track: TrackRow;
+  artistId?: string;
+  onSaved: (track: TrackRow) => void;
+  onDeleted?: (track: TrackRow) => void;
+  footer?: React.ReactNode;
+}) {
+  const titleRef = useRef<HTMLInputElement>(null);
+  const genreRef = useRef<HTMLSelectElement>(null);
+  const releaseDateRef = useRef<HTMLInputElement>(null);
+  const lyricsRef = useRef<HTMLTextAreaElement>(null);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function saveTrack() {
+    const title = titleRef.current?.value.trim() ?? "";
+    if (!title) {
+      toast.error("Song title is required");
+      return;
+    }
+    const nextTrack: TrackRow = {
+      ...track,
+      title,
+      genre: genreRef.current?.value || track.genre,
+      release_date: releaseDateRef.current?.value || track.release_date,
+      lyrics: lyricsRef.current?.value || null,
+    };
+    setSaving(true);
+    try {
+      let request = (supabase as any)
+        .from("tracks")
+        .update({
+          title: nextTrack.title,
+          genre: nextTrack.genre,
+          release_date: nextTrack.release_date,
+          lyrics: nextTrack.lyrics || null,
+          explicit: nextTrack.explicit,
+        })
+        .eq("id", nextTrack.id);
+      if (artistId) request = request.eq("artist_id", artistId);
+      const { error } = await withTimeout<DbResult>(request, "Song save", 10000);
+      if (error) throw error;
+      onSaved(nextTrack);
+      toast.success("Song saved");
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not save this song."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteTrack() {
+    if (!onDeleted) return;
+    if (!window.confirm(`Delete "${track.title}" from SHY?`)) return;
+    setDeleting(true);
+    try {
+      let request = (supabase as any).from("tracks").delete().eq("id", track.id);
+      if (artistId) request = request.eq("artist_id", artistId);
+      const { error } = await withTimeout<DbResult>(request, "Song delete", 10000);
+      if (error) throw error;
+      onDeleted(track);
+      toast.success("Song deleted");
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not delete this song."));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl bg-background/45 p-3 hairline">
+      <div className="grid gap-3 xl:grid-cols-[56px_1.4fr_1fr_150px_120px] xl:items-center">
+        <Cover src={track.cover_url} seed={track.id} size={56} shape={track.artwork_shape ?? "rounded"} />
+        <Field label="Song title">
+          <input ref={titleRef} className="input-lite" defaultValue={track.title} placeholder="Song title" />
+        </Field>
+        <Field label="Genre">
+          <select ref={genreRef} className="input-lite" defaultValue={track.genre}>
+            {GENRES.map((genre) => <option key={genre} value={genre}>{pretty(genre)}</option>)}
+          </select>
+        </Field>
+        <Field label="Release date">
+          <input ref={releaseDateRef} className="input-lite" type="date" defaultValue={track.release_date} />
+        </Field>
+        <div className="space-y-1">
+          <div className="text-[11px] text-muted-foreground">Status</div>
+          <StatusPill label={trackStatus(track)} />
+        </div>
+      </div>
+      <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+        <Field label="Lyrics / private notes">
+          <textarea ref={lyricsRef} className="input-lite min-h-20" defaultValue={track.lyrics ?? ""} placeholder="Lyrics, notes, contributors, or private writing details" />
+        </Field>
+        <div className="flex flex-wrap gap-2">
+          <button className="mini-button" type="button" disabled={saving || deleting} onClick={saveTrack}><Save className="h-3.5 w-3.5" /> {saving ? "Saving" : "Save"}</button>
+          {onDeleted && <button className="mini-danger" type="button" disabled={saving || deleting} onClick={deleteTrack}><Trash2 className="h-3.5 w-3.5" /> {deleting ? "Deleting" : "Delete"}</button>}
+        </div>
+      </div>
+      {footer}
+    </div>
+  );
+}
+
+function EditableAlbumEditor({
+  album,
+  artistId,
+  attachedCount,
+  onSaved,
+}: {
+  album: AlbumRow;
+  artistId?: string;
+  attachedCount: number;
+  onSaved: (album: AlbumRow) => void;
+}) {
+  const titleRef = useRef<HTMLInputElement>(null);
+  const releaseDateRef = useRef<HTMLInputElement>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function saveAlbum() {
+    const title = titleRef.current?.value.trim() ?? "";
+    if (!title) {
+      toast.error("Album title is required");
+      return;
+    }
+    const nextAlbum: AlbumRow = {
+      ...album,
+      title,
+      release_date: releaseDateRef.current?.value || album.release_date,
+    };
+    setSaving(true);
+    try {
+      let request = (supabase as any)
+        .from("albums")
+        .update({
+          title: nextAlbum.title,
+          cover_url: nextAlbum.cover_url || null,
+          release_date: nextAlbum.release_date,
+          album_type: nextAlbum.album_type,
+        })
+        .eq("id", nextAlbum.id);
+      if (artistId) request = request.eq("artist_id", artistId);
+      const { error } = await withTimeout<DbResult>(request, "Album save", 10000);
+      if (error) throw error;
+      onSaved(nextAlbum);
+      toast.success("Album saved");
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not save this album."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl bg-background/45 p-3 hairline">
+      <Cover src={album.cover_url} seed={album.id} className="aspect-square w-full rounded-lg" shape="rounded" glow />
+      <div className="mt-3 grid gap-2">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="truncate font-semibold">{album.title}</div>
+            <div className="text-xs text-muted-foreground">{pretty(album.album_type)} - {new Date(album.release_date).toLocaleDateString()}</div>
+          </div>
+          <StatusPill label={album.release_date > new Date().toISOString().slice(0, 10) ? "Draft" : "Published"} />
+        </div>
+        <Field label="Album title">
+          <input ref={titleRef} className="input-lite" defaultValue={album.title} placeholder="Album title" />
+        </Field>
+        <Field label="Release date">
+          <input ref={releaseDateRef} className="input-lite" type="date" defaultValue={album.release_date} />
+        </Field>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs text-muted-foreground">{attachedCount} songs attached</span>
+          <button className="mini-button" type="button" disabled={saving} onClick={saveAlbum}><Save className="h-3.5 w-3.5" /> {saving ? "Saving" : "Save"}</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1490,6 +1538,38 @@ function DashboardStatusPanel({ title, text }: { title: string; text: string }) 
   );
 }
 
+function DashboardErrorPanel({ message, detail, onRetry }: { message: string; detail?: string; onRetry?: () => void }) {
+  const reference = useMemo(() => `SHY-${Date.now().toString(36).toUpperCase()}`, []);
+  return (
+    <section className="rounded-xl bg-surface p-5 hairline">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div>
+          <div className="text-sm font-semibold">{message}</div>
+          <p className="mt-1 text-sm text-muted-foreground">Try again, or return to the dashboard overview.</p>
+          <p className="mt-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Reference {reference}</p>
+          {import.meta.env.DEV && detail && <pre className="mt-3 max-h-32 overflow-auto rounded-lg bg-background/60 p-3 text-xs text-primary-glow">{detail}</pre>}
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {onRetry && <button type="button" className="mini-primary" onClick={onRetry}>Try again</button>}
+          <Link to="/dashboard" search={{ tab: "overview" }} className="mini-button">Return to dashboard</Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DashboardRouteError({ error, reset }: { error: Error; reset: () => void }) {
+  return (
+    <AppShell>
+      <DashboardErrorPanel
+        message="Something went wrong while loading this section."
+        detail={error?.message}
+        onRetry={reset}
+      />
+    </AppShell>
+  );
+}
+
 function ActivityItem({ text, time }: { text: string; time: string }) {
   return (
     <div className="rounded-lg bg-background/45 p-3 hairline">
@@ -1546,7 +1626,7 @@ function EditableReleaseItem({ item, onSave }: { item: ScheduledReleaseItem; onS
           <div className="truncate text-sm font-medium">{item.title}</div>
           <div className="text-xs text-muted-foreground">{item.type} - {timeUntilRelease(item)}</div>
         </div>
-        <StatusPill label={item.localOnly ? "Sample" : formatReleaseSchedule(item)} />
+        <StatusPill label={formatReleaseSchedule(item)} />
       </div>
       <div className="mt-3 grid gap-2 lg:grid-cols-[1.2fr_0.9fr_0.7fr_auto] lg:items-end">
         <Field label="Title">
@@ -1591,10 +1671,6 @@ function SectionTitle({ title }: { title: string }) {
 
 function StatusPill({ label }: { label: string }) {
   return <span className="inline-flex rounded-full bg-primary/15 px-2 py-1 text-[11px] font-medium text-primary-glow">{label}</span>;
-}
-
-function patchTrack(id: string, patch: Partial<TrackRow>, tracks: TrackRow[], setTracks: (tracks: TrackRow[]) => void) {
-  setTracks(tracks.map((track) => track.id === id ? { ...track, ...patch } : track));
 }
 
 function trackStatus(track: TrackRow) {
