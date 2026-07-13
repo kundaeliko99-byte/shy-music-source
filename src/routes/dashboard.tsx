@@ -2744,38 +2744,7 @@ function StandaloneSongsSection({ tracks }: { tracks: TrackRow[] }) {
 }
 
 function StandaloneSalesSection({ purchases, setPurchases, tracks }: { purchases: PurchaseRow[]; setPurchases: (rows: PurchaseRow[]) => void; tracks: TrackRow[] }) {
-  async function updateStatus(row: PurchaseRow, status: "new" | "contacted" | "closed") {
-    const { error } = await (supabase as any).from("song_purchase_requests").update({ status }).eq("id", row.id);
-    if (error) toast.error(error.message);
-    else {
-      setPurchases(purchases.map((item) => item.id === row.id ? { ...item, status } : item));
-      toast.success("Request updated");
-    }
-  }
-
-  return (
-    <Panel title="Sales & Contracts" icon={<ShoppingBag className="h-4 w-4" />}>
-      {purchases.length === 0 && <EmptyPanel text="No purchase requests yet. Buyer offers will appear here." />}
-      <div className="space-y-3">
-        {purchases.map((row) => (
-          <div key={row.id} className="rounded-xl bg-background/45 p-3 hairline">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <div className="font-semibold">{trackTitle(tracks, row.track_id)}</div>
-                <div className="text-xs text-muted-foreground">{row.buyer_name || "Buyer"} - {row.buyer_contact || "No contact"} - {row.currency || "USD"} {row.proposed_price ?? "negotiable"}</div>
-                {row.message && <p className="mt-2 text-sm text-muted-foreground">{row.message}</p>}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <StatusPill label={pretty(row.status)} />
-                <button className="mini-button" onClick={() => updateStatus(row, "contacted")}>Negotiate</button>
-                <button className="mini-button" onClick={() => updateStatus(row, "closed")}>Mark sold</button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </Panel>
-  );
+  return <SalesContractsPanel purchases={purchases} setPurchases={setPurchases} tracks={tracks} />;
 }
 
 function StandaloneGiftsSection({ motivations, stats }: { motivations: MotivationRow[]; stats: ReturnType<typeof buildStats> }) {
@@ -2820,37 +2789,99 @@ function StandaloneSettingsSection() {
 }
 
 function SalesSection({ purchases, setPurchases, tracks }: { purchases: PurchaseRow[]; setPurchases: (rows: PurchaseRow[]) => void; tracks: TrackRow[] }) {
+  return <SalesContractsPanel purchases={purchases} setPurchases={setPurchases} tracks={tracks} artistId={purchases[0]?.artist_id} />;
+}
+
+function SalesContractsPanel({ purchases, setPurchases, tracks, artistId }: { purchases: PurchaseRow[]; setPurchases: (rows: PurchaseRow[]) => void; tracks: TrackRow[]; artistId?: string }) {
+  const [filter, setFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const filtered = useMemo(() => {
+    return purchases.filter((row) => filter === "all" || row.status === filter);
+  }, [filter, purchases]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ALERT_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const visible = filtered.slice((safePage - 1) * ALERT_PAGE_SIZE, safePage * ALERT_PAGE_SIZE);
+  const closed = purchases.filter((row) => row.status === "closed");
+  const pending = purchases.filter((row) => row.status !== "closed");
+  const totalGross = closed.reduce((sum, row) => sum + safeNumber(row.proposed_price), 0);
+
   async function updateStatus(row: PurchaseRow, status: "new" | "contacted" | "closed") {
-    const { error } = await (supabase as any).from("song_purchase_requests").update({ status }).eq("id", row.id);
-    if (error) toast.error(error.message);
-    else {
+    if (row.status === status) return;
+    setUpdatingId(row.id);
+    try {
+      let request = (supabase as any).from("song_purchase_requests").update({ status }).eq("id", row.id);
+      if (artistId) request = request.eq("artist_id", artistId);
+      const { error } = await withTimeout<DbResult>(request, "Purchase request update", 8000);
+      if (error) throw error;
       setPurchases(purchases.map((item) => item.id === row.id ? { ...item, status } : item));
       toast.success("Request updated");
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not update this request."));
+    } finally {
+      setUpdatingId(null);
     }
   }
 
   return (
-    <Panel title="Sales & Contracts" icon={<ShoppingBag className="h-4 w-4" />}>
-      {purchases.length === 0 && <EmptyPanel text="No purchase requests yet. Buyers will appear here when they ask to buy song rights." />}
-      <div className="space-y-3">
-        {purchases.map((row) => (
-          <div key={row.id} className="rounded-xl bg-background/45 p-3 hairline">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <div className="font-semibold">{trackTitle(tracks, row.track_id)}</div>
-                <div className="text-xs text-muted-foreground">{row.buyer_name || "Buyer"} - {row.buyer_contact || "No contact"} - {row.currency || "USD"} {row.proposed_price ?? "negotiable"}</div>
-                {row.message && <p className="mt-2 text-sm text-muted-foreground">{row.message}</p>}
+    <div className="space-y-5">
+      <section className="grid gap-3 sm:grid-cols-3">
+        <Metric label="Open requests" value={formatMetricNumber(pending.length)} icon={ShoppingBag} />
+        <Metric label="Closed sales" value={formatMetricNumber(closed.length)} icon={CreditCard} />
+        <Metric label="Gross value" value={formatCurrency(totalGross, purchases[0]?.currency || "USD")} icon={CreditCard} />
+      </section>
+      <Panel title="Sales & Contracts" icon={<ShoppingBag className="h-4 w-4" />}>
+        <div className="mb-4 flex flex-wrap gap-2">
+          {["all", "new", "contacted", "closed"].map((status) => (
+            <button key={status} type="button" className={filter === status ? "mini-primary" : "mini-button"} onClick={() => { setFilter(status); setPage(1); }}>
+              {pretty(status)}
+            </button>
+          ))}
+        </div>
+        {purchases.length === 0 && <EmptyPanel text="You do not have any sales or contracts yet." />}
+        <div className="space-y-3">
+          {visible.map((row) => {
+            const gross = safeNumber(row.proposed_price);
+            const fees = Math.round(gross * 0.1 * 100) / 100;
+            const artistAmount = Math.max(0, gross - fees);
+            return (
+              <div key={row.id} className="rounded-xl bg-background/45 p-4 hairline">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="font-semibold">{trackTitle(tracks, row.track_id)}</div>
+                    <div className="mt-1 grid gap-x-4 gap-y-1 text-xs text-muted-foreground sm:grid-cols-2">
+                      <span>Buyer: {row.buyer_name || "Buyer"}</span>
+                      <span>Contact: {row.buyer_contact || "No contact"}</span>
+                      <span>Gross: {formatCurrency(gross, row.currency || "USD")}</span>
+                      <span>Estimated fees: {formatCurrency(fees, row.currency || "USD")}</span>
+                      <span>Artist amount: {formatCurrency(artistAmount, row.currency || "USD")}</span>
+                      <span>Date: {safeDashboardDate(row.created_at)}</span>
+                    </div>
+                    {row.message && <p className="mt-2 text-sm text-muted-foreground">{row.message}</p>}
+                    <div className="mt-3 rounded-lg bg-background/40 p-3 text-xs text-muted-foreground hairline">
+                      Contract document support is not connected yet. SHY is showing buyer requests only until the contracts backend is added.
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <StatusPill label={pretty(row.status)} />
+                    <button className="mini-button" type="button" disabled={updatingId === row.id || row.status === "contacted"} onClick={() => updateStatus(row, "contacted")}>Negotiate</button>
+                    <button className="mini-button" type="button" disabled={updatingId === row.id || row.status === "closed"} onClick={() => updateStatus(row, "closed")}>Mark sold</button>
+                    <button className="mini-button" type="button" disabled title="Private contract documents need the contracts backend before downloading.">Download document</button>
+                  </div>
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <StatusPill label={pretty(row.status)} />
-                <button className="mini-button" onClick={() => updateStatus(row, "contacted")}>Negotiate</button>
-                <button className="mini-button" onClick={() => updateStatus(row, "closed")}>Mark sold</button>
-              </div>
-            </div>
+            );
+          })}
+        </div>
+        <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-muted-foreground">Page {safePage} of {totalPages} · {formatMetricNumber(filtered.length)} request{filtered.length === 1 ? "" : "s"}</div>
+          <div className="flex gap-2">
+            <button type="button" className="mini-button" disabled={safePage <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}><ChevronLeft className="h-3.5 w-3.5" /> Previous</button>
+            <button type="button" className="mini-button" disabled={safePage >= totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>Next <ChevronRight className="h-3.5 w-3.5" /></button>
           </div>
-        ))}
-      </div>
-    </Panel>
+        </div>
+      </Panel>
+    </div>
   );
 }
 
