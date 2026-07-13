@@ -83,6 +83,10 @@ const SKIP_LIMIT = 5;
 const SKIP_WINDOW_MS = 60 * 60 * 1000;
 const PREVIEW_LIMIT = 3;
 
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -149,7 +153,7 @@ function RadioPage() {
     setShowSignupPrompt(false);
     lastLoggedTrack.current = null;
     try {
-      const query = supabase.from("tracks").select(TRACK_SELECT).limit(200);
+      const query = supabase.from("tracks").select(TRACK_SELECT).lte("release_date", todayIsoDate()).limit(200);
       const q = s.kind === "mood"
         ? query.eq("mood", s.key as never)
         : query.eq("genre", s.key as never);

@@ -81,6 +81,7 @@ const trackSchema = z.object({
   lyrics: z.string().trim().max(5000, "Lyrics are too long.").optional(),
   explicit: z.boolean(),
   artwork_shape: z.enum(SHAPES),
+  release_at: z.string().trim().min(1, "Choose when this song should go live."),
 });
 
 const albumSchema = z.object({
@@ -90,17 +91,23 @@ const albumSchema = z.object({
   mood: z.enum(MOODS).optional(),
   ai_tool: z.enum(TOOLS),
   artwork_shape: z.enum(SHAPES),
+  release_at: z.string().trim().min(1, "Choose when this project should go live."),
 });
 
 type ReleaseKind = "single" | "album";
 type SubmitState = { busy: boolean; text: string; progress: number };
 type UploadFrameTrack = { title?: string; lyrics?: string; explicit?: string; audio?: unknown };
+type TrackInsertPayload = Record<string, unknown> & { release_date: string; release_at?: string };
 type UploadFrameSubmit = {
   source: "shy-upload-frame";
   kind: "single-submit" | "album-submit";
   fields: Record<string, string>;
   files: Record<string, unknown>;
   tracks?: UploadFrameTrack[];
+};
+type ScheduledInsertResult = {
+  data: { id: string } | null;
+  error: { message?: string; code?: string; details?: string; hint?: string } | null;
 };
 type UploadFrameMessage = {
   source?: string;
@@ -314,7 +321,9 @@ function SingleUpload({ artistId, userId }: { artistId: string; userId: string }
         lyrics: optionalField(fields.lyrics),
         explicit: fields.explicit === "on",
         artwork_shape: fields.artwork_shape ?? "",
+        release_at: fields.release_at ?? "",
       });
+      const schedule = parseSchedule(parsed.release_at);
 
       setSubmit({ busy: true, text: "Uploading audio...", progress: 15 });
       const audioUrl = await uploadAudio(userId, audio);
@@ -325,33 +334,27 @@ function SingleUpload({ artistId, userId }: { artistId: string; userId: string }
       setSubmit({ busy: true, text: "Reading duration...", progress: 75 });
       const duration = await getDuration(audio);
 
-      setSubmit({ busy: true, text: "Publishing track...", progress: 90 });
-      const { data, error } = await withTimeout(
-        supabase
-          .from("tracks")
-          .insert({
-            artist_id: artistId,
-            title: parsed.title,
-            audio_url: audioUrl,
-            cover_url: coverUrl,
-            genre: parsed.genre,
-            mood: parsed.mood ?? null,
-            ai_tool: parsed.ai_tool,
-            lyrics: parsed.lyrics ?? null,
-            explicit: parsed.explicit,
-            duration_seconds: duration,
-            artwork_shape: parsed.artwork_shape,
-          })
-          .select("id")
-          .single(),
-        "Track publish",
-        12000,
-      );
+      setSubmit({ busy: true, text: "Scheduling track...", progress: 90 });
+      const { data, error } = await insertScheduledTrack({
+        artist_id: artistId,
+        title: parsed.title,
+        audio_url: audioUrl,
+        cover_url: coverUrl,
+        genre: parsed.genre,
+        mood: parsed.mood ?? null,
+        ai_tool: parsed.ai_tool,
+        lyrics: parsed.lyrics ?? null,
+        explicit: parsed.explicit,
+        duration_seconds: duration,
+        artwork_shape: parsed.artwork_shape,
+        release_date: releaseDate(schedule),
+        release_at: schedule.toISOString(),
+      }, "Track schedule");
       if (error) throw error;
 
       setSubmit({ busy: false, text: "Done", progress: 100 });
-      toast.success("Track uploaded.");
-      navigate({ to: "/tracks/$id", params: { id: data.id } });
+      toast.success(`Track scheduled for ${formatSchedule(schedule)}.`);
+      navigate({ to: "/dashboard", search: { tab: "watch" } });
     } catch (error) {
       setSubmit({ busy: false, text: "", progress: 0 });
       toast.error(errorMessage(error, "Upload failed."));
@@ -392,7 +395,9 @@ function AlbumUpload({ artistId, userId, artistSlug }: { artistId: string; userI
         mood: optionalField(fields.album_mood),
         ai_tool: fields.album_ai_tool ?? "",
         artwork_shape: fields.artwork_shape ?? "",
+        release_at: fields.release_at ?? "",
       });
+      const schedule = parseSchedule(album.release_at);
 
       const tracks = frameTracks
         .map((track) => ({
@@ -417,25 +422,20 @@ function AlbumUpload({ artistId, userId, artistSlug }: { artistId: string; userI
       setSubmit({ busy: true, text: "Uploading artwork...", progress: 10 });
       const coverUrl = await uploadCover(userId, cover);
 
-      setSubmit({ busy: true, text: "Creating project...", progress: 20 });
-      const { data: albumRecord, error: albumError } = await withTimeout(
-        supabase
-          .from("albums")
-          .insert({
-            artist_id: artistId,
-            title: album.title,
-            cover_url: coverUrl,
-            ai_tool: album.ai_tool,
-            album_type: album.album_type,
-            release_type: album.album_type,
-            artwork_shape: album.artwork_shape,
-          })
-          .select("id")
-          .single(),
-        "Album publish",
-        12000,
-      );
+      setSubmit({ busy: true, text: "Creating scheduled project...", progress: 20 });
+      const { data: albumRecord, error: albumError } = await insertScheduledAlbum({
+        artist_id: artistId,
+        title: album.title,
+        cover_url: coverUrl,
+        ai_tool: album.ai_tool,
+        album_type: album.album_type,
+        release_type: album.album_type,
+        artwork_shape: album.artwork_shape,
+        release_date: releaseDate(schedule),
+        release_at: schedule.toISOString(),
+      }, "Album schedule");
       if (albumError) throw albumError;
+      if (!albumRecord?.id) throw new Error("Could not create the scheduled project.");
 
       let done = 0;
       for (const track of tracks) {
@@ -446,33 +446,30 @@ function AlbumUpload({ artistId, userId, artistSlug }: { artistId: string; userI
         });
         const audioUrl = await uploadAudio(userId, track.audio!);
         const duration = await getDuration(track.audio!);
-        const { error: trackError } = await withTimeout(
-          supabase.from("tracks").insert({
-            artist_id: artistId,
-            album_id: albumRecord.id,
-            title: track.title,
-            audio_url: audioUrl,
-            cover_url: coverUrl,
-            genre: album.genre,
-            mood: album.mood ?? null,
-            ai_tool: album.ai_tool,
-            lyrics: track.lyrics ?? null,
-            explicit: track.explicit,
-            duration_seconds: duration,
-            position_in_album: done + 1,
-            artwork_shape: album.artwork_shape,
-          }),
-          "Album track publish",
-          12000,
-        );
+        const { error: trackError } = await insertScheduledTrack({
+          artist_id: artistId,
+          album_id: albumRecord.id,
+          title: track.title,
+          audio_url: audioUrl,
+          cover_url: coverUrl,
+          genre: album.genre,
+          mood: album.mood ?? null,
+          ai_tool: album.ai_tool,
+          lyrics: track.lyrics ?? null,
+          explicit: track.explicit,
+          duration_seconds: duration,
+          position_in_album: done + 1,
+          artwork_shape: album.artwork_shape,
+          release_date: releaseDate(schedule),
+          release_at: schedule.toISOString(),
+        }, "Album track schedule");
         if (trackError) throw trackError;
         done += 1;
       }
 
       setSubmit({ busy: false, text: "Done", progress: 100 });
-      toast.success("Project uploaded.");
-      if (artistSlug) navigate({ to: "/artists/$slug", params: { slug: artistSlug } });
-      else navigate({ to: "/dashboard", search: { tab: "overview" } });
+      toast.success(`Project scheduled for ${formatSchedule(schedule)}.`);
+      navigate({ to: "/dashboard", search: { tab: "watch" } });
     } catch (error) {
       setSubmit({ busy: false, text: "", progress: 0 });
       toast.error(errorMessage(error, "Project upload failed."));
@@ -540,6 +537,7 @@ function ProgressOnly({ submit }: { submit: SubmitState }) {
 }
 
 function singleFrameHtml() {
+  const defaultReleaseAt = defaultScheduleInput();
   return frameDocument(`
     <form id="single-form" class="space">
       <div class="grid header-grid">
@@ -548,6 +546,7 @@ function singleFrameHtml() {
           ${textField("title", "Title", true)}
           <div class="grid two">${selectField("genre", "Genre", genreOptions(), "electronic")}${selectField("mood", "Mood (optional)", moodOptions(true), "")}</div>
           <div class="grid two">${selectField("ai_tool", "AI tool used", toolOptions(), "suno")}${selectField("artwork_shape", "Artwork shape in SHY", shapeOptions(), "rounded")}</div>
+          ${dateTimeField("release_at", "Schedule release", defaultReleaseAt, "The song will stay private until this date and time.")}
           <label class="check"><input type="checkbox" name="explicit" /> Contains explicit content</label>
         </div>
       </div>
@@ -575,6 +574,7 @@ function singleFrameHtml() {
 }
 
 function albumFrameHtml() {
+  const defaultReleaseAt = defaultScheduleInput();
   return frameDocument(`
     <form id="album-form" class="space">
       <div class="grid header-grid">
@@ -583,6 +583,7 @@ function albumFrameHtml() {
           ${textField("album_title", "Album / EP title", true)}
           <div class="grid two">${selectField("album_type", "Type", `<option value="album">Album</option><option value="ep">EP</option><option value="mixtape">Mixtape</option>`, "album")}${selectField("album_genre", "Default genre", genreOptions(), "electronic")}</div>
           <div class="grid two">${selectField("album_mood", "Default mood", moodOptions(true), "")}${selectField("album_ai_tool", "Default AI tool", toolOptions(), "suno")}</div>
+          ${dateTimeField("release_at", "Schedule release", defaultReleaseAt, "All tracks in this project go live at this date and time.")}
           ${selectField("artwork_shape", "Artwork shape in SHY", shapeOptions(), "rounded")}
         </div>
       </div>
@@ -750,6 +751,10 @@ function fileField(name: string, label: string, accept: string, helper: string, 
   return `<label><span>${label}</span><input name="${name}" type="file" accept="${accept}" ${required ? "required" : ""} /><small class="help">${helper}</small></label>`;
 }
 
+function dateTimeField(name: string, label: string, value: string, helper: string) {
+  return `<label><span>${label}</span><input name="${name}" type="datetime-local" value="${value}" min="${minScheduleInput()}" required /><small class="help">${helper}</small></label>`;
+}
+
 function selectField(name: string, label: string, options: string, defaultValue: string) {
   return `<label><span>${label}</span><select name="${name}" data-default="${defaultValue}">${options}</select></label>`;
 }
@@ -818,6 +823,100 @@ function errorMessage(error: unknown, fallback: string) {
   if (error instanceof z.ZodError) return error.issues[0]?.message ?? fallback;
   if (error instanceof Error) return error.message;
   return fallback;
+}
+
+function defaultScheduleInput() {
+  const date = new Date(Date.now() + 60 * 60 * 1000);
+  return toDateTimeLocalValue(date);
+}
+
+function minScheduleInput() {
+  const date = new Date(Date.now() + 5 * 60 * 1000);
+  return toDateTimeLocalValue(date);
+}
+
+function toDateTimeLocalValue(date: Date) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function parseSchedule(value: string) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) throw new Error("Choose a valid release date and time.");
+  const minimum = Date.now() + 5 * 60 * 1000;
+  if (date.getTime() < minimum) {
+    throw new Error("Schedule the release at least 5 minutes from now.");
+  }
+  return date;
+}
+
+function releaseDate(date: Date) {
+  return toDateTimeLocalValue(date).slice(0, 10);
+}
+
+function legacyFallbackReleaseDate(date: Date) {
+  const scheduledDate = releaseDate(date);
+  const today = releaseDate(new Date());
+  if (scheduledDate > today) return scheduledDate;
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return releaseDate(tomorrow);
+}
+
+function formatSchedule(date: Date) {
+  return date.toLocaleString([], {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+async function insertScheduledTrack(payload: TrackInsertPayload, label: string): Promise<ScheduledInsertResult> {
+  return insertWithScheduleFallback("tracks", payload, label);
+}
+
+async function insertScheduledAlbum(payload: TrackInsertPayload, label: string): Promise<ScheduledInsertResult> {
+  return insertWithScheduleFallback("albums", payload, label);
+}
+
+async function insertWithScheduleFallback(table: "tracks" | "albums", payload: TrackInsertPayload, label: string): Promise<ScheduledInsertResult> {
+  const request = () =>
+    withTimeout<ScheduledInsertResult>(
+      (supabase as any)
+        .from(table)
+        .insert(payload)
+        .select("id")
+        .single(),
+      label,
+      12000,
+    );
+
+  const result = await request();
+  if (!result.error || !isMissingReleaseAtColumn(result.error)) return result;
+
+  const fallbackPayload = { ...payload };
+  delete fallbackPayload.release_at;
+  fallbackPayload.release_date = legacyFallbackReleaseDate(new Date(payload.release_at ?? payload.release_date));
+
+  return withTimeout<ScheduledInsertResult>(
+    (supabase as any)
+      .from(table)
+      .insert(fallbackPayload)
+      .select("id")
+      .single(),
+    `${label} fallback`,
+    12000,
+  );
+}
+
+function isMissingReleaseAtColumn(error: unknown) {
+  const details = JSON.stringify(error).toLowerCase();
+  return (
+    details.includes("release_at") &&
+    (details.includes("column") ||
+      details.includes("schema cache") ||
+      details.includes("pgrst204") ||
+      details.includes("could not find"))
+  );
 }
 
 async function getDuration(file: File): Promise<number> {
