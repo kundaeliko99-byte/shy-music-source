@@ -2963,20 +2963,51 @@ function EarningsPanel({
 }
 
 function AnalyticsSection({ tracks, albums, countries, stats }: { tracks: TrackRow[]; albums: AlbumRow[]; countries: Array<{ country: string; plays: number }>; stats: ReturnType<typeof buildStats> }) {
-  const topTracks = [...tracks].sort((a, b) => b.plays_count - a.plays_count).slice(0, 8);
+  const [range, setRange] = useState("30");
+  const cutoff = useMemo(() => {
+    if (range === "year") return new Date(new Date().getFullYear(), 0, 1).getTime();
+    return Date.now() - safeNumber(range) * 86400000;
+  }, [range]);
+  const rangedTracks = useMemo(() => tracks.filter((track) => releaseTime(track) >= cutoff), [cutoff, tracks]);
+  const topTracks = useMemo(() => [...rangedTracks].sort((a, b) => safeNumber(b.plays_count) - safeNumber(a.plays_count)).slice(0, 8), [rangedTracks]);
+  const topAlbums = useMemo(() => {
+    return albums
+      .map((album) => ({
+        id: album.id,
+        title: album.title,
+        plays: tracks.filter((track) => track.album_id === album.id).reduce((sum, track) => sum + safeNumber(track.plays_count), 0),
+      }))
+      .sort((a, b) => b.plays - a.plays)
+      .slice(0, 6);
+  }, [albums, tracks]);
+  const playsOverTime = useMemo(() => buildTrackTrend(rangedTracks.length ? rangedTracks : tracks), [rangedTracks, tracks]);
   return (
     <Panel title="Analytics" icon={<BarChart3 className="h-4 w-4" />}>
+      <div className="mb-4 flex flex-wrap gap-2">
+        {[["7", "Last 7 days"], ["30", "Last 30 days"], ["90", "Last 90 days"], ["year", "This year"]].map(([value, label]) => (
+          <button key={value} type="button" className={range === value ? "mini-primary" : "mini-button"} onClick={() => setRange(value)}>{label}</button>
+        ))}
+      </div>
       <div className="grid gap-3 md:grid-cols-4">
-        <Metric label="Song plays" value={fmtCount(stats.plays)} icon={Music2} />
+        <Metric label="Song plays" value={fmtCount(rangedTracks.reduce((sum, track) => sum + safeNumber(track.plays_count), 0) || stats.plays)} icon={Music2} />
         <Metric label="Album count" value={albums.length} icon={Album} />
         <Metric label="Purchase interest" value={stats.requests} icon={ShoppingBag} />
-        <Metric label="Profile visits" value="Soon" icon={Eye} />
+        <Metric label="Unique listeners" value={countries.reduce((sum, row) => sum + safeNumber(row.plays), 0)} icon={Eye} />
       </div>
       <div className="mt-4 grid gap-4 xl:grid-cols-2">
         <div className="space-y-2">
+          <SectionTitle title="Plays over time" />
+          {playsOverTime.every((point) => safeNumber(point.value) === 0) ? <EmptyPanel text="No listening data is available for this period." /> : <DashboardBarChart points={playsOverTime} compact />}
+        </div>
+        <div className="space-y-2">
           <SectionTitle title="Most-played songs" />
-          {topTracks.length === 0 && <EmptyPanel text="No play data yet." />}
+          {topTracks.length === 0 && <EmptyPanel text="No listening data is available for this period." />}
           {topTracks.map((track) => <RankRow key={track.id} title={track.title} value={`${fmtCount(track.plays_count)} plays`} />)}
+        </div>
+        <div className="space-y-2">
+          <SectionTitle title="Top albums" />
+          {topAlbums.length === 0 && <EmptyPanel text="No album listening data is available for this period." />}
+          {topAlbums.map((album) => <RankRow key={album.id} title={album.title} value={`${fmtCount(album.plays)} plays`} />)}
         </div>
         <div className="space-y-2">
           <SectionTitle title="Listener countries" />
