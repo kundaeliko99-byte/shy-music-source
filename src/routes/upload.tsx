@@ -694,6 +694,42 @@ function frameDocument(body: string) {
     padding: 10px 14px;
     font-weight: 700;
   }
+  .image-preview {
+    display: none;
+    position: relative;
+    margin-top: 12px;
+    aspect-ratio: 1 / 1;
+    width: min(100%, 220px);
+    overflow: hidden;
+    border: 1px solid rgba(139, 76, 246, 0.32);
+    border-radius: 18px;
+    background:
+      radial-gradient(circle at 50% 35%, rgba(165, 108, 255, 0.28), transparent 46%),
+      #090911;
+    box-shadow: 0 20px 55px -42px #a56cff;
+  }
+  .image-preview.is-visible { display: block; }
+  .image-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .image-preview::after {
+    content: "Cover preview";
+    position: absolute;
+    left: 10px;
+    bottom: 10px;
+    border-radius: 999px;
+    background: rgba(5, 5, 10, 0.72);
+    color: #d9c9ff;
+    padding: 5px 8px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    backdrop-filter: blur(8px);
+  }
   textarea { resize: vertical; min-height: 108px; }
   .help { display: block; margin-top: 7px; color: #827890; font-size: 12px; line-height: 1.4; }
   .check { display: flex; align-items: center; gap: 10px; color: #b9b0ce; font-size: 14px; }
@@ -728,9 +764,38 @@ ${body}
     const input = root.querySelector('[name="' + name + '"]');
     return input && input.files && input.files[0] && input.files[0].size > 0 ? input.files[0] : null;
   }
+  const previewUrls = new WeakMap();
+  function initImagePreviews(root) {
+    root.querySelectorAll('[data-preview-input]').forEach((input) => {
+      if (input.dataset.previewReady === 'true') return;
+      input.dataset.previewReady = 'true';
+      input.addEventListener('change', () => {
+        const preview = root.querySelector('[data-preview-for="' + input.name + '"]');
+        const img = preview ? preview.querySelector('img') : null;
+        const file = input.files && input.files[0];
+        const oldUrl = previewUrls.get(input);
+        if (oldUrl) URL.revokeObjectURL(oldUrl);
+
+        if (!preview || !img || !file || !file.type.startsWith('image/')) {
+          if (preview) preview.classList.remove('is-visible');
+          if (img) img.removeAttribute('src');
+          previewUrls.delete(input);
+          if (typeof sendHeight === 'function') sendHeight();
+          return;
+        }
+
+        const nextUrl = URL.createObjectURL(file);
+        previewUrls.set(input, nextUrl);
+        img.src = nextUrl;
+        preview.classList.add('is-visible');
+        if (typeof sendHeight === 'function') sendHeight();
+      });
+    });
+  }
   function sendHeight() {
     parent.postMessage({ source: 'shy-upload-frame', kind: 'height', height: document.documentElement.scrollHeight + 8 }, '*');
   }
+  initImagePreviews(document);
   new ResizeObserver(sendHeight).observe(document.body);
   addEventListener('load', sendHeight);
   addEventListener('input', sendHeight);
@@ -748,7 +813,11 @@ function textareaField(name: string, label: string, rows: number) {
 }
 
 function fileField(name: string, label: string, accept: string, helper: string, required = false) {
-  return `<label><span>${label}</span><input name="${name}" type="file" accept="${accept}" ${required ? "required" : ""} /><small class="help">${helper}</small></label>`;
+  const preview = accept.includes("image/")
+    ? `<div class="image-preview" data-preview-for="${name}" aria-live="polite"><img alt="${label} preview" /></div>`
+    : "";
+  const previewAttr = accept.includes("image/") ? 'data-preview-input="true"' : "";
+  return `<label><span>${label}</span><input name="${name}" type="file" accept="${accept}" ${previewAttr} ${required ? "required" : ""} />${preview}<small class="help">${helper}</small></label>`;
 }
 
 function dateTimeField(name: string, label: string, value: string, helper: string) {
