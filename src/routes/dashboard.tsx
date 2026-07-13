@@ -5,6 +5,7 @@ import {
   BarChart3,
   Bell,
   CalendarClock,
+  Camera,
   ChevronLeft,
   ChevronRight,
   CreditCard,
@@ -19,6 +20,7 @@ import {
   Settings,
   ShieldAlert,
   ShoppingBag,
+  Trash2,
   Upload,
   UserCog,
 } from "lucide-react";
@@ -96,13 +98,17 @@ type TrackRow = {
 
 type AlbumRow = {
   id: string;
+  artist_id?: string;
   title: string;
   cover_url: string | null;
   release_date: string;
   release_at?: string | null;
   album_type: string;
+  release_type?: string | null;
+  artwork_shape?: "circle" | "rounded" | "diamond" | "hexagon" | null;
   producer: string | null;
   ai_tool: string | null;
+  created_at?: string | null;
 };
 
 type PurchaseRow = {
@@ -203,6 +209,9 @@ type ChartPoint = {
 type SongStatus = "draft" | "processing" | "scheduled" | "published" | "private" | "rejected";
 type SongFilter = "all" | SongStatus;
 type SongSort = "newest" | "oldest" | "title_az" | "most_played" | "highest_earnings";
+type AlbumStatus = "draft" | "scheduled" | "published" | "private" | "rejected";
+type AlbumFilter = "all" | AlbumStatus;
+type AlbumSort = "newest" | "oldest" | "title_az" | "release_date" | "most_played";
 
 type SongListItem = {
   id: string;
@@ -228,6 +237,32 @@ type SongListResponse = {
     hasNextPage: boolean;
   };
   summary: Record<SongStatus | "total", number>;
+};
+
+type AlbumListItem = {
+  id: string;
+  title: string;
+  coverUrl: string | null;
+  resolvedCoverUrl: string | null;
+  albumType: string;
+  status: AlbumStatus;
+  releaseDate: string | null;
+  releaseAt: string | null;
+  createdAt: string;
+  trackCount: number;
+  totalPlays: number;
+};
+
+type AlbumListResponse = {
+  albums: AlbumListItem[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    totalItems: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  };
+  summary: Record<AlbumStatus | "total", number>;
 };
 
 const MENU: Array<{ id: DashboardTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
@@ -261,11 +296,28 @@ const SONG_SORTS: Array<{ value: SongSort; label: string }> = [
   { value: "highest_earnings", label: "Highest earnings" },
 ];
 const SONG_PAGE_SIZE = 20;
+const ALBUM_FILTERS: Array<{ value: AlbumFilter; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "draft", label: "Draft" },
+  { value: "scheduled", label: "Scheduled" },
+  { value: "published", label: "Published" },
+  { value: "private", label: "Private" },
+  { value: "rejected", label: "Rejected" },
+];
+const ALBUM_SORTS: Array<{ value: AlbumSort; label: string }> = [
+  { value: "newest", label: "Newest" },
+  { value: "oldest", label: "Oldest" },
+  { value: "title_az", label: "Title A to Z" },
+  { value: "release_date", label: "Release date" },
+  { value: "most_played", label: "Most played" },
+];
+const ALBUM_PAGE_SIZE = 20;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const ARTIST_BASE_SELECT = "id, user_id, display_name, slug, bio, country, avatar_url, banner_url, monthly_listeners, contact_email, mobile_money_number, mobile_money_network, instagram_url, facebook_url, twitter_url, tiktok_url, youtube_url";
 const ARTIST_SELECT = `${ARTIST_BASE_SELECT}, public_phone, preferred_payment_method`;
 const TRACK_SELECT = "id, title, cover_url, audio_url, duration_seconds, genre, mood, ai_tool, lyrics, explicit, plays_count, release_date, album_id, position_in_album, artwork_shape";
 const TRACK_SELECT_WITH_RELEASE_AT = `${TRACK_SELECT}, release_at`;
-const ALBUM_SELECT = "id, title, cover_url, release_date, album_type, producer, ai_tool";
+const ALBUM_SELECT = "id, artist_id, title, cover_url, release_date, album_type, release_type, artwork_shape, producer, ai_tool, created_at";
 const ALBUM_SELECT_WITH_RELEASE_AT = `${ALBUM_SELECT}, release_at`;
 
 function ArtistDashboardPage() {
@@ -826,6 +878,245 @@ async function loadArtistAlbums(artistId: string): Promise<AlbumRow[]> {
   }
   if (error) throw error;
   return (data ?? []) as AlbumRow[];
+}
+
+async function loadAlbumList({
+  artistId,
+  page,
+  pageSize,
+  search,
+  filter,
+  sort,
+}: {
+  artistId: string;
+  page: number;
+  pageSize: number;
+  search: string;
+  filter: AlbumFilter;
+  sort: AlbumSort;
+}): Promise<AlbumListResponse> {
+  const safePage = Math.max(1, Math.floor(safeNumber(page)) || 1);
+  const safePageSize = Math.min(50, Math.max(1, Math.floor(safeNumber(pageSize)) || ALBUM_PAGE_SIZE));
+  const safeSearch = search.trim().replace(/\s+/g, " ").slice(0, 80);
+  const safeFilter = isAlbumFilter(filter) ? filter : "all";
+  const safeSort = isAlbumSort(sort) ? sort : "newest";
+  const summaryPromise = loadAlbumSummary(artistId);
+  const from = (safePage - 1) * safePageSize;
+  const to = from + safePageSize - 1;
+
+  let query = (supabase as any)
+    .from("albums")
+    .select(ALBUM_SELECT_WITH_RELEASE_AT, { count: "exact" })
+    .eq("artist_id", artistId);
+
+  if (safeSearch) query = query.ilike("title", `%${escapeLikePattern(safeSearch)}%`);
+  query = applyAlbumStatusFilter(query, safeFilter);
+  query = applyAlbumSort(query, safeSort);
+
+  let result = await withTimeout<DbResult & { count?: number | null }>(query.range(from, to), "Albums list", 10000);
+  if (result.error && (isMissingColumn(result.error, "release_at") || isMissingColumn(result.error, "release_type") || isMissingColumn(result.error, "artwork_shape") || isMissingColumn(result.error, "created_at"))) {
+    let fallback = (supabase as any)
+      .from("albums")
+      .select("id, artist_id, title, cover_url, release_date, album_type, producer, ai_tool", { count: "exact" })
+      .eq("artist_id", artistId);
+    if (safeSearch) fallback = fallback.ilike("title", `%${escapeLikePattern(safeSearch)}%`);
+    fallback = applyAlbumStatusFilter(fallback, safeFilter);
+    fallback = applyAlbumFallbackSort(fallback, safeSort);
+    result = await withTimeout<DbResult & { count?: number | null }>(fallback.range(from, to), "Albums list", 10000);
+  }
+  if (result.error) throw result.error;
+
+  const albumRows = ((result.data ?? []) as AlbumRow[]).map(normalizeAlbumRow);
+  const albumIds = albumRows.map((album) => album.id).filter(Boolean);
+  const trackStats = await loadAlbumTrackStats(albumIds, artistId);
+
+  return validateAlbumListResponse({
+    albums: albumRows.map((album) => toAlbumListItem(album, trackStats.get(album.id))),
+    pagination: buildPagination(safePage, safePageSize, result.count),
+    summary: await summaryPromise,
+  });
+}
+
+async function loadAlbumSummary(artistId: string): Promise<Record<AlbumStatus | "total", number>> {
+  const today = new Date().toISOString().slice(0, 10);
+  const empty = emptyAlbumSummary();
+  try {
+    const [total, published, scheduled, draft] = await Promise.allSettled([
+      withTimeout<{ count?: number | null; error?: { message?: string } | null }>(
+        (supabase as any).from("albums").select("id", { count: "exact", head: true }).eq("artist_id", artistId),
+        "Album total",
+        7000,
+      ),
+      withTimeout<{ count?: number | null; error?: { message?: string } | null }>(
+        (supabase as any).from("albums").select("id", { count: "exact", head: true }).eq("artist_id", artistId).lte("release_date", today).not("cover_url", "is", null),
+        "Published album total",
+        7000,
+      ),
+      withTimeout<{ count?: number | null; error?: { message?: string } | null }>(
+        (supabase as any).from("albums").select("id", { count: "exact", head: true }).eq("artist_id", artistId).gt("release_date", today),
+        "Scheduled album total",
+        7000,
+      ),
+      withTimeout<{ count?: number | null; error?: { message?: string } | null }>(
+        (supabase as any).from("albums").select("id", { count: "exact", head: true }).eq("artist_id", artistId).is("cover_url", null),
+        "Draft album total",
+        7000,
+      ),
+    ]);
+    empty.total = settledCount(total);
+    empty.published = settledCount(published);
+    empty.scheduled = settledCount(scheduled);
+    empty.draft = settledCount(draft);
+    return empty;
+  } catch {
+    return empty;
+  }
+}
+
+async function loadAlbumTrackStats(albumIds: string[], artistId: string) {
+  const stats = new Map<string, { trackCount: number; totalPlays: number }>();
+  for (const id of albumIds) stats.set(id, { trackCount: 0, totalPlays: 0 });
+  if (!albumIds.length) return stats;
+  const { data, error } = await withTimeout<DbResult>(
+    (supabase as any)
+      .from("tracks")
+      .select("album_id, plays_count")
+      .eq("artist_id", artistId)
+      .in("album_id", albumIds)
+      .limit(500),
+    "Album track stats",
+    7000,
+  ).catch((): DbResult => ({ data: [] }));
+  if (error) return stats;
+  for (const row of (data ?? []) as Array<{ album_id?: string | null; plays_count?: number | null }>) {
+    if (!row.album_id) continue;
+    const current = stats.get(row.album_id) ?? { trackCount: 0, totalPlays: 0 };
+    current.trackCount += 1;
+    current.totalPlays += safeNumber(row.plays_count);
+    stats.set(row.album_id, current);
+  }
+  return stats;
+}
+
+function validateAlbumListResponse(response: AlbumListResponse): AlbumListResponse {
+  const pagination = response.pagination ?? buildPagination(1, ALBUM_PAGE_SIZE, 0);
+  return {
+    albums: Array.isArray(response.albums) ? response.albums.map(validateAlbumListItem) : [],
+    pagination: {
+      page: Math.max(1, Math.floor(safeNumber(pagination.page)) || 1),
+      pageSize: Math.min(50, Math.max(1, Math.floor(safeNumber(pagination.pageSize)) || ALBUM_PAGE_SIZE)),
+      totalItems: Math.max(0, Math.floor(safeNumber(pagination.totalItems))),
+      totalPages: Math.max(1, Math.floor(safeNumber(pagination.totalPages)) || 1),
+      hasNextPage: Boolean(pagination.hasNextPage),
+    },
+    summary: { ...emptyAlbumSummary(), ...(response.summary ?? {}) },
+  };
+}
+
+function validateAlbumListItem(album: AlbumListItem): AlbumListItem {
+  const status = isAlbumStatus(album.status) ? album.status : "draft";
+  return {
+    id: album.id || crypto.randomUUID(),
+    title: album.title?.trim() || "Untitled album",
+    coverUrl: album.coverUrl || null,
+    resolvedCoverUrl: album.resolvedCoverUrl || null,
+    albumType: album.albumType || "album",
+    status,
+    releaseDate: album.releaseDate && isValidDateInput(album.releaseDate) ? album.releaseDate : null,
+    releaseAt: album.releaseAt && isValidDateInput(album.releaseAt) ? album.releaseAt : null,
+    createdAt: album.createdAt && isValidDateInput(album.createdAt) ? album.createdAt : new Date(0).toISOString(),
+    trackCount: safeNumber(album.trackCount),
+    totalPlays: safeNumber(album.totalPlays),
+  };
+}
+
+function normalizeAlbumRow(row: Partial<AlbumRow>): AlbumRow {
+  return {
+    id: row.id ?? crypto.randomUUID(),
+    artist_id: row.artist_id,
+    title: row.title ?? "Untitled album",
+    cover_url: row.cover_url ?? null,
+    release_date: row.release_date ?? new Date().toISOString().slice(0, 10),
+    release_at: row.release_at ?? null,
+    album_type: row.album_type ?? row.release_type ?? "album",
+    release_type: row.release_type ?? row.album_type ?? "album",
+    artwork_shape: row.artwork_shape ?? "rounded",
+    producer: row.producer ?? null,
+    ai_tool: row.ai_tool ?? null,
+    created_at: row.created_at ?? row.release_date ?? new Date(0).toISOString(),
+  };
+}
+
+function toAlbumListItem(album: AlbumRow, stats?: { trackCount: number; totalPlays: number }): AlbumListItem {
+  const normalized = normalizeAlbumRow(album);
+  return {
+    id: normalized.id,
+    title: normalized.title,
+    coverUrl: normalized.cover_url,
+    resolvedCoverUrl: resolveArtworkUrl(normalized.cover_url, "covers"),
+    albumType: normalized.release_type || normalized.album_type || "album",
+    status: deriveAlbumStatus(normalized),
+    releaseDate: normalized.release_date,
+    releaseAt: normalized.release_at ?? null,
+    createdAt: normalized.created_at ?? normalized.release_date,
+    trackCount: safeNumber(stats?.trackCount),
+    totalPlays: safeNumber(stats?.totalPlays),
+  };
+}
+
+function deriveAlbumStatus(album: Partial<AlbumRow> & { moderation_status?: string | null }): AlbumStatus {
+  const moderation = String(album.moderation_status ?? "").toLowerCase();
+  if (moderation === "removed") return "rejected";
+  if (moderation === "hidden") return "private";
+  if (releaseTime({ release_date: album.release_date ?? new Date().toISOString().slice(0, 10), release_at: album.release_at }) > Date.now()) return "scheduled";
+  if (!album.cover_url) return "draft";
+  return "published";
+}
+
+function emptyAlbumSummary(): Record<AlbumStatus | "total", number> {
+  return {
+    total: 0,
+    draft: 0,
+    scheduled: 0,
+    published: 0,
+    private: 0,
+    rejected: 0,
+  };
+}
+
+function applyAlbumStatusFilter(query: any, filter: AlbumFilter) {
+  const today = new Date().toISOString().slice(0, 10);
+  if (filter === "scheduled") return query.gt("release_date", today);
+  if (filter === "published") return query.lte("release_date", today).not("cover_url", "is", null);
+  if (filter === "draft") return query.is("cover_url", null);
+  if (filter === "private" || filter === "rejected") return query.eq("id", "00000000-0000-0000-0000-000000000000");
+  return query;
+}
+
+function applyAlbumSort(query: any, sort: AlbumSort) {
+  if (sort === "oldest") return query.order("created_at", { ascending: true });
+  if (sort === "title_az") return query.order("title", { ascending: true });
+  if (sort === "release_date") return query.order("release_date", { ascending: false });
+  if (sort === "most_played") return query.order("release_date", { ascending: false });
+  return query.order("created_at", { ascending: false });
+}
+
+function applyAlbumFallbackSort(query: any, sort: AlbumSort) {
+  if (sort === "title_az") return query.order("title", { ascending: true });
+  if (sort === "oldest") return query.order("release_date", { ascending: true });
+  return query.order("release_date", { ascending: false });
+}
+
+function isAlbumStatus(value: unknown): value is AlbumStatus {
+  return typeof value === "string" && ["draft", "scheduled", "published", "private", "rejected"].includes(value);
+}
+
+function isAlbumFilter(value: unknown): value is AlbumFilter {
+  return value === "all" || isAlbumStatus(value);
+}
+
+function isAlbumSort(value: unknown): value is AlbumSort {
+  return typeof value === "string" && ["newest", "oldest", "title_az", "release_date", "most_played"].includes(value);
 }
 
 async function loadScheduleTracks(): Promise<TrackRow[]> {
@@ -1421,48 +1712,506 @@ function SongListError({ text, detail, onRetry }: { text: string; detail?: strin
 }
 
 function AlbumsSection({ artist, albums, setAlbums, tracks }: { artist: ArtistRow; albums: AlbumRow[]; setAlbums: (albums: AlbumRow[]) => void; tracks: TrackRow[] }) {
-  const [draft, setDraft] = useState({ title: "", cover_url: "", release_date: new Date().toISOString().slice(0, 10), album_type: "album" });
+  const requestSeq = useRef(0);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<AlbumFilter>("all");
+  const [sort, setSort] = useState<AlbumSort>("newest");
+  const [page, setPage] = useState(1);
+  const [retryCount, setRetryCount] = useState(0);
+  const [creating, setCreating] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [draft, setDraft] = useState({ title: "", release_date: minimumScheduleDate(), album_type: "album" });
+  const [response, setResponse] = useState<AlbumListResponse>(() => validateAlbumListResponse({
+    albums: [],
+    pagination: buildPagination(1, ALBUM_PAGE_SIZE, 0),
+    summary: emptyAlbumSummary(),
+  }));
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearch(searchInput.trim().replace(/\s+/g, " "));
+      setPage(1);
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
+  useEffect(() => {
+    let alive = true;
+    const seq = requestSeq.current + 1;
+    requestSeq.current = seq;
+    setLoading(true);
+    setError("");
+
+    loadAlbumList({ artistId: artist.id, page, pageSize: ALBUM_PAGE_SIZE, search, filter, sort })
+      .then((next) => {
+        if (!alive || requestSeq.current !== seq) return;
+        setResponse(next);
+      })
+      .catch((err) => {
+        if (!alive || requestSeq.current !== seq) return;
+        setError(errorMessage(err, "Your albums could not be loaded."));
+        setResponse((current) => ({ ...current, albums: [] }));
+      })
+      .finally(() => {
+        if (alive && requestSeq.current === seq) setLoading(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [artist.id, page, search, filter, sort, retryCount]);
+
+  function refreshAlbums() {
+    setRetryCount((count) => count + 1);
+  }
+
+  function replaceAlbumInState(album: AlbumListItem) {
+    setResponse((current) => ({
+      ...current,
+      albums: current.albums.map((item) => item.id === album.id ? album : item),
+    }));
+    setAlbums(albums.map((item) => item.id === album.id ? { ...item, title: album.title, cover_url: album.coverUrl, release_date: album.releaseDate || item.release_date, release_at: album.releaseAt, album_type: album.albumType } : item));
+  }
+
+  function removeAlbumFromState(albumId: string) {
+    setResponse((current) => ({
+      ...current,
+      albums: current.albums.filter((item) => item.id !== albumId),
+      pagination: buildPagination(current.pagination.page, current.pagination.pageSize, Math.max(0, current.pagination.totalItems - 1)),
+      summary: { ...current.summary, total: Math.max(0, current.summary.total - 1), draft: Math.max(0, current.summary.draft - 1) },
+    }));
+    setAlbums(albums.filter((item) => item.id !== albumId));
+  }
 
   async function createAlbum() {
     if (!draft.title.trim()) {
       toast.error("Album title is required");
       return;
     }
-    const { data, error } = await (supabase as any)
-      .from("albums")
-      .insert({ artist_id: artist.id, title: draft.title.trim(), cover_url: draft.cover_url.trim() || null, release_date: draft.release_date, album_type: draft.album_type })
-      .select("id, title, cover_url, release_date, album_type, producer, ai_tool")
-      .single();
-    if (error) toast.error(error.message);
-    else {
-      setAlbums([data as AlbumRow, ...albums]);
-      setDraft({ title: "", cover_url: "", release_date: new Date().toISOString().slice(0, 10), album_type: "album" });
-      toast.success("Album created");
+    setCreating(true);
+    try {
+      const { data, error } = await withTimeout<DbResult>(
+        (supabase as any)
+          .from("albums")
+          .insert({
+            artist_id: artist.id,
+            title: draft.title.trim(),
+            cover_url: null,
+            release_date: draft.release_date,
+            album_type: draft.album_type,
+            release_type: draft.album_type,
+          })
+          .select(ALBUM_SELECT_WITH_RELEASE_AT)
+          .single(),
+        "Create album",
+        10000,
+      );
+      if (error) throw error;
+      const album = normalizeAlbumRow(data as AlbumRow);
+      setAlbums([album, ...albums]);
+      setDraft({ title: "", release_date: minimumScheduleDate(), album_type: "album" });
+      toast.success("Album draft created");
+      refreshAlbums();
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not create this album draft."));
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  const summary = response.summary;
+  const noAlbumsAtAll = !loading && !error && summary.total === 0 && !search && filter === "all";
+  const noSearchResults = !loading && !error && response.albums.length === 0 && Boolean(search);
+  const noFilteredResults = !loading && !error && response.albums.length === 0 && !search && filter !== "all";
+
+  return (
+    <div className="space-y-5">
+      <section className="rounded-xl bg-surface p-5 hairline">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold">My Albums</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Create, schedule, publish, and maintain album and EP releases.</p>
+          </div>
+          <Link to="/upload" className="mini-button"><Upload className="h-3.5 w-3.5" /> Upload album tracks</Link>
+        </div>
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Total albums" value={formatMetricNumber(summary.total)} icon={Album} />
+        <Metric label="Published" value={formatMetricNumber(summary.published)} icon={Eye} />
+        <Metric label="Drafts" value={formatMetricNumber(summary.draft)} icon={CalendarClock} />
+        <Metric label="Scheduled" value={formatMetricNumber(summary.scheduled)} icon={CalendarClock} />
+      </section>
+
+      <Panel title="Create album draft" icon={<Plus className="h-4 w-4" />}>
+        <div className="grid gap-3 md:grid-cols-[1fr_170px_150px_auto] md:items-end">
+          <Field label="Album title"><input className="input-lite" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} /></Field>
+          <Field label="Release date"><input className="input-lite" type="date" value={draft.release_date} onChange={(e) => setDraft({ ...draft, release_date: e.target.value })} /></Field>
+          <Field label="Type"><select className="input-lite" value={draft.album_type} onChange={(e) => setDraft({ ...draft, album_type: e.target.value })}><option value="album">Album</option><option value="ep">EP</option><option value="mixtape">Mixtape</option></select></Field>
+          <button className="mini-primary justify-center" type="button" disabled={creating} onClick={createAlbum}><Plus className="h-3.5 w-3.5" /> {creating ? "Creating" : "Create"}</button>
+        </div>
+      </Panel>
+
+      <Panel title="Albums" icon={<Album className="h-4 w-4" />}>
+        <div className="grid gap-3 xl:grid-cols-[1fr_220px_220px]">
+          <label className="relative block">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              className="input-lite pl-9"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder="Search albums"
+            />
+          </label>
+          <select className="input-lite" value={filter} onChange={(event) => { setFilter(event.target.value as AlbumFilter); setPage(1); }}>
+            {ALBUM_FILTERS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+          </select>
+          <select className="input-lite" value={sort} onChange={(event) => { setSort(event.target.value as AlbumSort); setPage(1); }}>
+            {ALBUM_SORTS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+          </select>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {loading && <AlbumListSkeleton />}
+          {!loading && error && <SongListError text="Your albums could not be loaded." detail={error} onRetry={refreshAlbums} />}
+          {noAlbumsAtAll && (
+            <div className="md:col-span-2 xl:col-span-3">
+              <EmptyPanel text="You have not created any albums yet." />
+              <button type="button" className="mini-primary mt-3" onClick={() => setDraft((current) => ({ ...current, title: "New album" }))}>Create your first album</button>
+            </div>
+          )}
+          {noSearchResults && <EmptyPanel text="No albums match your search." />}
+          {noFilteredResults && <EmptyPanel text="No albums currently have this status." />}
+          {!loading && !error && response.albums.map((album) => (
+            <AlbumCardEditor
+              key={album.id}
+              album={album}
+              artist={artist}
+              attachedTracks={tracks.filter((track) => track.album_id === album.id)}
+              onSaved={replaceAlbumInState}
+              onDeleted={removeAlbumFromState}
+              onRefresh={refreshAlbums}
+            />
+          ))}
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-muted-foreground">
+            Page {response.pagination.page} of {response.pagination.totalPages} · {formatMetricNumber(response.pagination.totalItems)} result{response.pagination.totalItems === 1 ? "" : "s"}
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="mini-button"
+              disabled={loading || response.pagination.page <= 1}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+            >
+              <ChevronLeft className="h-3.5 w-3.5" /> Previous
+            </button>
+            <button
+              type="button"
+              className="mini-button"
+              disabled={loading || !response.pagination.hasNextPage}
+              onClick={() => setPage((current) => Math.min(response.pagination.totalPages, current + 1))}
+            >
+              Next <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function AlbumCardEditor({
+  album,
+  artist,
+  attachedTracks,
+  onSaved,
+  onDeleted,
+  onRefresh,
+}: {
+  album: AlbumListItem;
+  artist: ArtistRow;
+  attachedTracks: TrackRow[];
+  onSaved: (album: AlbumListItem) => void;
+  onDeleted: (albumId: string) => void;
+  onRefresh: () => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [title, setTitle] = useState(album.title);
+  const [releaseDate, setReleaseDate] = useState(album.releaseDate || minimumScheduleDate());
+  const [albumType, setAlbumType] = useState(album.albumType || "album");
+  const [coverUrl, setCoverUrl] = useState(album.resolvedCoverUrl);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const isDraft = album.status === "draft" || album.status === "scheduled";
+
+  useEffect(() => {
+    setTitle(album.title);
+    setReleaseDate(album.releaseDate || minimumScheduleDate());
+    setAlbumType(album.albumType || "album");
+    setCoverUrl(album.resolvedCoverUrl);
+  }, [album.albumType, album.releaseDate, album.resolvedCoverUrl, album.title]);
+
+  async function saveAlbum() {
+    const cleanTitle = title.trim();
+    if (!cleanTitle) {
+      toast.error("Album title is required");
+      return;
+    }
+    if (!isValidDateInput(releaseDate)) {
+      toast.error("Choose a valid release date");
+      return;
+    }
+    setSaving(true);
+    try {
+      const patch = {
+        title: cleanTitle,
+        release_date: releaseDate,
+        album_type: albumType,
+        release_type: albumType,
+      };
+      const { error } = await withTimeout<DbResult>(
+        (supabase as any).from("albums").update(patch).eq("id", album.id).eq("artist_id", artist.id),
+        "Album save",
+        10000,
+      );
+      if (error) throw error;
+      onSaved(validateAlbumListItem({
+        ...album,
+        title: cleanTitle,
+        albumType,
+        releaseDate,
+        status: deriveAlbumStatus({ ...album, title: cleanTitle, release_date: releaseDate, album_type: albumType, cover_url: album.coverUrl }),
+      }));
+      toast.success("Album saved");
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not save this album."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function uploadArtwork(file: File) {
+    try {
+      validateImageFile(file);
+      setUploading(true);
+      const ext = fileExtension(file.name, file.type);
+      const path = `${artist.user_id}/album-${album.id}-${Date.now()}.${ext}`;
+      const { error: uploadError } = await withTimeout<DbResult>(
+        supabase.storage.from("covers").upload(path, file, { cacheControl: "3600", upsert: true }),
+        "Album artwork upload",
+        15000,
+      );
+      if (uploadError) throw uploadError;
+      const publicUrl = resolveArtworkUrl(path, "covers");
+      const { error } = await withTimeout<DbResult>(
+        (supabase as any).from("albums").update({ cover_url: path }).eq("id", album.id).eq("artist_id", artist.id),
+        "Album artwork save",
+        10000,
+      );
+      if (error) throw error;
+      setCoverUrl(publicUrl);
+      onSaved(validateAlbumListItem({
+        ...album,
+        coverUrl: path,
+        resolvedCoverUrl: publicUrl,
+        status: deriveAlbumStatus({ ...album, cover_url: path, release_date: releaseDate }),
+      }));
+      toast.success("Album artwork updated");
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not upload this album cover."));
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  async function publishAlbum() {
+    if (!album.coverUrl) {
+      toast.error("Add album artwork before publishing.");
+      return;
+    }
+    if (!attachedTracks.length) {
+      toast.error("Add at least one song before publishing.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const now = new Date();
+      const patch = schedulePatch(now);
+      const { error } = await withTimeout<DbResult>(
+        (supabase as any).from("albums").update(patch).eq("id", album.id).eq("artist_id", artist.id),
+        "Album publish",
+        10000,
+      );
+      if (error) throw error;
+      onSaved(validateAlbumListItem({
+        ...album,
+        releaseDate: patch.release_date,
+        releaseAt: patch.release_at,
+        status: "published",
+      }));
+      onRefresh();
+      toast.success("Album published");
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not publish this album."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteDraft() {
+    if (!isDraft) {
+      toast.error("Only unpublished draft or scheduled albums can be deleted here.");
+      return;
+    }
+    if (!window.confirm(`Delete "${album.title}"? This cannot be undone.`)) return;
+    setSaving(true);
+    try {
+      const { error } = await withTimeout<DbResult>(
+        (supabase as any).from("albums").delete().eq("id", album.id).eq("artist_id", artist.id),
+        "Album delete",
+        10000,
+      );
+      if (error) throw error;
+      onDeleted(album.id);
+      toast.success("Album draft deleted");
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not delete this album."));
+    } finally {
+      setSaving(false);
     }
   }
 
   return (
-    <Panel title="My Albums" icon={<Album className="h-4 w-4" />}>
-      <div className="rounded-xl bg-background/45 p-3 hairline">
-        <div className="grid gap-3 md:grid-cols-[1fr_1fr_160px_130px_auto] md:items-end">
-          <Field label="Album title"><input className="input-lite" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} /></Field>
-          <Field label="Cover URL"><input className="input-lite" value={draft.cover_url} onChange={(e) => setDraft({ ...draft, cover_url: e.target.value })} /></Field>
-          <Field label="Release date"><input className="input-lite" type="date" value={draft.release_date} onChange={(e) => setDraft({ ...draft, release_date: e.target.value })} /></Field>
-          <Field label="Type"><select className="input-lite" value={draft.album_type} onChange={(e) => setDraft({ ...draft, album_type: e.target.value })}><option value="album">Album</option><option value="ep">EP</option><option value="single">Single</option></select></Field>
-          <button className="mini-primary justify-center" onClick={createAlbum}><Plus className="h-3.5 w-3.5" /> Create</button>
+    <div className="rounded-xl bg-background/45 p-3 hairline">
+      <div className="relative overflow-hidden rounded-lg">
+        <DashboardArtwork src={coverUrl} seed={album.id} alt={`${album.title} album cover`} className="aspect-square w-full" />
+        <button type="button" className="mini-button absolute right-2 top-2 bg-background/80" disabled={uploading} onClick={() => fileRef.current?.click()}>
+          <Camera className="h-3.5 w-3.5" /> {uploading ? "Uploading" : "Cover"}
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) uploadArtwork(file);
+          }}
+        />
+      </div>
+      <div className="mt-3 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="truncate font-semibold">{album.title}</div>
+            <div className="text-xs text-muted-foreground">{pretty(album.albumType)} · {album.releaseDate ? safeDashboardDate(album.releaseDate) : "No date"}</div>
+          </div>
+          <StatusPill label={pretty(album.status)} />
+        </div>
+        <div className="grid gap-2">
+          <Field label="Album title"><input className="input-lite" value={title} onChange={(event) => setTitle(event.target.value)} /></Field>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Field label="Release date"><input className="input-lite" type="date" value={releaseDate} onChange={(event) => setReleaseDate(event.target.value)} /></Field>
+            <Field label="Type"><select className="input-lite" value={albumType} onChange={(event) => setAlbumType(event.target.value)}><option value="album">Album</option><option value="ep">EP</option><option value="mixtape">Mixtape</option></select></Field>
+          </div>
+        </div>
+        <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+          <span>{formatMetricNumber(album.trackCount)} tracks</span>
+          <span>{formatMetricNumber(album.totalPlays)} plays</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link to="/albums/$id" params={{ id: album.id }} className="mini-button">Open</Link>
+          <button type="button" className="mini-button" disabled={saving || uploading} onClick={saveAlbum}><Save className="h-3.5 w-3.5" /> {saving ? "Saving" : "Save"}</button>
+          <button type="button" className="mini-button" disabled={saving || uploading || album.status === "published"} onClick={publishAlbum}>Publish</button>
+          <button type="button" className="mini-button" disabled title="Song reordering will be available after album track editor backend is connected.">Reorder tracks</button>
+          {isDraft && <button type="button" className="mini-danger" disabled={saving || uploading} onClick={deleteDraft}><Trash2 className="h-3.5 w-3.5" /> Delete draft</button>}
         </div>
       </div>
+    </div>
+  );
+}
+
+function AlbumListSkeleton() {
+  return (
+    <>
+      {Array.from({ length: 3 }).map((_, index) => (
+        <div key={index} className="rounded-xl bg-background/45 p-3 hairline">
+          <div className="aspect-square rounded-lg bg-surface-elevated" />
+          <div className="mt-3 space-y-2">
+            <div className="h-4 w-2/3 rounded bg-surface-elevated" />
+            <div className="h-3 w-1/2 rounded bg-surface-elevated" />
+            <div className="h-9 rounded bg-surface-elevated" />
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
+function StandaloneAlbumsList({ albums, tracks }: { albums: AlbumRow[]; tracks: TrackRow[] }) {
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<AlbumFilter>("all");
+  const [page, setPage] = useState(1);
+  const stats = useMemo(() => {
+    const next = new Map<string, { trackCount: number; totalPlays: number }>();
+    for (const track of tracks) {
+      if (!track.album_id) continue;
+      const current = next.get(track.album_id) ?? { trackCount: 0, totalPlays: 0 };
+      current.trackCount += 1;
+      current.totalPlays += safeNumber(track.plays_count);
+      next.set(track.album_id, current);
+    }
+    return next;
+  }, [tracks]);
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return albums
+      .map((album) => toAlbumListItem(album, stats.get(album.id)))
+      .filter((album) => !term || album.title.toLowerCase().includes(term))
+      .filter((album) => filter === "all" || album.status === filter);
+  }, [albums, filter, search, stats]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ALBUM_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const visibleAlbums = filtered.slice((safePage - 1) * ALBUM_PAGE_SIZE, safePage * ALBUM_PAGE_SIZE);
+
+  return (
+    <Panel title="My Albums" icon={<Album className="h-4 w-4" />}>
+      <div className="grid gap-3 md:grid-cols-[1fr_200px]">
+        <label className="relative block">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input className="input-lite pl-9" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search albums" />
+        </label>
+        <select className="input-lite" value={filter} onChange={(event) => { setFilter(event.target.value as AlbumFilter); setPage(1); }}>
+          {ALBUM_FILTERS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </select>
+      </div>
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {albums.length === 0 && <EmptyPanel text="No albums yet. Create an album, then add uploaded songs to it from the song metadata tools." />}
-        {albums.map((album) => (
-          <EditableAlbumEditor
-            key={album.id}
-            album={album}
-            artistId={artist.id}
-            attachedCount={tracks.filter((track) => track.album_id === album.id).length}
-            onSaved={(saved) => setAlbums(albums.map((item) => item.id === saved.id ? saved : item))}
-          />
+        {albums.length === 0 && <EmptyPanel text="You have not created any albums yet." />}
+        {albums.length > 0 && visibleAlbums.length === 0 && <EmptyPanel text={search ? "No albums match your search." : "No albums currently have this status."} />}
+        {visibleAlbums.map((album) => (
+          <div key={album.id} className="rounded-xl bg-background/45 p-3 hairline">
+            <DashboardArtwork src={album.resolvedCoverUrl} seed={album.id} alt={`${album.title} album cover`} className="aspect-square w-full rounded-lg" />
+            <div className="mt-3 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="truncate font-semibold">{album.title}</div>
+                <div className="text-xs text-muted-foreground">{pretty(album.albumType)} · {formatMetricNumber(album.trackCount)} tracks</div>
+              </div>
+              <StatusPill label={pretty(album.status)} />
+            </div>
+          </div>
         ))}
+      </div>
+      <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-sm text-muted-foreground">Page {safePage} of {totalPages} · {formatMetricNumber(filtered.length)} result{filtered.length === 1 ? "" : "s"}</div>
+        <div className="flex gap-2">
+          <button type="button" className="mini-button" disabled={safePage <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}><ChevronLeft className="h-3.5 w-3.5" /> Previous</button>
+          <button type="button" className="mini-button" disabled={safePage >= totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>Next <ChevronRight className="h-3.5 w-3.5" /></button>
+        </div>
       </div>
     </Panel>
   );
@@ -1611,7 +2360,7 @@ function StandaloneArtistToolsDataSection({ active, isAdmin }: { active: Dashboa
       {message && <EmptyPanel text={message} />}
       {active === "overview" && <OverviewSection overview={overview} />}
       {active === "songs" && <StandaloneSongsSection tracks={data.tracks} />}
-      {active === "albums" && <StandaloneAlbumsSection albums={data.albums} setAlbums={(albums) => setData((current) => ({ ...current, albums }))} tracks={data.tracks} />}
+      {active === "albums" && <StandaloneAlbumsList albums={data.albums} tracks={data.tracks} />}
       {active === "sales" && <StandaloneSalesSection purchases={data.purchases} setPurchases={(purchases) => setData((current) => ({ ...current, purchases }))} tracks={data.tracks} />}
       {active === "gifts" && <StandaloneGiftsSection motivations={data.motivations} stats={stats} />}
       {active === "analytics" && <AnalyticsSection tracks={data.tracks} albums={data.albums} countries={data.countries} stats={stats} />}
@@ -1742,99 +2491,6 @@ function StandaloneSongsSection({ tracks }: { tracks: TrackRow[] }) {
         </div>
       </div>
     </Panel>
-  );
-}
-
-function StandaloneAlbumsSection({ albums, setAlbums, tracks }: { albums: AlbumRow[]; setAlbums: (albums: AlbumRow[]) => void; tracks: TrackRow[] }) {
-  return (
-    <Panel title="My Albums" icon={<Album className="h-4 w-4" />}>
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {albums.length === 0 && <EmptyPanel text="No albums were found yet. Album and EP releases will appear here." />}
-        {albums.map((album) => (
-          <EditableAlbumEditor
-            key={album.id}
-            album={album}
-            attachedCount={tracks.filter((track) => track.album_id === album.id).length}
-            onSaved={(saved) => setAlbums(albums.map((item) => item.id === saved.id ? saved : item))}
-          />
-        ))}
-      </div>
-    </Panel>
-  );
-}
-
-function EditableAlbumEditor({
-  album,
-  artistId,
-  attachedCount,
-  onSaved,
-}: {
-  album: AlbumRow;
-  artistId?: string;
-  attachedCount: number;
-  onSaved: (album: AlbumRow) => void;
-}) {
-  const titleRef = useRef<HTMLInputElement>(null);
-  const releaseDateRef = useRef<HTMLInputElement>(null);
-  const [saving, setSaving] = useState(false);
-
-  async function saveAlbum() {
-    const title = titleRef.current?.value.trim() ?? "";
-    if (!title) {
-      toast.error("Album title is required");
-      return;
-    }
-    const nextAlbum: AlbumRow = {
-      ...album,
-      title,
-      release_date: releaseDateRef.current?.value || album.release_date,
-    };
-    setSaving(true);
-    try {
-      let request = (supabase as any)
-        .from("albums")
-        .update({
-          title: nextAlbum.title,
-          cover_url: nextAlbum.cover_url || null,
-          release_date: nextAlbum.release_date,
-          album_type: nextAlbum.album_type,
-        })
-        .eq("id", nextAlbum.id);
-      if (artistId) request = request.eq("artist_id", artistId);
-      const { error } = await withTimeout<DbResult>(request, "Album save", 10000);
-      if (error) throw error;
-      onSaved(nextAlbum);
-      toast.success("Album saved");
-    } catch (error) {
-      toast.error(errorMessage(error, "Could not save this album."));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="rounded-xl bg-background/45 p-3 hairline">
-      <Cover src={album.cover_url} seed={album.id} className="aspect-square w-full rounded-lg" shape="rounded" glow />
-      <div className="mt-3 grid gap-2">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="truncate font-semibold">{album.title}</div>
-            <div className="text-xs text-muted-foreground">{pretty(album.album_type)} - {new Date(album.release_date).toLocaleDateString()}</div>
-          </div>
-          <StatusPill label={album.release_date > new Date().toISOString().slice(0, 10) ? "Draft" : "Published"} />
-        </div>
-        <Field label="Album title">
-          <input ref={titleRef} className="input-lite" defaultValue={album.title} placeholder="Album title" />
-        </Field>
-        <Field label="Release date">
-          <input ref={releaseDateRef} className="input-lite" type="date" defaultValue={album.release_date} />
-        </Field>
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-xs text-muted-foreground">{attachedCount} songs attached</span>
-          <button className="mini-button" type="button" disabled={saving} onClick={saveAlbum}><Save className="h-3.5 w-3.5" /> {saving ? "Saving" : "Save"}</button>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -2179,6 +2835,23 @@ function RecentSongRow({ song }: { song: RecentSong }) {
   );
 }
 
+function DashboardArtwork({ src, seed, alt, className = "" }: { src?: string | null; seed: string; alt: string; className?: string }) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => setBroken(false), [src]);
+  if (!src || broken) {
+    return <Cover src={null} seed={seed} shape="rounded" className={className} glow />;
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      loading="lazy"
+      className={`rounded-lg object-cover ${className}`}
+      onError={() => setBroken(true)}
+    />
+  );
+}
+
 function SectionError({ text }: { text: string }) {
   return (
     <div className="rounded-lg bg-background/45 p-4 text-sm text-muted-foreground hairline">
@@ -2480,6 +3153,43 @@ function formatCurrency(value: unknown, currency = "USD") {
   } catch {
     return `${currency} ${safeNumber(value).toLocaleString()}`;
   }
+}
+
+function resolveArtworkUrl(value: string | null | undefined, bucket: "covers" | "avatars" | "banners") {
+  const clean = String(value ?? "").trim();
+  if (!clean) return null;
+  if (isAllowedRemoteImageUrl(clean)) return clean;
+  const publicMarker = `/storage/v1/object/public/${bucket}/`;
+  const markerIndex = clean.indexOf(publicMarker);
+  const rawPath = markerIndex >= 0 ? clean.slice(markerIndex + publicMarker.length) : clean.replace(/^\/+/, "").replace(new RegExp(`^${bucket}/`), "");
+  if (!rawPath || rawPath.includes("..")) return null;
+  return supabase.storage.from(bucket).getPublicUrl(rawPath).data.publicUrl;
+}
+
+function isAllowedRemoteImageUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || (url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1"));
+  } catch {
+    return false;
+  }
+}
+
+function validateImageFile(file: File) {
+  if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+    throw new Error("Use a JPG, PNG, or WebP image.");
+  }
+  if (file.size > MAX_IMAGE_BYTES) {
+    throw new Error("Image must be 5MB or smaller.");
+  }
+}
+
+function fileExtension(name: string, type: string) {
+  const ext = name.split(".").pop()?.toLowerCase();
+  if (ext && ["jpg", "jpeg", "png", "webp"].includes(ext)) return ext === "jpeg" ? "jpg" : ext;
+  if (type === "image/png") return "png";
+  if (type === "image/webp") return "webp";
+  return "jpg";
 }
 
 function safeDashboardDate(value: string, options?: Intl.DateTimeFormatOptions) {
