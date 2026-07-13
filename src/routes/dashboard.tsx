@@ -156,6 +156,48 @@ type StandaloneToolData = {
   countries: Array<{ country: string; plays: number }>;
 };
 
+type DashboardOverview = {
+  artistProfileStatus: "missing" | "incomplete" | "complete";
+  metrics: {
+    totalSongs: number;
+    publishedSongs: number;
+    draftSongs: number;
+    totalAlbums: number;
+    totalPlays: number;
+    totalListeners: number;
+    totalEarnings: number;
+    availableBalance: number;
+    unreadMessages: number;
+    activeContracts: number;
+    openAlerts: number;
+  };
+  recentSongs: RecentSong[];
+  recentActivity: DashboardActivity[];
+  playTrend: ChartPoint[];
+  earningsTrend: ChartPoint[];
+  sectionErrors: Partial<Record<"analytics" | "earnings" | "activity" | "alerts", string>>;
+};
+
+type RecentSong = {
+  id: string;
+  title: string;
+  cover_url: string | null;
+  status: string;
+  release_date: string;
+  plays: number;
+};
+
+type DashboardActivity = {
+  id: string;
+  text: string;
+  time: string;
+};
+
+type ChartPoint = {
+  label: string;
+  value: number;
+};
+
 const MENU: Array<{ id: DashboardTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: "overview", label: "Overview", icon: BarChart3 },
   { id: "songs", label: "My Songs", icon: Music2 },
@@ -171,7 +213,8 @@ const MENU: Array<{ id: DashboardTab; label: string; icon: React.ComponentType<{
 
 const GENRES = ["afrobeats", "amapiano", "hiphop", "zed_hiphop", "gospel", "rnb", "dancehall", "pop", "afropop", "afrofusion", "kalindula", "traditional", "world", "cinematic"];
 const PAYMENT_METHODS = ["Airtel Money", "MTN Mobile Money", "Visa", "Payoneer"];
-const ARTIST_SELECT = "id, user_id, display_name, slug, bio, country, avatar_url, banner_url, monthly_listeners, contact_email, mobile_money_number, mobile_money_network, public_phone, preferred_payment_method, instagram_url, facebook_url, twitter_url, tiktok_url, youtube_url";
+const ARTIST_BASE_SELECT = "id, user_id, display_name, slug, bio, country, avatar_url, banner_url, monthly_listeners, contact_email, mobile_money_number, mobile_money_network, instagram_url, facebook_url, twitter_url, tiktok_url, youtube_url";
+const ARTIST_SELECT = `${ARTIST_BASE_SELECT}, public_phone, preferred_payment_method`;
 const TRACK_SELECT = "id, title, cover_url, audio_url, duration_seconds, genre, mood, ai_tool, lyrics, explicit, plays_count, release_date, album_id, position_in_album, artwork_shape";
 const TRACK_SELECT_WITH_RELEASE_AT = `${TRACK_SELECT}, release_at`;
 const ALBUM_SELECT = "id, title, cover_url, release_date, album_type, producer, ai_tool";
@@ -222,30 +265,10 @@ function ArtistDashboardPage() {
       setLoadError(null);
 
       try {
-        const { data: artistData, error: artistError } = await withTimeout<DbResult>(
-          (supabase as any)
-            .from("artists")
-            .select(ARTIST_SELECT)
-            .eq("user_id", user.id)
-            .maybeSingle(),
-          "Artist profile",
-        );
-
-        if (artistError) throw artistError;
-        let artistRow = artistData as ArtistRow | null;
+        let artistRow = await loadArtistProfile({ userId: user.id });
 
         if (!artistRow && isAdmin) {
-          const { data: adminArtist, error: adminArtistError } = await withTimeout<DbResult>(
-            (supabase as any)
-              .from("artists")
-              .select(ARTIST_SELECT)
-              .order("display_name", { ascending: true })
-              .limit(1)
-              .maybeSingle(),
-            "Admin artist fallback",
-          );
-          if (adminArtistError) throw adminArtistError;
-          artistRow = adminArtist as ArtistRow | null;
+          artistRow = await loadArtistProfile({ adminFallback: true });
           if (artistRow) {
             setWarning(`Admin view: managing ${artistRow.display_name}.`);
           }
@@ -347,18 +370,11 @@ function ArtistDashboardPage() {
   }, [artist, trackIdsKey]);
 
   const stats = useMemo(() => buildStats(tracks, albums, purchases, motivations, notifications), [tracks, albums, purchases, motivations, notifications]);
-  const upcoming = useMemo<ScheduledReleaseItem[]>(() => {
-    const now = Date.now();
-    return [
-      ...tracks
-        .filter((track) => releaseTime(track) > now)
-        .map((track) => ({ kind: "track" as const, type: "Song" as const, id: track.id, title: track.title, release_date: track.release_date, release_at: track.release_at, cover_url: track.cover_url })),
-      ...albums
-        .filter((album) => releaseTime(album) > now)
-        .map((album) => ({ kind: "album" as const, type: "Album" as const, id: album.id, title: album.title, release_date: album.release_date, release_at: album.release_at, cover_url: album.cover_url })),
-    ].sort((a, b) => releaseTime(a) - releaseTime(b));
-  }, [albums, tracks]);
   const releaseEditorItems = useMemo(() => buildScheduleItems(tracks, albums), [albums, tracks]);
+  const overview = useMemo(
+    () => buildDashboardOverview({ artist, tracks, albums, purchases, motivations, notifications, countries }),
+    [artist, tracks, albums, purchases, motivations, notifications, countries],
+  );
 
   if (authPending && active === "watch") {
     return (
@@ -419,7 +435,17 @@ function ArtistDashboardPage() {
     return (
       <AppShell>
         <DashboardFrame active={active}>
-          {isAdmin ? <StandaloneArtistToolsSection active={active} isAdmin={isAdmin} /> : <ArtistSetupNotice />}
+          {isAdmin ? (
+            <StandaloneArtistToolsSection active={active} isAdmin={isAdmin} />
+          ) : active === "overview" ? (
+            <OverviewSection overview={overview} />
+          ) : active === "profile" ? (
+            <StandaloneProfileSection />
+          ) : active === "settings" ? (
+            <StandaloneSettingsSection />
+          ) : (
+            <ArtistSetupNotice />
+          )}
         </DashboardFrame>
       </AppShell>
     );
@@ -429,7 +455,7 @@ function ArtistDashboardPage() {
     <AppShell>
       <DashboardFrame active={active}>
         <ArtistHeader artist={artist} warning={warning} />
-        {active === "overview" && <OverviewSection stats={stats} tracks={tracks} purchases={purchases} motivations={motivations} notifications={notifications} upcoming={upcoming} />}
+        {active === "overview" && <OverviewSection overview={overview} />}
         {active === "songs" && <SongsSection artist={artist} tracks={tracks} setTracks={setTracks} />}
         {active === "albums" && <AlbumsSection artist={artist} albums={albums} setAlbums={setAlbums} tracks={tracks} />}
         {active === "watch" && <WatchOutSection artist={artist} upcoming={releaseEditorItems} tracks={tracks} albums={albums} setTracks={setTracks} setAlbums={setAlbums} />}
@@ -459,6 +485,55 @@ function countCountries(rows: Array<{ country?: string | null }>) {
     .map(([country, plays]) => ({ country, plays }))
     .sort((a, b) => b.plays - a.plays)
     .slice(0, 8);
+}
+
+async function loadArtistProfile({ userId, adminFallback = false }: { userId?: string; adminFallback?: boolean }): Promise<ArtistRow | null> {
+  const run = (select: string) => {
+    let request = (supabase as any).from("artists").select(select);
+    if (adminFallback) {
+      request = request.order("display_name", { ascending: true }).limit(1);
+    } else {
+      request = request.eq("user_id", userId);
+    }
+    return request.maybeSingle();
+  };
+
+  let { data, error } = await withTimeout<DbResult>(run(ARTIST_SELECT), adminFallback ? "Admin artist fallback" : "Artist profile");
+
+  if (error && isOptionalArtistColumnError(error)) {
+    console.warn("[dashboard] optional artist profile columns unavailable; retrying with base artist columns", error);
+    ({ data, error } = await withTimeout<DbResult>(run(ARTIST_BASE_SELECT), adminFallback ? "Admin artist fallback base" : "Artist profile base"));
+  }
+
+  if (error) throw error;
+  return normalizeArtistRow(data);
+}
+
+function normalizeArtistRow(row: unknown): ArtistRow | null {
+  if (!row || typeof row !== "object") return null;
+  const artist = row as Partial<ArtistRow>;
+  if (!artist.id || !artist.user_id || !artist.display_name || !artist.slug) return null;
+  return {
+    id: artist.id,
+    user_id: artist.user_id,
+    display_name: artist.display_name,
+    slug: artist.slug,
+    bio: artist.bio ?? null,
+    country: artist.country ?? null,
+    avatar_url: artist.avatar_url ?? null,
+    banner_url: artist.banner_url ?? null,
+    monthly_listeners: safeNumber(artist.monthly_listeners),
+    contact_email: artist.contact_email ?? null,
+    mobile_money_number: artist.mobile_money_number ?? null,
+    mobile_money_network: artist.mobile_money_network ?? null,
+    public_phone: artist.public_phone ?? null,
+    preferred_payment_method: artist.preferred_payment_method ?? null,
+    instagram_url: artist.instagram_url ?? null,
+    facebook_url: artist.facebook_url ?? null,
+    twitter_url: artist.twitter_url ?? null,
+    tiktok_url: artist.tiktok_url ?? null,
+    youtube_url: artist.youtube_url ?? null,
+  };
 }
 
 async function loadArtistTracks(artistId: string): Promise<TrackRow[]> {
@@ -560,6 +635,129 @@ function buildStats(tracks: TrackRow[], albums: AlbumRow[], purchases: PurchaseR
   };
 }
 
+function buildDashboardOverview({
+  artist,
+  tracks,
+  albums,
+  purchases,
+  motivations,
+  notifications,
+  countries,
+}: {
+  artist: ArtistRow | null;
+  tracks: TrackRow[];
+  albums: AlbumRow[];
+  purchases: PurchaseRow[];
+  motivations: MotivationRow[];
+  notifications: NotificationRow[];
+  countries: Array<{ country: string; plays: number }>;
+}): DashboardOverview {
+  const now = Date.now();
+  const publishedSongs = tracks.filter((track) => releaseTime(track) <= now && Boolean(track.audio_url)).length;
+  const draftSongs = Math.max(0, tracks.length - publishedSongs);
+  const closedPurchases = purchases.filter((row) => row.status === "closed");
+  const totalEarnings = closedPurchases.reduce((sum, row) => sum + safeNumber(row.proposed_price), 0);
+  const unreadMessages = notifications.filter((row) => !row.read_at).length;
+  const activeContracts = purchases.filter((row) => row.status !== "closed").length;
+  const missingMetadata = tracks.filter((track) => !track.title?.trim() || !track.genre || !track.ai_tool || !track.cover_url || !track.audio_url).length;
+  const openAlerts = missingMetadata;
+  const artistProfileStatus = artist ? (artist.display_name && artist.slug ? "complete" : "incomplete") : "missing";
+  const recentSongs = [...tracks]
+    .sort((a, b) => releaseTime(b) - releaseTime(a))
+    .slice(0, 5)
+    .map((track) => ({
+      id: track.id,
+      title: track.title || "Untitled song",
+      cover_url: track.cover_url,
+      status: trackStatus(track),
+      release_date: track.release_date,
+      plays: safeNumber(track.plays_count),
+    }));
+  const recentActivity = [
+    ...recentSongs.map((song) => ({ id: `song-${song.id}`, text: `Song uploaded: ${song.title}`, time: song.release_date })),
+    ...albums.slice(0, 3).map((album) => ({ id: `album-${album.id}`, text: `Album created: ${album.title}`, time: album.release_date })),
+    ...purchases.slice(0, 4).map((row) => ({ id: `purchase-${row.id}`, text: `${row.buyer_name || "A buyer"} requested rights for ${trackTitle(tracks, row.track_id)}.`, time: row.created_at })),
+    ...motivations.slice(0, 4).map((row) => ({ id: `gift-${row.id}`, text: "A fan sent motivation to your artist profile.", time: row.created_at })),
+    ...notifications.slice(0, 4).map((row) => ({ id: `notice-${row.id}`, text: row.title || "Platform notice", time: row.created_at })),
+  ]
+    .filter((item) => isValidDateInput(item.time))
+    .sort((a, b) => releaseTimeFromValue(b.time) - releaseTimeFromValue(a.time))
+    .slice(0, 8);
+
+  return validateDashboardOverview({
+    artistProfileStatus,
+    metrics: {
+      totalSongs: tracks.length,
+      publishedSongs,
+      draftSongs,
+      totalAlbums: albums.length,
+      totalPlays: tracks.reduce((sum, track) => sum + safeNumber(track.plays_count), 0),
+      totalListeners: countries.reduce((sum, row) => sum + safeNumber(row.plays), 0),
+      totalEarnings,
+      availableBalance: totalEarnings,
+      unreadMessages,
+      activeContracts,
+      openAlerts,
+    },
+    recentSongs,
+    recentActivity,
+    playTrend: buildTrackTrend(tracks),
+    earningsTrend: buildEarningsTrend(closedPurchases),
+    sectionErrors: {},
+  });
+}
+
+function validateDashboardOverview(overview: DashboardOverview): DashboardOverview {
+  return {
+    artistProfileStatus: overview.artistProfileStatus,
+    metrics: {
+      totalSongs: safeNumber(overview.metrics.totalSongs),
+      publishedSongs: safeNumber(overview.metrics.publishedSongs),
+      draftSongs: safeNumber(overview.metrics.draftSongs),
+      totalAlbums: safeNumber(overview.metrics.totalAlbums),
+      totalPlays: safeNumber(overview.metrics.totalPlays),
+      totalListeners: safeNumber(overview.metrics.totalListeners),
+      totalEarnings: safeNumber(overview.metrics.totalEarnings),
+      availableBalance: safeNumber(overview.metrics.availableBalance),
+      unreadMessages: safeNumber(overview.metrics.unreadMessages),
+      activeContracts: safeNumber(overview.metrics.activeContracts),
+      openAlerts: safeNumber(overview.metrics.openAlerts),
+    },
+    recentSongs: overview.recentSongs.map((song) => ({
+      ...song,
+      title: song.title || "Untitled song",
+      status: song.status || "Draft",
+      release_date: isValidDateInput(song.release_date) ? song.release_date : new Date(0).toISOString(),
+      plays: safeNumber(song.plays),
+    })),
+    recentActivity: overview.recentActivity.filter((item) => item.text && isValidDateInput(item.time)),
+    playTrend: overview.playTrend.map((point) => ({ label: point.label || "Now", value: safeNumber(point.value) })),
+    earningsTrend: overview.earningsTrend.map((point) => ({ label: point.label || "Now", value: safeNumber(point.value) })),
+    sectionErrors: overview.sectionErrors ?? {},
+  };
+}
+
+function buildTrackTrend(tracks: TrackRow[]): ChartPoint[] {
+  return [...tracks]
+    .sort((a, b) => releaseTime(a) - releaseTime(b))
+    .slice(-7)
+    .map((track) => ({
+      label: safeDashboardDate(track.release_date, { month: "short", day: "numeric" }),
+      value: safeNumber(track.plays_count),
+    }));
+}
+
+function buildEarningsTrend(purchases: PurchaseRow[]): ChartPoint[] {
+  return [...purchases]
+    .filter((row) => isValidDateInput(row.created_at))
+    .sort((a, b) => releaseTimeFromValue(a.created_at) - releaseTimeFromValue(b.created_at))
+    .slice(-7)
+    .map((row) => ({
+      label: safeDashboardDate(row.created_at, { month: "short", day: "numeric" }),
+      value: safeNumber(row.proposed_price),
+    }));
+}
+
 function DashboardFrame({ active, children }: { active: DashboardTab; children: React.ReactNode }) {
   return (
     <div className="grid gap-5 lg:grid-cols-[230px_1fr]">
@@ -631,49 +829,117 @@ function ArtistHeader({ artist, warning }: { artist: ArtistRow; warning: string 
   );
 }
 
-function OverviewSection({
-  stats,
-  tracks,
-  purchases,
-  motivations,
-  notifications,
-  upcoming,
-}: {
-  stats: ReturnType<typeof buildStats>;
-  tracks: TrackRow[];
-  purchases: PurchaseRow[];
-  motivations: MotivationRow[];
-  notifications: NotificationRow[];
-  upcoming: ScheduledReleaseItem[];
-}) {
-  const activity = [
-    ...purchases.slice(0, 3).map((row) => ({ id: `purchase-${row.id}`, text: `${row.buyer_name || "A buyer"} requested rights for ${trackTitle(tracks, row.track_id)}.`, time: row.created_at })),
-    ...motivations.slice(0, 3).map((row) => ({ id: `gift-${row.id}`, text: "A fan sent motivation to your artist profile.", time: row.created_at })),
-    ...notifications.slice(0, 4).map((row) => ({ id: `notice-${row.id}`, text: row.title, time: row.created_at })),
-  ].sort((a, b) => b.time.localeCompare(a.time)).slice(0, 6);
+function OverviewSection({ overview }: { overview: DashboardOverview }) {
+  const [range, setRange] = useState("30");
+  const metrics = overview.metrics;
+  const hasProfile = overview.artistProfileStatus === "complete";
+  const hasPlays = overview.playTrend.some((point) => point.value > 0);
 
   return (
     <>
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <Metric label="Songs uploaded" value={stats.songs} icon={Music2} />
-        <Metric label="Albums" value={stats.albums} icon={Album} />
-        <Metric label="Upcoming" value={stats.upcoming} icon={CalendarClock} />
-        <Metric label="Song plays" value={fmtCount(stats.plays)} icon={BarChart3} />
-        <Metric label="Gifts received" value={stats.gifts} icon={Gift} />
-        <Metric label="Purchase requests" value={stats.requests} icon={ShoppingBag} />
-        <Metric label="Songs sold" value={stats.sold} icon={CreditCard} />
-        <Metric label="Estimated earnings" value={`USD ${Number(stats.earnings).toLocaleString()}`} icon={CreditCard} />
-        <Metric label="Unread messages" value={stats.unread} icon={MessageSquare} />
-        <Metric label="Profile views" value={stats.profileViews ? fmtCount(stats.profileViews) : "Soon"} icon={Eye} />
+      <section className="rounded-xl bg-surface p-5 hairline">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold">Overview</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Track your music, audience, earnings and important activity.</p>
+          </div>
+          <div className="inline-flex rounded-full bg-background/50 p-1 hairline">
+            {["7", "30", "90"].map((days) => (
+              <button
+                key={days}
+                type="button"
+                onClick={() => setRange(days)}
+                className={`rounded-full px-3 py-1.5 text-xs transition ${range === days ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Last {days} days
+              </button>
+            ))}
+          </div>
+        </div>
+        {!hasProfile && (
+          <div className="mt-5 rounded-xl bg-background/45 p-4 hairline">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="text-sm font-semibold">Complete your artist profile</div>
+                <p className="mt-1 text-sm text-muted-foreground">Finish setting up your artist identity before publishing music and receiving detailed analytics.</p>
+              </div>
+              <Link to="/become-artist" className="inline-flex w-fit rounded-full bg-gradient-primary px-4 py-2 text-sm font-medium text-primary-foreground">Complete artist setup</Link>
+            </div>
+          </div>
+        )}
       </section>
-      <section className="grid gap-5 xl:grid-cols-[1.4fr_1fr]">
-        <Panel title="Recent activity" icon={<Bell className="h-4 w-4" />}>
-          {activity.length ? activity.map((item) => <ActivityItem key={item.id} text={item.text} time={item.time} />) : <EmptyPanel text="No recent activity yet. Plays, gifts, purchase requests, and platform notices will appear here." />}
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Total Plays" value={formatMetricNumber(metrics.totalPlays)} comparison="No previous data" icon={BarChart3} />
+        <MetricCard label="Unique Listeners" value={formatMetricNumber(metrics.totalListeners)} comparison="No previous data" icon={Eye} />
+        <MetricCard label="Total Songs" value={formatMetricNumber(metrics.totalSongs)} comparison="No previous data" icon={Music2} />
+        <MetricCard label="Total Earnings" value={formatCurrency(metrics.totalEarnings)} comparison="No previous data" icon={CreditCard} />
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <Metric label="Published Songs" value={formatMetricNumber(metrics.publishedSongs)} icon={Music2} />
+        <Metric label="Draft Songs" value={formatMetricNumber(metrics.draftSongs)} icon={CalendarClock} />
+        <Metric label="Albums" value={formatMetricNumber(metrics.totalAlbums)} icon={Album} />
+        <Metric label="Unread Messages" value={formatMetricNumber(metrics.unreadMessages)} icon={MessageSquare} />
+        <Metric label="Active Contracts" value={formatMetricNumber(metrics.activeContracts)} icon={ShoppingBag} />
+        <Metric label="Open Alerts" value={formatMetricNumber(metrics.openAlerts)} icon={ShieldAlert} />
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[1.4fr_0.9fr]">
+        <Panel title="Performance" icon={<BarChart3 className="h-4 w-4" />}>
+          {overview.sectionErrors.analytics ? (
+            <SectionError text="Analytics could not be loaded." />
+          ) : hasPlays ? (
+            <DashboardBarChart points={overview.playTrend} />
+          ) : (
+            <EmptyPanel text="No listening data yet. Your performance chart will appear after people begin playing your music." />
+          )}
         </Panel>
-        <Panel title="Next releases" icon={<CalendarClock className="h-4 w-4" />}>
-          {upcoming.length ? upcoming.slice(0, 5).map((item) => <ReleaseItem key={`${item.type}-${item.id}`} item={item} />) : <EmptyPanel text="No upcoming songs or albums scheduled." />}
+
+        <Panel title="Earnings Summary" icon={<CreditCard className="h-4 w-4" />}>
+          {overview.sectionErrors.earnings ? (
+            <SectionError text="Earnings could not be loaded." />
+          ) : (
+            <div className="grid gap-3">
+              <Metric label="Total earnings" value={formatCurrency(metrics.totalEarnings)} icon={CreditCard} />
+              <Metric label="Available balance" value={formatCurrency(metrics.availableBalance)} icon={CreditCard} />
+              <Metric label="Pending earnings" value={formatCurrency(Math.max(0, metrics.totalEarnings - metrics.availableBalance))} icon={CreditCard} />
+              {overview.earningsTrend.length ? <DashboardBarChart points={overview.earningsTrend} compact /> : <EmptyPanel text="Recent payment activity will appear here." />}
+            </div>
+          )}
         </Panel>
       </section>
+
+      <section className="grid gap-5 xl:grid-cols-2">
+        <Panel title="Recent Songs" icon={<Music2 className="h-4 w-4" />} action={<Link to="/upload" className="mini-primary"><Upload className="h-3.5 w-3.5" /> Upload</Link>}>
+          {overview.recentSongs.length ? (
+            <div className="space-y-2">
+              {overview.recentSongs.map((song) => <RecentSongRow key={song.id} song={song} />)}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <EmptyPanel text="You have not uploaded any songs yet." />
+              <Link to="/upload" className="mini-primary inline-flex">Upload your first song</Link>
+            </div>
+          )}
+        </Panel>
+
+        <Panel title="Recent Activity" icon={<Bell className="h-4 w-4" />}>
+          {overview.recentActivity.length ? (
+            <div className="space-y-2">{overview.recentActivity.map((item) => <ActivityItem key={item.id} text={item.text} time={item.time} />)}</div>
+          ) : (
+            <EmptyPanel text="Your recent activity will appear here." />
+          )}
+        </Panel>
+      </section>
+
+      <Panel title="Action Required" icon={<ShieldAlert className="h-4 w-4" />}>
+        {metrics.openAlerts > 0 ? (
+          <EmptyPanel text={`${formatMetricNumber(metrics.openAlerts)} item${metrics.openAlerts === 1 ? "" : "s"} need metadata, payment, contract, upload, or security review.`} />
+        ) : (
+          <EmptyPanel text="No urgent actions. Everything looks good." />
+        )}
+      </Panel>
     </>
   );
 }
@@ -888,12 +1154,12 @@ function StandaloneArtistToolsDataSection({ active, isAdmin }: { active: Dashboa
   }, [isAdmin]);
 
   const stats = buildStats(data.tracks, data.albums, data.purchases, data.motivations, data.notifications);
-  const scheduleItems = buildScheduleItems(data.tracks, data.albums);
+  const overview = buildDashboardOverview({ artist: null, tracks: data.tracks, albums: data.albums, purchases: data.purchases, motivations: data.motivations, notifications: data.notifications, countries: data.countries });
 
   return (
     <>
       {message && <EmptyPanel text={message} />}
-      {active === "overview" && <OverviewSection stats={stats} tracks={data.tracks} purchases={data.purchases} motivations={data.motivations} notifications={data.notifications} upcoming={scheduleItems} />}
+      {active === "overview" && <OverviewSection overview={overview} />}
       {active === "songs" && <StandaloneSongsSection tracks={data.tracks} setTracks={(tracks) => setData((current) => ({ ...current, tracks }))} />}
       {active === "albums" && <StandaloneAlbumsSection albums={data.albums} setAlbums={(albums) => setData((current) => ({ ...current, albums }))} tracks={data.tracks} />}
       {active === "sales" && <StandaloneSalesSection purchases={data.purchases} setPurchases={(purchases) => setData((current) => ({ ...current, purchases }))} tracks={data.tracks} />}
@@ -1504,6 +1770,58 @@ function Metric({ label, value, icon: Icon }: { label: string; value: string | n
   );
 }
 
+function MetricCard({ label, value, comparison, icon: Icon }: { label: string; value: string; comparison: string; icon: React.ComponentType<{ className?: string }> }) {
+  return (
+    <div className="rounded-xl bg-surface p-4 hairline">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{label}</div>
+        <Icon className="h-4 w-4 text-primary-glow" />
+      </div>
+      <div className="mt-3 text-3xl font-semibold tabular-nums">{value}</div>
+      <div className="mt-2 text-xs text-muted-foreground">{comparison}</div>
+    </div>
+  );
+}
+
+function DashboardBarChart({ points, compact = false }: { points: ChartPoint[]; compact?: boolean }) {
+  const max = Math.max(...points.map((point) => safeNumber(point.value)), 1);
+  return (
+    <div className={`flex items-end gap-2 rounded-lg bg-background/45 p-3 hairline ${compact ? "h-32" : "h-60"}`} aria-label="Dashboard chart">
+      {points.map((point, index) => {
+        const height = Math.max(8, Math.round((safeNumber(point.value) / max) * (compact ? 86 : 180)));
+        return (
+          <div key={`${point.label}-${index}`} className="flex min-w-0 flex-1 flex-col items-center gap-2">
+            <div className="w-full rounded-t-md bg-primary/70 shadow-glow-soft" style={{ height }} title={`${point.label}: ${formatMetricNumber(point.value)}`} />
+            <div className="max-w-full truncate text-[10px] text-muted-foreground">{point.label}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RecentSongRow({ song }: { song: RecentSong }) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg bg-background/45 p-3 hairline">
+      <Cover src={song.cover_url} seed={song.id} size={48} shape="rounded" />
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-semibold">{song.title}</div>
+        <div className="text-xs text-muted-foreground">{song.status} - {safeDashboardDate(song.release_date)} - {formatMetricNumber(song.plays)} plays</div>
+      </div>
+      <Link to="/tracks/$id" params={{ id: song.id }} className="mini-button">Open</Link>
+    </div>
+  );
+}
+
+function SectionError({ text }: { text: string }) {
+  return (
+    <div className="rounded-lg bg-background/45 p-4 text-sm text-muted-foreground hairline">
+      <div>{text}</div>
+      <button type="button" className="mini-button mt-3" onClick={() => toast.info("This section will retry the next time dashboard data refreshes.")}>Retry</button>
+    </div>
+  );
+}
+
 function Panel({ title, icon, action, children }: { title: string; icon: React.ReactNode; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="rounded-xl bg-surface p-4 hairline">
@@ -1540,6 +1858,15 @@ function DashboardStatusPanel({ title, text }: { title: string; text: string }) 
 
 function DashboardErrorPanel({ message, detail, onRetry }: { message: string; detail?: string; onRetry?: () => void }) {
   const reference = useMemo(() => `SHY-${Date.now().toString(36).toUpperCase()}`, []);
+  useEffect(() => {
+    console.error("[dashboard] visible error", {
+      reference,
+      route: "/dashboard",
+      timestamp: new Date().toISOString(),
+      message,
+      detail,
+    });
+  }, [detail, message, reference]);
   return (
     <section className="rounded-xl bg-surface p-5 hairline">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -1575,19 +1902,6 @@ function ActivityItem({ text, time }: { text: string; time: string }) {
     <div className="rounded-lg bg-background/45 p-3 hairline">
       <div className="text-sm">{text}</div>
       <div className="mt-1 text-[11px] text-muted-foreground">{new Date(time).toLocaleString()}</div>
-    </div>
-  );
-}
-
-function ReleaseItem({ item }: { item: ScheduledReleaseItem }) {
-  return (
-    <div className="flex items-center gap-3 rounded-lg bg-background/45 p-3 hairline">
-      <Cover src={item.cover_url} seed={item.id} size={44} shape="rounded" />
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{item.title}</div>
-        <div className="text-xs text-muted-foreground">{item.type} - {timeUntilRelease(item)}</div>
-      </div>
-      <StatusPill label={formatReleaseSchedule(item)} />
     </div>
   );
 }
@@ -1775,10 +2089,46 @@ function isMissingColumn(error: unknown, column: string) {
   return details.includes(column.toLowerCase()) && (details.includes("column") || details.includes("schema cache") || details.includes("pgrst204") || details.includes("could not find"));
 }
 
+function isOptionalArtistColumnError(error: unknown) {
+  return isMissingColumn(error, "public_phone") || isMissingColumn(error, "preferred_payment_method");
+}
+
 function errorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && error.message) return error.message;
   const message = typeof error === "object" && error && "message" in error ? String((error as { message?: unknown }).message) : "";
   return message || fallback;
+}
+
+function safeNumber(value: unknown) {
+  const number = Number(value ?? 0);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function formatMetricNumber(value: unknown) {
+  return fmtCount(safeNumber(value));
+}
+
+function formatCurrency(value: unknown, currency = "USD") {
+  try {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(safeNumber(value));
+  } catch {
+    return `${currency} ${safeNumber(value).toLocaleString()}`;
+  }
+}
+
+function safeDashboardDate(value: string, options?: Intl.DateTimeFormatOptions) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "No date";
+  return date.toLocaleDateString(undefined, options ?? { month: "short", day: "numeric", year: "numeric" });
+}
+
+function isValidDateInput(value: string) {
+  return Number.isFinite(new Date(value).getTime());
+}
+
+function releaseTimeFromValue(value: string) {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.getTime() : 0;
 }
 
 function pretty(value: string) {
