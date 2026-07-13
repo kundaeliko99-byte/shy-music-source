@@ -5,6 +5,8 @@ import {
   BarChart3,
   Bell,
   CalendarClock,
+  ChevronLeft,
+  ChevronRight,
   CreditCard,
   Eye,
   Gift,
@@ -13,10 +15,10 @@ import {
   Music2,
   Plus,
   Save,
+  Search,
   Settings,
   ShieldAlert,
   ShoppingBag,
-  Trash2,
   Upload,
   UserCog,
 } from "lucide-react";
@@ -198,6 +200,36 @@ type ChartPoint = {
   value: number;
 };
 
+type SongStatus = "draft" | "processing" | "scheduled" | "published" | "private" | "rejected";
+type SongFilter = "all" | SongStatus;
+type SongSort = "newest" | "oldest" | "title_az" | "most_played" | "highest_earnings";
+
+type SongListItem = {
+  id: string;
+  title: string;
+  artworkUrl: string | null;
+  audioUrl: string | null;
+  status: SongStatus;
+  releaseDate: string | null;
+  createdAt: string;
+  albumId: string | null;
+  albumTitle: string | null;
+  plays: number;
+  earnings: number;
+};
+
+type SongListResponse = {
+  songs: SongListItem[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    totalItems: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  };
+  summary: Record<SongStatus | "total", number>;
+};
+
 const MENU: Array<{ id: DashboardTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: "overview", label: "Overview", icon: BarChart3 },
   { id: "songs", label: "My Songs", icon: Music2 },
@@ -211,8 +243,24 @@ const MENU: Array<{ id: DashboardTab; label: string; icon: React.ComponentType<{
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
-const GENRES = ["afrobeats", "amapiano", "hiphop", "zed_hiphop", "gospel", "rnb", "dancehall", "pop", "afropop", "afrofusion", "kalindula", "traditional", "world", "cinematic"];
 const PAYMENT_METHODS = ["Airtel Money", "MTN Mobile Money", "Visa", "Payoneer"];
+const SONG_FILTERS: Array<{ value: SongFilter; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "draft", label: "Draft" },
+  { value: "processing", label: "Processing" },
+  { value: "published", label: "Published" },
+  { value: "scheduled", label: "Scheduled" },
+  { value: "private", label: "Private" },
+  { value: "rejected", label: "Rejected" },
+];
+const SONG_SORTS: Array<{ value: SongSort; label: string }> = [
+  { value: "newest", label: "Newest" },
+  { value: "oldest", label: "Oldest" },
+  { value: "title_az", label: "Title A to Z" },
+  { value: "most_played", label: "Most played" },
+  { value: "highest_earnings", label: "Highest earnings" },
+];
+const SONG_PAGE_SIZE = 20;
 const ARTIST_BASE_SELECT = "id, user_id, display_name, slug, bio, country, avatar_url, banner_url, monthly_listeners, contact_email, mobile_money_number, mobile_money_network, instagram_url, facebook_url, twitter_url, tiktok_url, youtube_url";
 const ARTIST_SELECT = `${ARTIST_BASE_SELECT}, public_phone, preferred_payment_method`;
 const TRACK_SELECT = "id, title, cover_url, audio_url, duration_seconds, genre, mood, ai_tool, lyrics, explicit, plays_count, release_date, album_id, position_in_album, artwork_shape";
@@ -456,7 +504,7 @@ function ArtistDashboardPage() {
       <DashboardFrame active={active}>
         <ArtistHeader artist={artist} warning={warning} />
         {active === "overview" && <OverviewSection overview={overview} />}
-        {active === "songs" && <SongsSection artist={artist} tracks={tracks} setTracks={setTracks} />}
+        {active === "songs" && <SongsSection artist={artist} />}
         {active === "albums" && <AlbumsSection artist={artist} albums={albums} setAlbums={setAlbums} tracks={tracks} />}
         {active === "watch" && <WatchOutSection artist={artist} upcoming={releaseEditorItems} tracks={tracks} albums={albums} setTracks={setTracks} setAlbums={setAlbums} />}
         {active === "sales" && <SalesSection purchases={purchases} setPurchases={setPurchases} tracks={tracks} />}
@@ -551,6 +599,216 @@ async function loadArtistTracks(artistId: string): Promise<TrackRow[]> {
   }
   if (error) throw error;
   return (data ?? []) as TrackRow[];
+}
+
+async function loadSongList({
+  artistId,
+  page,
+  pageSize,
+  search,
+  filter,
+  sort,
+}: {
+  artistId: string;
+  page: number;
+  pageSize: number;
+  search: string;
+  filter: SongFilter;
+  sort: SongSort;
+}): Promise<SongListResponse> {
+  const safePage = Math.max(1, Math.floor(safeNumber(page)) || 1);
+  const safePageSize = Math.min(50, Math.max(1, Math.floor(safeNumber(pageSize)) || SONG_PAGE_SIZE));
+  const safeSearch = search.trim().replace(/\s+/g, " ").slice(0, 80);
+  const safeFilter = isSongFilter(filter) ? filter : "all";
+  const safeSort = isSongSort(sort) ? sort : "newest";
+
+  const summaryPromise = loadSongSummary(artistId);
+  let query = (supabase as any)
+    .from("tracks")
+    .select(`${TRACK_SELECT_WITH_RELEASE_AT}, created_at`, { count: "exact" })
+    .eq("artist_id", artistId);
+
+  if (safeSearch) query = query.ilike("title", `%${escapeLikePattern(safeSearch)}%`);
+  query = applySongStatusFilter(query, safeFilter);
+  query = applySongSort(query, safeSort);
+
+  const from = (safePage - 1) * safePageSize;
+  const to = from + safePageSize - 1;
+  const { data, error, count } = await withTimeout<DbResult & { count?: number | null }>(query.range(from, to), "Songs list", 10000);
+  if (error && isMissingColumn(error, "release_at")) {
+    let fallback = (supabase as any)
+      .from("tracks")
+      .select(`${TRACK_SELECT}, created_at`, { count: "exact" })
+      .eq("artist_id", artistId);
+    if (safeSearch) fallback = fallback.ilike("title", `%${escapeLikePattern(safeSearch)}%`);
+    fallback = applySongStatusFilter(fallback, safeFilter);
+    fallback = applySongSort(fallback, safeSort);
+    const fallbackResult = await withTimeout<DbResult & { count?: number | null }>(fallback.range(from, to), "Songs list", 10000);
+    if (fallbackResult.error) throw fallbackResult.error;
+    return validateSongListResponse({
+      songs: ((fallbackResult.data ?? []) as Array<Partial<TrackRow> & { created_at?: string | null }>).map(toSongListItem),
+      pagination: buildPagination(safePage, safePageSize, fallbackResult.count),
+      summary: await summaryPromise,
+    });
+  }
+  if (error) throw error;
+
+  return validateSongListResponse({
+    songs: ((data ?? []) as Array<Partial<TrackRow> & { created_at?: string | null }>).map(toSongListItem),
+    pagination: buildPagination(safePage, safePageSize, count),
+    summary: await summaryPromise,
+  });
+}
+
+async function loadSongSummary(artistId: string): Promise<Record<SongStatus | "total", number>> {
+  const today = new Date().toISOString().slice(0, 10);
+  const empty = emptySongSummary();
+  try {
+    const [total, published, scheduled] = await Promise.allSettled([
+      withTimeout<{ count?: number | null; error?: { message?: string } | null }>(
+        (supabase as any).from("tracks").select("id", { count: "exact", head: true }).eq("artist_id", artistId),
+        "Song total",
+        7000,
+      ),
+      withTimeout<{ count?: number | null; error?: { message?: string } | null }>(
+        (supabase as any).from("tracks").select("id", { count: "exact", head: true }).eq("artist_id", artistId).lte("release_date", today),
+        "Published song total",
+        7000,
+      ),
+      withTimeout<{ count?: number | null; error?: { message?: string } | null }>(
+        (supabase as any).from("tracks").select("id", { count: "exact", head: true }).eq("artist_id", artistId).gt("release_date", today),
+        "Scheduled song total",
+        7000,
+      ),
+    ]);
+    empty.total = settledCount(total);
+    empty.published = settledCount(published);
+    empty.scheduled = settledCount(scheduled);
+    empty.draft = Math.max(0, empty.total - empty.published - empty.scheduled);
+    return empty;
+  } catch {
+    return empty;
+  }
+}
+
+function validateSongListResponse(response: SongListResponse): SongListResponse {
+  const pagination = response.pagination ?? buildPagination(1, SONG_PAGE_SIZE, 0);
+  return {
+    songs: Array.isArray(response.songs) ? response.songs.map(validateSongListItem) : [],
+    pagination: {
+      page: Math.max(1, Math.floor(safeNumber(pagination.page)) || 1),
+      pageSize: Math.min(50, Math.max(1, Math.floor(safeNumber(pagination.pageSize)) || SONG_PAGE_SIZE)),
+      totalItems: Math.max(0, Math.floor(safeNumber(pagination.totalItems))),
+      totalPages: Math.max(1, Math.floor(safeNumber(pagination.totalPages)) || 1),
+      hasNextPage: Boolean(pagination.hasNextPage),
+    },
+    summary: { ...emptySongSummary(), ...(response.summary ?? {}) },
+  };
+}
+
+function validateSongListItem(song: SongListItem): SongListItem {
+  const status = isSongStatus(song.status) ? song.status : "draft";
+  return {
+    id: song.id || crypto.randomUUID(),
+    title: song.title?.trim() || "Untitled song",
+    artworkUrl: song.artworkUrl || null,
+    audioUrl: song.audioUrl || null,
+    status,
+    releaseDate: song.releaseDate && isValidDateInput(song.releaseDate) ? song.releaseDate : null,
+    createdAt: song.createdAt && isValidDateInput(song.createdAt) ? song.createdAt : new Date(0).toISOString(),
+    albumId: song.albumId || null,
+    albumTitle: song.albumTitle || null,
+    plays: safeNumber(song.plays),
+    earnings: safeNumber(song.earnings),
+  };
+}
+
+function toSongListItem(track: Partial<TrackRow> & { created_at?: string | null; moderation_status?: string | null }): SongListItem {
+  return {
+    id: track.id ?? crypto.randomUUID(),
+    title: track.title ?? "Untitled song",
+    artworkUrl: track.cover_url ?? null,
+    audioUrl: track.audio_url ?? null,
+    status: deriveSongStatus(track),
+    releaseDate: track.release_date ?? null,
+    createdAt: track.created_at ?? track.release_date ?? new Date(0).toISOString(),
+    albumId: track.album_id ?? null,
+    albumTitle: null,
+    plays: safeNumber(track.plays_count),
+    earnings: 0,
+  };
+}
+
+function deriveSongStatus(track: Partial<TrackRow> & { moderation_status?: string | null }): SongStatus {
+  const moderation = String(track.moderation_status ?? "").toLowerCase();
+  if (moderation === "removed") return "rejected";
+  if (moderation === "hidden") return "private";
+  if (!track.audio_url) return "draft";
+  if (track.release_at || track.release_date) {
+    return releaseTime({ release_date: track.release_date ?? new Date().toISOString().slice(0, 10), release_at: track.release_at }) > Date.now() ? "scheduled" : "published";
+  }
+  return "published";
+}
+
+function buildPagination(page: number, pageSize: number, count: number | null | undefined) {
+  const totalItems = Math.max(0, Math.floor(safeNumber(count)));
+  const totalPages = Math.max(1, Math.ceil(totalItems / Math.max(1, pageSize)));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  return {
+    page: safePage,
+    pageSize,
+    totalItems,
+    totalPages,
+    hasNextPage: safePage < totalPages,
+  };
+}
+
+function emptySongSummary(): Record<SongStatus | "total", number> {
+  return {
+    total: 0,
+    draft: 0,
+    processing: 0,
+    scheduled: 0,
+    published: 0,
+    private: 0,
+    rejected: 0,
+  };
+}
+
+function settledCount(result: PromiseSettledResult<{ count?: number | null; error?: { message?: string } | null }>) {
+  if (result.status !== "fulfilled" || result.value.error) return 0;
+  return safeNumber(result.value.count);
+}
+
+function applySongStatusFilter(query: any, filter: SongFilter) {
+  const today = new Date().toISOString().slice(0, 10);
+  if (filter === "scheduled") return query.gt("release_date", today);
+  if (filter === "published") return query.lte("release_date", today);
+  if (filter === "draft" || filter === "processing" || filter === "private" || filter === "rejected") return query.eq("id", "00000000-0000-0000-0000-000000000000");
+  return query;
+}
+
+function applySongSort(query: any, sort: SongSort) {
+  if (sort === "oldest") return query.order("created_at", { ascending: true });
+  if (sort === "title_az") return query.order("title", { ascending: true });
+  if (sort === "most_played" || sort === "highest_earnings") return query.order("plays_count", { ascending: false });
+  return query.order("created_at", { ascending: false });
+}
+
+function isSongStatus(value: unknown): value is SongStatus {
+  return typeof value === "string" && ["draft", "processing", "scheduled", "published", "private", "rejected"].includes(value);
+}
+
+function isSongFilter(value: unknown): value is SongFilter {
+  return value === "all" || isSongStatus(value);
+}
+
+function isSongSort(value: unknown): value is SongSort {
+  return typeof value === "string" && ["newest", "oldest", "title_az", "most_played", "highest_earnings"].includes(value);
+}
+
+function escapeLikePattern(value: string) {
+  return value.replace(/[%_]/g, (match) => `\\${match}`);
 }
 
 async function loadArtistAlbums(artistId: string): Promise<AlbumRow[]> {
@@ -944,29 +1202,221 @@ function OverviewSection({ overview }: { overview: DashboardOverview }) {
   );
 }
 
-function SongsSection({ artist, tracks, setTracks }: { artist: ArtistRow; tracks: TrackRow[]; setTracks: (tracks: TrackRow[]) => void }) {
+function SongsSection({ artist }: { artist: ArtistRow }) {
+  const requestSeq = useRef(0);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<SongFilter>("all");
+  const [sort, setSort] = useState<SongSort>("newest");
+  const [page, setPage] = useState(1);
+  const [retryCount, setRetryCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [response, setResponse] = useState<SongListResponse>(() => validateSongListResponse({
+    songs: [],
+    pagination: buildPagination(1, SONG_PAGE_SIZE, 0),
+    summary: emptySongSummary(),
+  }));
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearch(searchInput.trim().replace(/\s+/g, " "));
+      setPage(1);
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
+  useEffect(() => {
+    let alive = true;
+    const seq = requestSeq.current + 1;
+    requestSeq.current = seq;
+    setLoading(true);
+    setError("");
+
+    loadSongList({ artistId: artist.id, page, pageSize: SONG_PAGE_SIZE, search, filter, sort })
+      .then((next) => {
+        if (alive && requestSeq.current === seq) setResponse(next);
+      })
+      .catch((err) => {
+        if (alive && requestSeq.current === seq) {
+          setError(errorMessage(err, "Your songs could not be loaded."));
+          setResponse((current) => ({ ...current, songs: [] }));
+        }
+      })
+      .finally(() => {
+        if (alive && requestSeq.current === seq) setLoading(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [artist.id, page, search, filter, sort, retryCount]);
+
+  function changeFilter(next: SongFilter) {
+    setFilter(next);
+    setPage(1);
+  }
+
+  function changeSort(next: SongSort) {
+    setSort(next);
+    setPage(1);
+  }
+
+  const summary = response.summary;
+  const noSongsAtAll = !loading && !error && summary.total === 0 && !search && filter === "all";
+  const noSearchResults = !loading && !error && response.songs.length === 0 && Boolean(search);
+  const noFilteredResults = !loading && !error && response.songs.length === 0 && !search && filter !== "all";
+
   return (
-    <Panel title="My Songs" icon={<Music2 className="h-4 w-4" />} action={<Link to="/upload" className="mini-primary"><Plus className="h-3.5 w-3.5" /> Upload song</Link>}>
-      <div className="space-y-3">
-        {tracks.length === 0 && <EmptyPanel text="No songs uploaded yet. Upload your first song to start building your songwriter catalog." />}
-        {tracks.map((track) => (
-          <EditableTrackEditor
-            key={track.id}
-            track={track}
-            artistId={artist.id}
-            onSaved={(saved) => setTracks(tracks.map((item) => item.id === saved.id ? saved : item))}
-            onDeleted={(deleted) => setTracks(tracks.filter((item) => item.id !== deleted.id))}
-            footer={(
-              <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                <span>{fmtCount(track.plays_count)} plays</span>
-                <span>Gift button: ready</span>
-                <span>Buy Song: configure in Sales</span>
-              </div>
-            )}
-          />
-        ))}
+    <div className="space-y-5">
+      <section className="rounded-xl bg-surface p-5 hairline">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold">My Songs</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Manage your uploaded music, drafts and releases.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link to="/upload" className="mini-primary"><Plus className="h-3.5 w-3.5" /> Upload song</Link>
+            <Link to="/upload" className="mini-button"><Music2 className="h-3.5 w-3.5" /> Create new song draft</Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <Metric label="Total songs" value={formatMetricNumber(summary.total)} icon={Music2} />
+        <Metric label="Published" value={formatMetricNumber(summary.published)} icon={Eye} />
+        <Metric label="Drafts" value={formatMetricNumber(summary.draft)} icon={CalendarClock} />
+        <Metric label="Processing" value={formatMetricNumber(summary.processing)} icon={Settings} />
+        <Metric label="Scheduled" value={formatMetricNumber(summary.scheduled)} icon={CalendarClock} />
+        <Metric label="Rejected" value={formatMetricNumber(summary.rejected)} icon={ShieldAlert} />
+      </section>
+
+      <Panel title="Songs" icon={<Music2 className="h-4 w-4" />}>
+        <div className="grid gap-3 xl:grid-cols-[1fr_220px_220px]">
+          <label className="relative block">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              className="input-lite pl-9"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder="Search by song title"
+            />
+          </label>
+          <select className="input-lite" value={filter} onChange={(event) => changeFilter(event.target.value as SongFilter)}>
+            {SONG_FILTERS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+          </select>
+          <select className="input-lite" value={sort} onChange={(event) => changeSort(event.target.value as SongSort)}>
+            {SONG_SORTS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+          </select>
+        </div>
+
+        <div className="mt-4 space-y-2">
+          {loading && <SongListSkeleton />}
+          {!loading && error && <SongListError text="Your songs could not be loaded." detail={error} onRetry={() => setRetryCount((count) => count + 1)} />}
+          {noSongsAtAll && (
+            <div className="space-y-3">
+              <EmptyPanel text="You have not uploaded any songs yet." />
+              <Link to="/upload" className="mini-primary inline-flex">Upload your first song</Link>
+            </div>
+          )}
+          {noSearchResults && (
+            <div className="space-y-3">
+              <EmptyPanel text="No songs match your search." />
+              <button type="button" className="mini-button" onClick={() => { setSearchInput(""); setSearch(""); setPage(1); }}>Clear search</button>
+            </div>
+          )}
+          {noFilteredResults && (
+            <div className="space-y-3">
+              <EmptyPanel text="No songs currently have this status." />
+              <button type="button" className="mini-button" onClick={() => changeFilter("all")}>Show all songs</button>
+            </div>
+          )}
+          {!loading && !error && response.songs.map((song) => <SongListRow key={song.id} song={song} />)}
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-muted-foreground">
+            Page {response.pagination.page} of {response.pagination.totalPages} · {formatMetricNumber(response.pagination.totalItems)} result{response.pagination.totalItems === 1 ? "" : "s"}
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="mini-button"
+              disabled={loading || response.pagination.page <= 1}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+            >
+              <ChevronLeft className="h-3.5 w-3.5" /> Previous
+            </button>
+            <button
+              type="button"
+              className="mini-button"
+              disabled={loading || !response.pagination.hasNextPage}
+              onClick={() => setPage((current) => Math.min(response.pagination.totalPages, current + 1))}
+            >
+              Next <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function SongListRow({ song }: { song: SongListItem }) {
+  return (
+    <div className="rounded-xl bg-background/45 p-3 hairline">
+      <div className="grid gap-3 md:grid-cols-[56px_1fr_auto] md:items-center">
+        <Cover src={song.artworkUrl} seed={song.id} size={56} shape="rounded" />
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="truncate font-semibold">{song.title}</div>
+            <StatusPill label={pretty(song.status)} />
+          </div>
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            <span>{song.albumTitle || (song.albumId ? "Album" : "Single")}</span>
+            <span>{song.releaseDate ? safeDashboardDate(song.releaseDate) : "No release date"}</span>
+            <span>{formatMetricNumber(song.plays)} plays</span>
+            <span>{formatCurrency(song.earnings)}</span>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link to="/tracks/$id" params={{ id: song.id }} className="mini-button">View</Link>
+          {song.status !== "rejected" && <Link to="/upload" className="mini-button">Edit</Link>}
+          {song.status === "draft" && <Link to="/upload" className="mini-button">Schedule</Link>}
+          {song.status === "published" && <Link to="/dashboard" search={{ tab: "analytics" }} className="mini-button">Analytics</Link>}
+        </div>
       </div>
-    </Panel>
+    </div>
+  );
+}
+
+function SongListSkeleton() {
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div key={index} className="grid gap-3 rounded-xl bg-background/45 p-3 hairline md:grid-cols-[56px_1fr_auto] md:items-center">
+          <div className="h-14 w-14 rounded-lg bg-surface-elevated" />
+          <div className="space-y-2">
+            <div className="h-4 w-48 rounded bg-surface-elevated" />
+            <div className="h-3 w-72 max-w-full rounded bg-surface-elevated" />
+          </div>
+          <div className="h-8 w-24 rounded-full bg-surface-elevated" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SongListError({ text, detail, onRetry }: { text: string; detail?: string; onRetry: () => void }) {
+  return (
+    <div className="rounded-lg bg-background/45 p-4 hairline">
+      <div className="text-sm font-semibold">{text}</div>
+      <p className="mt-1 text-sm text-muted-foreground">{detail || "Try again in a moment."}</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button type="button" className="mini-primary" onClick={onRetry}>Try again</button>
+        <Link to="/dashboard" search={{ tab: "overview" }} className="mini-button">Return to Overview</Link>
+      </div>
+    </div>
   );
 }
 
@@ -1160,7 +1610,7 @@ function StandaloneArtistToolsDataSection({ active, isAdmin }: { active: Dashboa
     <>
       {message && <EmptyPanel text={message} />}
       {active === "overview" && <OverviewSection overview={overview} />}
-      {active === "songs" && <StandaloneSongsSection tracks={data.tracks} setTracks={(tracks) => setData((current) => ({ ...current, tracks }))} />}
+      {active === "songs" && <StandaloneSongsSection tracks={data.tracks} />}
       {active === "albums" && <StandaloneAlbumsSection albums={data.albums} setAlbums={(albums) => setData((current) => ({ ...current, albums }))} tracks={data.tracks} />}
       {active === "sales" && <StandaloneSalesSection purchases={data.purchases} setPurchases={(purchases) => setData((current) => ({ ...current, purchases }))} tracks={data.tracks} />}
       {active === "gifts" && <StandaloneGiftsSection motivations={data.motivations} stats={stats} />}
@@ -1253,18 +1703,43 @@ function StandaloneWatchOutSection({ isAdmin, allowSavedLoad = true }: { isAdmin
   );
 }
 
-function StandaloneSongsSection({ tracks, setTracks }: { tracks: TrackRow[]; setTracks: (tracks: TrackRow[]) => void }) {
+function StandaloneSongsSection({ tracks }: { tracks: TrackRow[] }) {
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<SongFilter>("all");
+  const [page, setPage] = useState(1);
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return tracks
+      .map((track) => toSongListItem(track as Partial<TrackRow> & { created_at?: string | null }))
+      .filter((song) => !term || song.title.toLowerCase().includes(term))
+      .filter((song) => filter === "all" || song.status === filter);
+  }, [filter, search, tracks]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / SONG_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const visibleSongs = filtered.slice((safePage - 1) * SONG_PAGE_SIZE, safePage * SONG_PAGE_SIZE);
+
   return (
     <Panel title="My Songs" icon={<Music2 className="h-4 w-4" />} action={<Link to="/upload" className="mini-primary"><Plus className="h-3.5 w-3.5" /> Upload song</Link>}>
-      <div className="space-y-3">
+      <div className="grid gap-3 md:grid-cols-[1fr_200px]">
+        <label className="relative block">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input className="input-lite pl-9" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search by song title" />
+        </label>
+        <select className="input-lite" value={filter} onChange={(event) => { setFilter(event.target.value as SongFilter); setPage(1); }}>
+          {SONG_FILTERS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </select>
+      </div>
+      <div className="mt-4 space-y-2">
         {tracks.length === 0 && <EmptyPanel text="No songs were found yet. Uploaded songs will appear here for editing." />}
-        {tracks.map((track) => (
-          <EditableTrackEditor
-            key={track.id}
-            track={track}
-            onSaved={(saved) => setTracks(tracks.map((item) => item.id === saved.id ? saved : item))}
-          />
-        ))}
+        {tracks.length > 0 && visibleSongs.length === 0 && <EmptyPanel text={search ? "No songs match your search." : "No songs currently have this status."} />}
+        {visibleSongs.map((song) => <SongListRow key={song.id} song={song} />)}
+      </div>
+      <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-sm text-muted-foreground">Page {safePage} of {totalPages} · {formatMetricNumber(filtered.length)} result{filtered.length === 1 ? "" : "s"}</div>
+        <div className="flex gap-2">
+          <button type="button" className="mini-button" disabled={safePage <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}><ChevronLeft className="h-3.5 w-3.5" /> Previous</button>
+          <button type="button" className="mini-button" disabled={safePage >= totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>Next <ChevronRight className="h-3.5 w-3.5" /></button>
+        </div>
       </div>
     </Panel>
   );
@@ -1285,115 +1760,6 @@ function StandaloneAlbumsSection({ albums, setAlbums, tracks }: { albums: AlbumR
         ))}
       </div>
     </Panel>
-  );
-}
-
-function EditableTrackEditor({
-  track,
-  artistId,
-  onSaved,
-  onDeleted,
-  footer,
-}: {
-  track: TrackRow;
-  artistId?: string;
-  onSaved: (track: TrackRow) => void;
-  onDeleted?: (track: TrackRow) => void;
-  footer?: React.ReactNode;
-}) {
-  const titleRef = useRef<HTMLInputElement>(null);
-  const genreRef = useRef<HTMLSelectElement>(null);
-  const releaseDateRef = useRef<HTMLInputElement>(null);
-  const lyricsRef = useRef<HTMLTextAreaElement>(null);
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
-  async function saveTrack() {
-    const title = titleRef.current?.value.trim() ?? "";
-    if (!title) {
-      toast.error("Song title is required");
-      return;
-    }
-    const nextTrack: TrackRow = {
-      ...track,
-      title,
-      genre: genreRef.current?.value || track.genre,
-      release_date: releaseDateRef.current?.value || track.release_date,
-      lyrics: lyricsRef.current?.value || null,
-    };
-    setSaving(true);
-    try {
-      let request = (supabase as any)
-        .from("tracks")
-        .update({
-          title: nextTrack.title,
-          genre: nextTrack.genre,
-          release_date: nextTrack.release_date,
-          lyrics: nextTrack.lyrics || null,
-          explicit: nextTrack.explicit,
-        })
-        .eq("id", nextTrack.id);
-      if (artistId) request = request.eq("artist_id", artistId);
-      const { error } = await withTimeout<DbResult>(request, "Song save", 10000);
-      if (error) throw error;
-      onSaved(nextTrack);
-      toast.success("Song saved");
-    } catch (error) {
-      toast.error(errorMessage(error, "Could not save this song."));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function deleteTrack() {
-    if (!onDeleted) return;
-    if (!window.confirm(`Delete "${track.title}" from SHY?`)) return;
-    setDeleting(true);
-    try {
-      let request = (supabase as any).from("tracks").delete().eq("id", track.id);
-      if (artistId) request = request.eq("artist_id", artistId);
-      const { error } = await withTimeout<DbResult>(request, "Song delete", 10000);
-      if (error) throw error;
-      onDeleted(track);
-      toast.success("Song deleted");
-    } catch (error) {
-      toast.error(errorMessage(error, "Could not delete this song."));
-    } finally {
-      setDeleting(false);
-    }
-  }
-
-  return (
-    <div className="rounded-xl bg-background/45 p-3 hairline">
-      <div className="grid gap-3 xl:grid-cols-[56px_1.4fr_1fr_150px_120px] xl:items-center">
-        <Cover src={track.cover_url} seed={track.id} size={56} shape={track.artwork_shape ?? "rounded"} />
-        <Field label="Song title">
-          <input ref={titleRef} className="input-lite" defaultValue={track.title} placeholder="Song title" />
-        </Field>
-        <Field label="Genre">
-          <select ref={genreRef} className="input-lite" defaultValue={track.genre}>
-            {GENRES.map((genre) => <option key={genre} value={genre}>{pretty(genre)}</option>)}
-          </select>
-        </Field>
-        <Field label="Release date">
-          <input ref={releaseDateRef} className="input-lite" type="date" defaultValue={track.release_date} />
-        </Field>
-        <div className="space-y-1">
-          <div className="text-[11px] text-muted-foreground">Status</div>
-          <StatusPill label={trackStatus(track)} />
-        </div>
-      </div>
-      <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
-        <Field label="Lyrics / private notes">
-          <textarea ref={lyricsRef} className="input-lite min-h-20" defaultValue={track.lyrics ?? ""} placeholder="Lyrics, notes, contributors, or private writing details" />
-        </Field>
-        <div className="flex flex-wrap gap-2">
-          <button className="mini-button" type="button" disabled={saving || deleting} onClick={saveTrack}><Save className="h-3.5 w-3.5" /> {saving ? "Saving" : "Save"}</button>
-          {onDeleted && <button className="mini-danger" type="button" disabled={saving || deleting} onClick={deleteTrack}><Trash2 className="h-3.5 w-3.5" /> {deleting ? "Deleting" : "Delete"}</button>}
-        </div>
-      </div>
-      {footer}
-    </div>
   );
 }
 
