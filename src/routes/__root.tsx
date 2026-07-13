@@ -39,6 +39,7 @@ export const Route = createRootRoute({
       { name: "author", content: "SHYMusic Creative" },
       { name: "theme-color", content: "#0A0A0F" },
       { name: "application-name", content: "SHYMusic Creative" },
+      { name: "mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-title", content: "SHYMusic Creative" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },

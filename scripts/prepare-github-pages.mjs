@@ -64,6 +64,7 @@ function standaloneAuthHtml({ basePath, supabaseUrl, supabaseKey }) {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sign in - SHY</title>
     <meta name="theme-color" content="#0A0A0F" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <link rel="icon" type="image/png" sizes="32x32" href="${basePath}assets/brand/icon-32.png" />
     <style>
       :root { color-scheme: dark; --bg:#07060d; --surface:#11101a; --line:#29243a; --text:#f4f1ff; --muted:#a9a1bd; --primary:#8b47f5; --glow:#bda2ff; }

@@ -361,6 +361,16 @@ function ArtistDashboardPage() {
   }, [albums, tracks]);
   const releaseEditorItems = useMemo(() => buildScheduleItems(tracks, albums), [albums, tracks]);
 
+  if (authLoading && active === "watch") {
+    return (
+      <AppShell>
+        <DashboardFrame active={active}>
+          <StandaloneWatchOutSection isAdmin={isAdmin} allowSavedLoad={false} />
+        </DashboardFrame>
+      </AppShell>
+    );
+  }
+
   if (!authLoading && !user) {
     return (
       <AppShell>
@@ -373,7 +383,11 @@ function ArtistDashboardPage() {
     return (
       <AppShell>
         <DashboardFrame active={active}>
-          <StandaloneArtistToolsSection active={active} isAdmin={isAdmin} />
+          {isAdmin ? (
+            <StandaloneArtistToolsSection active={active} isAdmin={isAdmin} />
+          ) : (
+            <DashboardStatusPanel title="Opening artist tools" text="Checking your artist profile and songwriter permissions." />
+          )}
         </DashboardFrame>
       </AppShell>
     );
@@ -396,7 +410,7 @@ function ArtistDashboardPage() {
     return (
       <AppShell>
         <DashboardFrame active={active}>
-          <StandaloneArtistToolsSection active={active} isAdmin={isAdmin} />
+          {isAdmin ? <StandaloneArtistToolsSection active={active} isAdmin={isAdmin} /> : <ArtistSetupNotice />}
         </DashboardFrame>
       </AppShell>
     );
@@ -842,7 +856,7 @@ function WatchOutSection({
 
 function StandaloneArtistToolsSection({ active, isAdmin }: { active: DashboardTab; isAdmin: boolean }) {
   if (active === "watch") {
-    return <StandaloneWatchOutSection isAdmin={isAdmin} />;
+    return <StandaloneWatchOutSection isAdmin={isAdmin} allowSavedLoad={isAdmin} />;
   }
 
   return <StandaloneArtistToolsDataSection active={active} isAdmin={isAdmin} />;
@@ -951,7 +965,7 @@ function StandaloneArtistToolsDataSection({ active, isAdmin }: { active: Dashboa
   );
 }
 
-function StandaloneWatchOutSection({ isAdmin }: { isAdmin: boolean }) {
+function StandaloneWatchOutSection({ isAdmin, allowSavedLoad = true }: { isAdmin: boolean; allowSavedLoad?: boolean }) {
   const [items, setItems] = useState<ScheduledReleaseItem[]>(() => demoScheduleItems());
   const [message, setMessage] = useState<string | null>(null);
 
@@ -959,6 +973,11 @@ function StandaloneWatchOutSection({ isAdmin }: { isAdmin: boolean }) {
     let alive = true;
 
     async function load() {
+      if (!allowSavedLoad) {
+        setItems(demoScheduleItems());
+        setMessage("Checking your sign-in. Saved releases will appear after SHY confirms artist access.");
+        return;
+      }
       setMessage(null);
       try {
         const [trackResult, albumResult] = await Promise.allSettled([
@@ -986,7 +1005,7 @@ function StandaloneWatchOutSection({ isAdmin }: { isAdmin: boolean }) {
     return () => {
       alive = false;
     };
-  }, [isAdmin]);
+  }, [allowSavedLoad, isAdmin]);
 
   async function saveRelease(item: ScheduledReleaseItem, title: string, value: string) {
     try {
@@ -1485,6 +1504,15 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function EmptyPanel({ text }: { text: string }) {
   return <div className="rounded-lg bg-background/45 p-4 text-sm text-muted-foreground hairline">{text}</div>;
+}
+
+function DashboardStatusPanel({ title, text }: { title: string; text: string }) {
+  return (
+    <section className="rounded-xl bg-surface p-5 hairline">
+      <div className="text-sm font-semibold">{title}</div>
+      <p className="mt-1 text-sm text-muted-foreground">{text}</p>
+    </section>
+  );
 }
 
 function ActivityItem({ text, time }: { text: string; time: string }) {

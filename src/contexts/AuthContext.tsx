@@ -25,6 +25,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let alive = true;
+    const loadingWatchdog = window.setTimeout(() => {
+      if (alive) {
+        setLoading(false);
+      }
+    }, 7000);
 
     // Set up listener FIRST
     const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
@@ -55,12 +60,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setRoles([]);
         }
       } finally {
-        if (alive) setLoading(false);
+        if (alive) {
+          window.clearTimeout(loadingWatchdog);
+          setLoading(false);
+        }
       }
     })();
 
     return () => {
       alive = false;
+      window.clearTimeout(loadingWatchdog);
       sub.subscription.unsubscribe();
     };
   }, []);
