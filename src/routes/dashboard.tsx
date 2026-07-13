@@ -209,6 +209,10 @@ function ArtistDashboardPage() {
         setLoading(false);
         return;
       }
+      if (active === "watch") {
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       setWarning(null);
 
@@ -312,7 +316,7 @@ function ArtistDashboardPage() {
     return () => {
       alive = false;
     };
-  }, [authLoading, user, isAdmin]);
+  }, [active, authLoading, user, isAdmin]);
 
   const trackIdsKey = useMemo(() => tracks.map((track) => track.id).join("|"), [tracks]);
 
@@ -356,7 +360,7 @@ function ArtistDashboardPage() {
     );
   }
 
-  if (loading && active === "watch") {
+  if (loading && active === "watch" && !authLoading) {
     return (
       <AppShell>
         <DashboardFrame active={active}>
@@ -380,11 +384,20 @@ function ArtistDashboardPage() {
   }
 
   if (!artist) {
+    if (active === "watch") {
+      return (
+        <AppShell>
+          <DashboardFrame active={active}>
+            <StandaloneWatchOutSection isAdmin={isAdmin} />
+          </DashboardFrame>
+        </AppShell>
+      );
+    }
+
     return (
       <AppShell>
         <DashboardFrame active={active}>
-          <StandaloneWatchOutSection isAdmin={isAdmin} />
-          <ArtistSetupNotice compact />
+          <ArtistSetupNotice />
         </DashboardFrame>
       </AppShell>
     );
