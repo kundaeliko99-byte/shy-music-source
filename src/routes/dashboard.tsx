@@ -195,6 +195,7 @@ function ArtistDashboardPage() {
   const navigate = useNavigate();
   const { user, loading: authLoading, isAdmin } = useAuth();
   const { tab: active } = Route.useSearch();
+  const [authWaitExpired, setAuthWaitExpired] = useState(false);
   const [artist, setArtist] = useState<ArtistRow | null>(null);
   const [tracks, setTracks] = useState<TrackRow[]>([]);
   const [albums, setAlbums] = useState<AlbumRow[]>([]);
@@ -204,21 +205,27 @@ function ArtistDashboardPage() {
   const [countries, setCountries] = useState<Array<{ country: string; plays: number }>>([]);
   const [loading, setLoading] = useState(true);
   const [warning, setWarning] = useState<string | null>(null);
+  const authPending = authLoading && !authWaitExpired;
 
   useEffect(() => {
-    if (!authLoading && !user) navigate({ to: "/auth" });
-  }, [authLoading, user, navigate]);
+    if (!authLoading) {
+      setAuthWaitExpired(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setAuthWaitExpired(true), 4000);
+    return () => window.clearTimeout(timer);
+  }, [authLoading]);
+
+  useEffect(() => {
+    if (!authPending && !user) navigate({ to: "/auth" });
+  }, [authPending, user, navigate]);
 
   useEffect(() => {
     let alive = true;
 
     async function load() {
-      if (authLoading) return;
+      if (authPending) return;
       if (!user) {
-        setLoading(false);
-        return;
-      }
-      if (active === "watch") {
         setLoading(false);
         return;
       }
@@ -325,7 +332,7 @@ function ArtistDashboardPage() {
     return () => {
       alive = false;
     };
-  }, [active, authLoading, user, isAdmin]);
+  }, [authPending, user, isAdmin]);
 
   const trackIdsKey = useMemo(() => tracks.map((track) => track.id).join("|"), [tracks]);
 
@@ -361,17 +368,17 @@ function ArtistDashboardPage() {
   }, [albums, tracks]);
   const releaseEditorItems = useMemo(() => buildScheduleItems(tracks, albums), [albums, tracks]);
 
-  if (authLoading && active === "watch") {
+  if (authPending && active === "watch") {
     return (
       <AppShell>
         <DashboardFrame active={active}>
-          <StandaloneWatchOutSection isAdmin={isAdmin} allowSavedLoad={false} />
+          <DashboardStatusPanel title="Opening artist tools" text="Checking your sign-in and artist access." />
         </DashboardFrame>
       </AppShell>
     );
   }
 
-  if (!authLoading && !user) {
+  if (!authPending && !user) {
     return (
       <AppShell>
         <ArtistOnlyNotice />
@@ -379,15 +386,11 @@ function ArtistDashboardPage() {
     );
   }
 
-  if (loading && !authLoading) {
+  if (loading && !authPending) {
     return (
       <AppShell>
         <DashboardFrame active={active}>
-          {isAdmin ? (
-            <StandaloneArtistToolsSection active={active} isAdmin={isAdmin} />
-          ) : (
-            <DashboardStatusPanel title="Opening artist tools" text="Checking your artist profile and songwriter permissions." />
-          )}
+          <DashboardStatusPanel title="Opening artist tools" text="Checking your artist profile and songwriter permissions." />
         </DashboardFrame>
       </AppShell>
     );
@@ -954,7 +957,6 @@ function StandaloneArtistToolsDataSection({ active, isAdmin }: { active: Dashboa
       {active === "overview" && <OverviewSection stats={stats} tracks={data.tracks} purchases={data.purchases} motivations={data.motivations} notifications={data.notifications} upcoming={visibleScheduleItems} />}
       {active === "songs" && <StandaloneSongsSection tracks={data.tracks} setTracks={(tracks) => setData((current) => ({ ...current, tracks }))} />}
       {active === "albums" && <StandaloneAlbumsSection albums={data.albums} setAlbums={(albums) => setData((current) => ({ ...current, albums }))} tracks={data.tracks} />}
-      {active === "watch" && <StandaloneWatchOutEditor initialItems={visibleScheduleItems} />}
       {active === "sales" && <StandaloneSalesSection purchases={data.purchases} setPurchases={(purchases) => setData((current) => ({ ...current, purchases }))} tracks={data.tracks} />}
       {active === "gifts" && <StandaloneGiftsSection motivations={data.motivations} stats={stats} />}
       {active === "analytics" && <AnalyticsSection tracks={data.tracks} albums={data.albums} countries={data.countries} stats={stats} />}
@@ -1037,42 +1039,6 @@ function StandaloneWatchOutSection({ isAdmin, allowSavedLoad = true }: { isAdmin
     <Panel title="Watch Out: Scheduled Release Editor" icon={<CalendarClock className="h-4 w-4" />}>
       {message && <EmptyPanel text={message} />}
       <div className="mt-3 grid gap-3 md:grid-cols-2">
-        {items.map((item) => <EditableReleaseItem key={`${item.kind}-${item.id}`} item={item} onSave={saveRelease} />)}
-      </div>
-    </Panel>
-  );
-}
-
-function StandaloneWatchOutEditor({ initialItems }: { initialItems: ScheduledReleaseItem[] }) {
-  const [items, setItems] = useState(initialItems);
-  const initialItemsKey = useMemo(() => initialItems.map((item) => `${item.kind}:${item.id}:${item.title}:${item.release_at ?? item.release_date}`).join("|"), [initialItems]);
-
-  useEffect(() => {
-    setItems(initialItems);
-  }, [initialItemsKey]);
-
-  async function saveRelease(item: ScheduledReleaseItem, title: string, value: string) {
-    try {
-      const cleanTitle = title.trim();
-      if (!cleanTitle) throw new Error("Title is required.");
-      const schedule = parseScheduledRelease(value);
-      if (item.localOnly) {
-        setItems((current) => current.map((release) => release.id === item.id ? { ...release, title: cleanTitle, ...schedulePatch(schedule) } : release));
-        toast.info("Upload a release first, then SHY will save schedule changes here.");
-        return;
-      }
-      const updated = await updateReleaseSchedule(item.kind === "track" ? "tracks" : "albums", item.id, undefined, schedule, "id", cleanTitle);
-      if (item.kind === "album") await updateAlbumTrackSchedules(item.id, undefined, schedule);
-      setItems((current) => current.map((release) => release.id === item.id && release.kind === item.kind ? { ...release, ...updated } : release).sort((a, b) => releaseTime(a) - releaseTime(b)));
-      toast.success("Scheduled release updated");
-    } catch (error) {
-      toast.error(errorMessage(error, "Could not update this scheduled release."));
-    }
-  }
-
-  return (
-    <Panel title="Watch Out: Scheduled Release Editor" icon={<CalendarClock className="h-4 w-4" />}>
-      <div className="grid gap-3 md:grid-cols-2">
         {items.map((item) => <EditableReleaseItem key={`${item.kind}-${item.id}`} item={item} onSave={saveRelease} />)}
       </div>
     </Panel>
@@ -1538,14 +1504,17 @@ function ReleaseItem({ item }: { item: ScheduledReleaseItem }) {
 }
 
 function EditableReleaseItem({ item, onSave }: { item: ScheduledReleaseItem; onSave: (item: ScheduledReleaseItem, title: string, value: string) => Promise<void> }) {
-  const [title, setTitle] = useState(item.title);
-  const [value, setValue] = useState(scheduleInputValue(item));
+  const syncedTitle = item.title;
+  const syncedValue = scheduleInputValue(item);
+  const [title, setTitle] = useState(syncedTitle);
+  const [value, setValue] = useState(syncedValue);
   const [saving, setSaving] = useState(false);
+  const itemSyncKey = `${item.kind}:${item.id}:${item.title}:${item.release_at ?? item.release_date}`;
 
   useEffect(() => {
-    setTitle(item.title);
-    setValue(scheduleInputValue(item));
-  }, [item.id, item.kind, item.title, item.release_at, item.release_date]);
+    setTitle(syncedTitle);
+    setValue(syncedValue);
+  }, [itemSyncKey, syncedTitle, syncedValue]);
 
   async function save() {
     setSaving(true);
