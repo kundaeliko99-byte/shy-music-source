@@ -3113,6 +3113,8 @@ function MessagesSection({ notifications, purchases }: { notifications: Notifica
 }
 
 function ProfileSection({ artist, setArtist }: { artist: ArtistRow; setArtist: (artist: ArtistRow) => void }) {
+  const avatarRef = useRef<HTMLInputElement>(null);
+  const bannerRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({
     display_name: artist.display_name,
     bio: artist.bio ?? "",
@@ -3128,42 +3130,106 @@ function ProfileSection({ artist, setArtist }: { artist: ArtistRow; setArtist: (
     tiktok_url: artist.tiktok_url ?? "",
     youtube_url: artist.youtube_url ?? "",
   });
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState<"avatar" | "banner" | null>(null);
 
   async function saveProfile() {
-    const { data, error } = await (supabase as any)
-      .from("artists")
-      .update({
-        display_name: form.display_name.trim(),
-        bio: form.bio.trim() || null,
-        country: form.country.trim() || null,
-        avatar_url: form.avatar_url.trim() || null,
-        banner_url: form.banner_url.trim() || null,
-        contact_email: form.contact_email.trim() || null,
-        public_phone: form.public_phone.trim() || null,
-        preferred_payment_method: form.preferred_payment_method.trim() || null,
-        instagram_url: form.instagram_url.trim() || null,
-        facebook_url: form.facebook_url.trim() || null,
-        twitter_url: form.twitter_url.trim() || null,
-        tiktok_url: form.tiktok_url.trim() || null,
-        youtube_url: form.youtube_url.trim() || null,
-      })
-      .eq("id", artist.id)
-      .select("*")
-      .single();
-    if (error) toast.error(error.message);
-    else {
+    if (!form.display_name.trim()) {
+      toast.error("Artist name is required");
+      return;
+    }
+    setSaving(true);
+    try {
+      const { data, error } = await withTimeout<DbResult>(
+        (supabase as any)
+          .from("artists")
+          .update({
+            display_name: form.display_name.trim(),
+            bio: form.bio.trim() || null,
+            country: form.country.trim() || null,
+            avatar_url: form.avatar_url.trim() || null,
+            banner_url: form.banner_url.trim() || null,
+            contact_email: form.contact_email.trim() || null,
+            public_phone: form.public_phone.trim() || null,
+            preferred_payment_method: form.preferred_payment_method.trim() || null,
+            instagram_url: form.instagram_url.trim() || null,
+            facebook_url: form.facebook_url.trim() || null,
+            twitter_url: form.twitter_url.trim() || null,
+            tiktok_url: form.tiktok_url.trim() || null,
+            youtube_url: form.youtube_url.trim() || null,
+          })
+          .eq("id", artist.id)
+          .eq("user_id", artist.user_id)
+          .select(ARTIST_SELECT)
+          .single(),
+        "Profile save",
+        10000,
+      );
+      if (error) throw error;
       setArtist({ ...artist, ...(data as ArtistRow) });
       toast.success("Profile saved");
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not save your artist profile."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function uploadProfileImage(kind: "avatar" | "banner", file: File) {
+    try {
+      validateImageFile(file);
+      setUploading(kind);
+      const bucket = kind === "avatar" ? "avatars" : "banners";
+      const field = kind === "avatar" ? "avatar_url" : "banner_url";
+      const ext = fileExtension(file.name, file.type);
+      const path = `${artist.user_id}/${kind}-${artist.id}-${Date.now()}.${ext}`;
+      const { error: uploadError } = await withTimeout<DbResult>(
+        supabase.storage.from(bucket).upload(path, file, { cacheControl: "3600", upsert: true }),
+        `${kind} upload`,
+        15000,
+      );
+      if (uploadError) throw uploadError;
+      const url = resolveArtworkUrl(path, bucket);
+      const { data, error } = await withTimeout<DbResult>(
+        (supabase as any).from("artists").update({ [field]: path }).eq("id", artist.id).eq("user_id", artist.user_id).select(ARTIST_SELECT).single(),
+        `${kind} save`,
+        10000,
+      );
+      if (error) throw error;
+      setForm((current) => ({ ...current, [field]: path }));
+      setArtist({ ...artist, ...(data as ArtistRow) });
+      toast.success(kind === "avatar" ? "Profile image updated" : "Cover image updated");
+      if (url) {
+        setForm((current) => ({ ...current, [field]: path }));
+      }
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not upload this profile image."));
+    } finally {
+      setUploading(null);
+      if (kind === "avatar" && avatarRef.current) avatarRef.current.value = "";
+      if (kind === "banner" && bannerRef.current) bannerRef.current.value = "";
     }
   }
 
   return (
     <Panel title="Artist Profile Manager" icon={<UserCog className="h-4 w-4" />}>
+      <div className="mb-4 grid gap-3 md:grid-cols-[160px_1fr]">
+        <div className="space-y-2">
+          <DashboardArtwork src={resolveArtworkUrl(form.avatar_url, "avatars")} seed={artist.id} alt={`${artist.display_name} profile image`} className="aspect-square w-full rounded-full" />
+          <button type="button" className="mini-button w-full justify-center" disabled={uploading === "avatar"} onClick={() => avatarRef.current?.click()}><Camera className="h-3.5 w-3.5" /> {uploading === "avatar" ? "Uploading" : "Profile image"}</button>
+          <input ref={avatarRef} className="hidden" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadProfileImage("avatar", file); }} />
+        </div>
+        <div className="space-y-2">
+          <DashboardArtwork src={resolveArtworkUrl(form.banner_url, "banners")} seed={`${artist.id}-banner`} alt={`${artist.display_name} cover image`} className="aspect-[3/1] w-full" />
+          <button type="button" className="mini-button" disabled={uploading === "banner"} onClick={() => bannerRef.current?.click()}><Camera className="h-3.5 w-3.5" /> {uploading === "banner" ? "Uploading" : "Cover image"}</button>
+          <input ref={bannerRef} className="hidden" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadProfileImage("banner", file); }} />
+        </div>
+      </div>
       <div className="grid gap-3 md:grid-cols-2">
         <Field label="Artist / songwriter name"><input className="input-lite" value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} /></Field>
         <Field label="Country"><input className="input-lite" value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} /></Field>
-        <Field label="Profile image URL"><input className="input-lite" value={form.avatar_url} onChange={(e) => setForm({ ...form, avatar_url: e.target.value })} /></Field>
-        <Field label="Cover image URL"><input className="input-lite" value={form.banner_url} onChange={(e) => setForm({ ...form, banner_url: e.target.value })} /></Field>
+        <Field label="Profile image path / URL"><input className="input-lite" value={form.avatar_url} onChange={(e) => setForm({ ...form, avatar_url: e.target.value })} /></Field>
+        <Field label="Cover image path / URL"><input className="input-lite" value={form.banner_url} onChange={(e) => setForm({ ...form, banner_url: e.target.value })} /></Field>
         <Field label="Public email"><input className="input-lite" value={form.contact_email} onChange={(e) => setForm({ ...form, contact_email: e.target.value })} /></Field>
         <Field label="Public phone / WhatsApp"><input className="input-lite" value={form.public_phone} onChange={(e) => setForm({ ...form, public_phone: e.target.value })} /></Field>
         <Field label="Preferred payment method"><select className="input-lite" value={form.preferred_payment_method} onChange={(e) => setForm({ ...form, preferred_payment_method: e.target.value })}><option value="">Not set</option>{PAYMENT_METHODS.map((method) => <option key={method} value={method}>{method}</option>)}</select></Field>
@@ -3172,7 +3238,7 @@ function ProfileSection({ artist, setArtist }: { artist: ArtistRow; setArtist: (
         <Field label="YouTube URL"><input className="input-lite" value={form.youtube_url} onChange={(e) => setForm({ ...form, youtube_url: e.target.value })} /></Field>
       </div>
       <Field label="Biography"><textarea className="input-lite min-h-28" value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} /></Field>
-      <button className="mini-primary" onClick={saveProfile}><Save className="h-3.5 w-3.5" /> Save profile</button>
+      <button className="mini-primary" type="button" disabled={saving || Boolean(uploading)} onClick={saveProfile}><Save className="h-3.5 w-3.5" /> {saving ? "Saving" : "Save profile"}</button>
     </Panel>
   );
 }
