@@ -212,6 +212,8 @@ type SongSort = "newest" | "oldest" | "title_az" | "most_played" | "highest_earn
 type AlbumStatus = "draft" | "scheduled" | "published" | "private" | "rejected";
 type AlbumFilter = "all" | AlbumStatus;
 type AlbumSort = "newest" | "oldest" | "title_az" | "release_date" | "most_played";
+type AlertSeverity = "urgent" | "warning" | "info";
+type AlertFilter = "all" | AlertSeverity | "copyright" | "uploads" | "payments" | "contracts" | "security" | "resolved";
 
 type SongListItem = {
   id: string;
@@ -265,6 +267,19 @@ type AlbumListResponse = {
   summary: Record<AlbumStatus | "total", number>;
 };
 
+type DashboardAlert = {
+  id: string;
+  title: string;
+  category: AlertFilter;
+  severity: AlertSeverity;
+  explanation: string;
+  date: string;
+  relatedItem: string;
+  recommendedAction: string;
+  status: "open" | "resolved";
+  link?: string | null;
+};
+
 const MENU: Array<{ id: DashboardTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: "overview", label: "Overview", icon: BarChart3 },
   { id: "songs", label: "My Songs", icon: Music2 },
@@ -312,6 +327,19 @@ const ALBUM_SORTS: Array<{ value: AlbumSort; label: string }> = [
   { value: "most_played", label: "Most played" },
 ];
 const ALBUM_PAGE_SIZE = 20;
+const ALERT_FILTERS: Array<{ value: AlertFilter; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "urgent", label: "Urgent" },
+  { value: "warning", label: "Warning" },
+  { value: "info", label: "Information" },
+  { value: "copyright", label: "Copyright" },
+  { value: "uploads", label: "Uploads" },
+  { value: "payments", label: "Payments" },
+  { value: "contracts", label: "Contracts" },
+  { value: "security", label: "Security" },
+  { value: "resolved", label: "Resolved" },
+];
+const ALERT_PAGE_SIZE = 10;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const ARTIST_BASE_SELECT = "id, user_id, display_name, slug, bio, country, avatar_url, banner_url, monthly_listeners, contact_email, mobile_money_number, mobile_money_network, instagram_url, facebook_url, twitter_url, tiktok_url, youtube_url";
 const ARTIST_SELECT = `${ARTIST_BASE_SELECT}, public_phone, preferred_payment_method`;
@@ -558,7 +586,7 @@ function ArtistDashboardPage() {
         {active === "overview" && <OverviewSection overview={overview} />}
         {active === "songs" && <SongsSection artist={artist} />}
         {active === "albums" && <AlbumsSection artist={artist} albums={albums} setAlbums={setAlbums} tracks={tracks} />}
-        {active === "watch" && <WatchOutSection artist={artist} upcoming={releaseEditorItems} tracks={tracks} albums={albums} setTracks={setTracks} setAlbums={setAlbums} />}
+        {active === "watch" && <WatchOutSection artist={artist} upcoming={releaseEditorItems} tracks={tracks} albums={albums} purchases={purchases} notifications={notifications} setTracks={setTracks} setAlbums={setAlbums} setNotifications={setNotifications} />}
         {active === "sales" && <SalesSection purchases={purchases} setPurchases={setPurchases} tracks={tracks} />}
         {active === "gifts" && <GiftsSection motivations={motivations} stats={stats} artist={artist} />}
         {active === "analytics" && <AnalyticsSection tracks={tracks} albums={albums} countries={countries} stats={stats} />}
@@ -1182,6 +1210,115 @@ function buildStats(tracks: TrackRow[], albums: AlbumRow[], purchases: PurchaseR
     earnings,
     unread: notifications.filter((row) => !row.read_at).length,
   };
+}
+
+function buildWatchAlerts({
+  tracks,
+  albums,
+  purchases,
+  notifications,
+  resolvedIds,
+}: {
+  tracks: TrackRow[];
+  albums: AlbumRow[];
+  purchases: PurchaseRow[];
+  notifications: NotificationRow[];
+  resolvedIds: Set<string>;
+}): DashboardAlert[] {
+  const alerts: DashboardAlert[] = [];
+  const now = Date.now();
+
+  for (const track of tracks.slice(0, 120)) {
+    if (!track.cover_url || !track.audio_url || !track.genre || !track.ai_tool) {
+      alerts.push({
+        id: `track-meta-${track.id}`,
+        title: "Song metadata needs attention",
+        category: "uploads",
+        severity: !track.audio_url ? "urgent" : "warning",
+        explanation: "This song is missing artwork, audio, genre, or AI-tool metadata. Complete it before serious promotion.",
+        date: track.release_date,
+        relatedItem: track.title || "Untitled song",
+        recommendedAction: "Open the song upload/editor flow and complete the missing fields.",
+        status: resolvedIds.has(`track-meta-${track.id}`) ? "resolved" : "open",
+        link: `/tracks/${track.id}`,
+      });
+    }
+    if (releaseTime(track) > now && !track.audio_url) {
+      alerts.push({
+        id: `track-schedule-${track.id}`,
+        title: "Scheduled song is missing audio",
+        category: "uploads",
+        severity: "urgent",
+        explanation: "A scheduled song should not go live without a playable audio file.",
+        date: track.release_at || track.release_date,
+        relatedItem: track.title || "Untitled song",
+        recommendedAction: "Upload the audio file or move the go-live date.",
+        status: resolvedIds.has(`track-schedule-${track.id}`) ? "resolved" : "open",
+        link: `/tracks/${track.id}`,
+      });
+    }
+  }
+
+  for (const album of albums.slice(0, 80)) {
+    const albumId = album.id;
+    const albumTracks = tracks.filter((track) => track.album_id === albumId);
+    if (!album.cover_url || albumTracks.length === 0) {
+      alerts.push({
+        id: `album-meta-${albumId}`,
+        title: "Album is not ready",
+        category: "uploads",
+        severity: releaseTime(album) > now ? "warning" : "urgent",
+        explanation: "This album is missing artwork or attached tracks.",
+        date: album.release_at || album.release_date,
+        relatedItem: album.title || "Untitled album",
+        recommendedAction: "Add cover artwork and attach songs before publishing.",
+        status: resolvedIds.has(`album-meta-${albumId}`) ? "resolved" : "open",
+        link: `/albums/${albumId}`,
+      });
+    }
+  }
+
+  for (const purchase of purchases.slice(0, 60)) {
+    if (purchase.status !== "closed") {
+      alerts.push({
+        id: `purchase-${purchase.id}`,
+        title: "Buyer request needs follow-up",
+        category: "contracts",
+        severity: "info",
+        explanation: "A buyer has shown interest in rights or access. Review the request before it goes stale.",
+        date: purchase.created_at,
+        relatedItem: trackTitle(tracks, purchase.track_id),
+        recommendedAction: "Open Sales & Contracts and update the request status.",
+        status: resolvedIds.has(`purchase-${purchase.id}`) ? "resolved" : "open",
+      });
+    }
+  }
+
+  for (const notification of notifications.slice(0, 60)) {
+    if (notification.read_at && !resolvedIds.has(`notice-${notification.id}`)) continue;
+    const text = `${notification.title} ${notification.body ?? ""}`.toLowerCase();
+    const category: AlertFilter = text.includes("payment") ? "payments" : text.includes("security") ? "security" : text.includes("copyright") ? "copyright" : "info";
+    const severity: AlertSeverity = text.includes("urgent") || text.includes("failed") || text.includes("rejected") ? "urgent" : category === "info" ? "info" : "warning";
+    alerts.push({
+      id: `notice-${notification.id}`,
+      title: notification.title || "Platform notice",
+      category,
+      severity,
+      explanation: notification.body || "SHY sent an important notice for this artist account.",
+      date: notification.created_at,
+      relatedItem: "SHY notice",
+      recommendedAction: notification.link ? "View the linked item and resolve it." : "Review and mark as resolved.",
+      status: notification.read_at || resolvedIds.has(`notice-${notification.id}`) ? "resolved" : "open",
+      link: notification.link,
+    });
+  }
+
+  return alerts
+    .filter((alert) => isValidDateInput(alert.date))
+    .sort((a, b) => {
+      const severityRank: Record<AlertSeverity, number> = { urgent: 0, warning: 1, info: 2 };
+      return severityRank[a.severity] - severityRank[b.severity] || releaseTimeFromValue(b.date) - releaseTimeFromValue(a.date);
+    });
 }
 
 function buildDashboardOverview({
@@ -2222,16 +2359,69 @@ function WatchOutSection({
   upcoming,
   tracks,
   albums,
+  purchases,
+  notifications,
   setTracks,
   setAlbums,
+  setNotifications,
 }: {
   artist: ArtistRow;
   upcoming: ScheduledReleaseItem[];
   tracks: TrackRow[];
   albums: AlbumRow[];
+  purchases: PurchaseRow[];
+  notifications: NotificationRow[];
   setTracks: (tracks: TrackRow[]) => void;
   setAlbums: (albums: AlbumRow[]) => void;
+  setNotifications: (notifications: NotificationRow[]) => void;
 }) {
+  const [filter, setFilter] = useState<AlertFilter>("all");
+  const [page, setPage] = useState(1);
+  const [resolvedIds, setResolvedIds] = useState<Set<string>>(() => new Set());
+  const [savingAlertId, setSavingAlertId] = useState<string | null>(null);
+  const alerts = useMemo(
+    () => buildWatchAlerts({ tracks, albums, purchases, notifications, resolvedIds }),
+    [albums, notifications, purchases, resolvedIds, tracks],
+  );
+  const filteredAlerts = useMemo(() => {
+    return alerts.filter((alert) => {
+      if (filter === "all") return alert.status === "open";
+      if (filter === "resolved") return alert.status === "resolved";
+      return alert.status === "open" && (alert.severity === filter || alert.category === filter);
+    });
+  }, [alerts, filter]);
+  const totalPages = Math.max(1, Math.ceil(filteredAlerts.length / ALERT_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const visibleAlerts = filteredAlerts.slice((safePage - 1) * ALERT_PAGE_SIZE, safePage * ALERT_PAGE_SIZE);
+
+  function changeFilter(next: AlertFilter) {
+    setFilter(next);
+    setPage(1);
+  }
+
+  async function markAlertResolved(alert: DashboardAlert) {
+    setSavingAlertId(alert.id);
+    try {
+      if (alert.id.startsWith("notice-")) {
+        const notificationId = alert.id.replace("notice-", "");
+        const readAt = new Date().toISOString();
+        const { error } = await withTimeout<DbResult>(
+          (supabase as any).from("notifications").update({ read_at: readAt }).eq("id", notificationId),
+          "Mark alert read",
+          7000,
+        );
+        if (error) throw error;
+        setNotifications(notifications.map((item) => item.id === notificationId ? { ...item, read_at: readAt } : item));
+      }
+      setResolvedIds((current) => new Set(current).add(alert.id));
+      toast.success("Watch Out item resolved");
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not update this alert."));
+    } finally {
+      setSavingAlertId(null);
+    }
+  }
+
   async function saveRelease(item: ScheduledReleaseItem, title: string, value: string) {
     try {
       const cleanTitle = title.trim();
@@ -2253,12 +2443,71 @@ function WatchOutSection({
   }
 
   return (
-    <Panel title="Watch Out: Upcoming Releases" icon={<CalendarClock className="h-4 w-4" />}>
-      {upcoming.length === 0 && <EmptyPanel text="No releases found yet. Upload a song or album, then you can manage its go-live date here." />}
-      <div className="grid gap-3 md:grid-cols-2">
-        {upcoming.map((item) => <EditableReleaseItem key={`${item.type}-${item.id}`} item={item} onSave={saveRelease} />)}
-      </div>
-    </Panel>
+    <div className="space-y-5">
+      <Panel title="Watch Out: Action Centre" icon={<ShieldAlert className="h-4 w-4" />}>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Metric label="Open items" value={formatMetricNumber(alerts.filter((alert) => alert.status === "open").length)} icon={ShieldAlert} />
+          <Metric label="Urgent" value={formatMetricNumber(alerts.filter((alert) => alert.status === "open" && alert.severity === "urgent").length)} icon={ShieldAlert} />
+          <Metric label="Scheduled releases" value={formatMetricNumber(upcoming.length)} icon={CalendarClock} />
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {ALERT_FILTERS.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              className={filter === item.value ? "mini-primary" : "mini-button"}
+              onClick={() => changeFilter(item.value)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <div className="mt-4 space-y-3">
+          {visibleAlerts.length === 0 && <EmptyPanel text={filter === "all" ? "No current warnings or action items. Everything looks good." : "No Watch Out items match this filter."} />}
+          {visibleAlerts.map((alert) => (
+            <div key={alert.id} className="rounded-xl bg-background/45 p-4 hairline">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="font-semibold">{alert.title}</div>
+                    <StatusPill label={pretty(alert.severity)} />
+                    <StatusPill label={pretty(alert.category)} />
+                  </div>
+                  <p className="mt-2 text-sm text-muted-foreground">{alert.explanation}</p>
+                  <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <span>{safeDashboardDate(alert.date)}</span>
+                    <span>{alert.relatedItem}</span>
+                    <span>{alert.recommendedAction}</span>
+                  </div>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  {alert.link ? <Link to={alert.link as any} className="mini-button">View details</Link> : <button type="button" className="mini-button" disabled title="No detail page is connected for this item yet.">View details</button>}
+                  {alert.status === "open" && (
+                    <button type="button" className="mini-button" disabled={savingAlertId === alert.id} onClick={() => markAlertResolved(alert)}>
+                      {savingAlertId === alert.id ? "Saving" : "Resolve"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-muted-foreground">Page {safePage} of {totalPages} · {formatMetricNumber(filteredAlerts.length)} item{filteredAlerts.length === 1 ? "" : "s"}</div>
+          <div className="flex gap-2">
+            <button type="button" className="mini-button" disabled={safePage <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}><ChevronLeft className="h-3.5 w-3.5" /> Previous</button>
+            <button type="button" className="mini-button" disabled={safePage >= totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>Next <ChevronRight className="h-3.5 w-3.5" /></button>
+          </div>
+        </div>
+      </Panel>
+
+      <Panel title="Scheduled Release Editor" icon={<CalendarClock className="h-4 w-4" />}>
+        {upcoming.length === 0 && <EmptyPanel text="No releases found yet. Upload a song or album, then you can manage its go-live date here." />}
+        <div className="grid gap-3 md:grid-cols-2">
+          {upcoming.map((item) => <EditableReleaseItem key={`${item.type}-${item.id}`} item={item} onSave={saveRelease} />)}
+        </div>
+      </Panel>
+    </div>
   );
 }
 
