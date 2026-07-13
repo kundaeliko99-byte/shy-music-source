@@ -10,6 +10,9 @@ import { MOOD_OPTIONS, MOOD_VALUES } from "@/lib/moods";
 import { withTimeout } from "@/lib/request";
 import { prettyGenre } from "@/lib/vibes";
 
+const UPLOAD_FORM_VERSION = "20260713-expanded-moods";
+const MOOD_OPTION_HTML = MOOD_OPTIONS.map((mood) => `<option value="${mood.value}">${mood.label}</option>`).join("");
+
 const GENRES = [
   "ambient",
   "electronic",
@@ -511,8 +514,10 @@ function UploadFrame({ title, srcDoc, onSubmit }: { title: string; srcDoc: strin
 
   return (
     <iframe
+      key={`${title}-${UPLOAD_FORM_VERSION}`}
       ref={iframeRef}
       title={title}
+      data-upload-version={UPLOAD_FORM_VERSION}
       srcDoc={srcDoc}
       className="block w-full rounded-2xl border border-border bg-background"
       style={{ height }}
@@ -661,6 +666,7 @@ function frameDocument(body: string) {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="shy-upload-version" content="${UPLOAD_FORM_VERSION}" />
 <style>
   :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #05050a; color: #f7f3ff; }
   * { box-sizing: border-box; }
@@ -757,7 +763,7 @@ function frameDocument(body: string) {
   }
 </style>
 </head>
-<body>
+<body data-upload-version="${UPLOAD_FORM_VERSION}">
 ${body}
 <script>
   function fileFrom(root, name) {
@@ -825,7 +831,7 @@ function dateTimeField(name: string, label: string, value: string, helper: strin
 }
 
 function selectField(name: string, label: string, options: string, defaultValue: string) {
-  return `<label><span>${label}</span><select name="${name}" data-default="${defaultValue}">${options}</select></label>`;
+  return `<label><span>${label}</span><select name="${name}" data-default="${defaultValue}" data-upload-version="${UPLOAD_FORM_VERSION}">${options}</select></label>`;
 }
 
 function genreOptions() {
@@ -833,7 +839,7 @@ function genreOptions() {
 }
 
 function moodOptions(includeEmpty = false) {
-  return `${includeEmpty ? '<option value="">No mood</option>' : ""}${MOOD_OPTIONS.map((mood) => `<option value="${mood.value}">${mood.label}</option>`).join("")}`;
+  return `${includeEmpty ? '<option value="">No mood</option>' : ""}${MOOD_OPTION_HTML}`;
 }
 
 function toolOptions() {
