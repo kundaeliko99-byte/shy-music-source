@@ -356,6 +356,16 @@ function ArtistDashboardPage() {
     );
   }
 
+  if (loading && active === "watch") {
+    return (
+      <AppShell>
+        <DashboardFrame active={active}>
+          <StandaloneWatchOutSection isAdmin={isAdmin} />
+        </DashboardFrame>
+      </AppShell>
+    );
+  }
+
   if (loading) {
     return (
       <AppShell>
