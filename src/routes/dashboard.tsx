@@ -586,7 +586,7 @@ function ArtistDashboardPage() {
         {active === "overview" && <OverviewSection overview={overview} />}
         {active === "songs" && <SongsSection artist={artist} />}
         {active === "albums" && <AlbumsSection artist={artist} albums={albums} setAlbums={setAlbums} tracks={tracks} />}
-        {active === "watch" && <WatchOutSection artist={artist} upcoming={releaseEditorItems} tracks={tracks} albums={albums} purchases={purchases} notifications={notifications} setTracks={setTracks} setAlbums={setAlbums} setNotifications={setNotifications} />}
+        {active === "watch" && <WatchOutSection artist={artist} upcoming={releaseEditorItems} setTracks={setTracks} setAlbums={setAlbums} />}
         {active === "sales" && <SalesSection purchases={purchases} setPurchases={setPurchases} tracks={tracks} />}
         {active === "gifts" && <GiftsSection motivations={motivations} stats={stats} artist={artist} purchases={purchases} tracks={tracks} />}
         {active === "analytics" && <AnalyticsSection tracks={tracks} albums={albums} countries={countries} stats={stats} />}
@@ -662,6 +662,42 @@ function normalizeArtistRow(row: unknown): ArtistRow | null {
     tiktok_url: artist.tiktok_url ?? null,
     youtube_url: artist.youtube_url ?? null,
   };
+}
+
+function artistProfileForm(artist: ArtistRow) {
+  return {
+    display_name: artist.display_name,
+    bio: artist.bio ?? "",
+    country: artist.country ?? "",
+    avatar_url: artist.avatar_url ?? "",
+    banner_url: artist.banner_url ?? "",
+    contact_email: artist.contact_email ?? "",
+    public_phone: artist.public_phone ?? artist.mobile_money_number ?? "",
+    preferred_payment_method: artist.preferred_payment_method ?? "",
+    instagram_url: artist.instagram_url ?? "",
+    facebook_url: artist.facebook_url ?? "",
+    twitter_url: artist.twitter_url ?? "",
+    tiktok_url: artist.tiktok_url ?? "",
+    youtube_url: artist.youtube_url ?? "",
+  };
+}
+
+function artistProfileImageUrls(artist: ArtistRow) {
+  return {
+    avatar: resolveArtworkUrl(artist.avatar_url, "avatars"),
+    banner: resolveArtworkUrl(artist.banner_url, "banners"),
+  };
+}
+
+function slugifyArtistName(value: string) {
+  const base = value
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  return `${base || "artist"}-${Date.now().toString(36).slice(-5)}`;
 }
 
 async function loadArtistTracks(artistId: string): Promise<TrackRow[]> {
@@ -1319,6 +1355,36 @@ function buildWatchAlerts({
       const severityRank: Record<AlertSeverity, number> = { urgent: 0, warning: 1, info: 2 };
       return severityRank[a.severity] - severityRank[b.severity] || releaseTimeFromValue(b.date) - releaseTimeFromValue(a.date);
     });
+}
+
+async function loadWatchOutAlertsOnce(artistId: string, artistUserId: string): Promise<DashboardAlert[]> {
+  const [tracksResult, albumsResult, purchasesResult, notificationsResult] = await withTimeout(
+    Promise.allSettled([
+      loadArtistTracks(artistId),
+      loadArtistAlbums(artistId),
+      (supabase as any)
+        .from("song_purchase_requests")
+        .select("id, track_id, artist_id, buyer_name, buyer_contact, proposed_price, currency, message, status, created_at")
+        .eq("artist_id", artistId)
+        .order("created_at", { ascending: false })
+        .limit(20),
+      (supabase as any)
+        .from("notifications")
+        .select("id, title, body, link, read_at, created_at")
+        .eq("user_id", artistUserId)
+        .order("created_at", { ascending: false })
+        .limit(20),
+    ]),
+    "Watch Out alerts",
+    10000,
+  );
+
+  const tracks = tracksResult.status === "fulfilled" ? tracksResult.value.slice(0, 20) : [];
+  const albums = albumsResult.status === "fulfilled" ? albumsResult.value.slice(0, 20) : [];
+  const purchases = pickData<PurchaseRow>(purchasesResult).slice(0, 20);
+  const notifications = pickData<NotificationRow>(notificationsResult).slice(0, 20);
+
+  return buildWatchAlerts({ tracks, albums, purchases, notifications, resolvedIds: new Set() }).slice(0, 20);
 }
 
 function buildDashboardOverview({
@@ -2357,31 +2423,28 @@ function StandaloneAlbumsList({ albums, tracks }: { albums: AlbumRow[]; tracks: 
 function WatchOutSection({
   artist,
   upcoming,
-  tracks,
-  albums,
-  purchases,
-  notifications,
   setTracks,
   setAlbums,
-  setNotifications,
 }: {
   artist: ArtistRow;
   upcoming: ScheduledReleaseItem[];
-  tracks: TrackRow[];
-  albums: AlbumRow[];
-  purchases: PurchaseRow[];
-  notifications: NotificationRow[];
-  setTracks: (tracks: TrackRow[]) => void;
-  setAlbums: (albums: AlbumRow[]) => void;
-  setNotifications: (notifications: NotificationRow[]) => void;
+  setTracks: (tracks: TrackRow[] | ((tracks: TrackRow[]) => TrackRow[])) => void;
+  setAlbums: (albums: AlbumRow[] | ((albums: AlbumRow[]) => AlbumRow[])) => void;
 }) {
+  const artistId = artist.id;
+  const artistUserId = artist.user_id;
   const [filter, setFilter] = useState<AlertFilter>("all");
   const [page, setPage] = useState(1);
   const [resolvedIds, setResolvedIds] = useState<Set<string>>(() => new Set());
   const [savingAlertId, setSavingAlertId] = useState<string | null>(null);
+  const [alertRows, setAlertRows] = useState<DashboardAlert[]>([]);
+  const [alertsLoading, setAlertsLoading] = useState(true);
+  const [alertsError, setAlertsError] = useState<string | null>(null);
+  const [reloadAlerts, setReloadAlerts] = useState(0);
+  const upcomingItems = useMemo(() => upcoming.slice(0, 20), [upcoming]);
   const alerts = useMemo(
-    () => buildWatchAlerts({ tracks, albums, purchases, notifications, resolvedIds }),
-    [albums, notifications, purchases, resolvedIds, tracks],
+    () => alertRows.map((alert) => (resolvedIds.has(alert.id) ? { ...alert, status: "resolved" as const } : alert)).slice(0, 20),
+    [alertRows, resolvedIds],
   );
   const filteredAlerts = useMemo(() => {
     return alerts.filter((alert) => {
@@ -2399,6 +2462,38 @@ function WatchOutSection({
     setPage(1);
   }
 
+  useEffect(() => {
+    if (!artistId) {
+      setAlertRows([]);
+      setAlertsLoading(false);
+      setAlertsError("Complete your artist profile before viewing artist alerts.");
+      return;
+    }
+
+    let active = true;
+    setAlertsLoading(true);
+    setAlertsError(null);
+
+    loadWatchOutAlertsOnce(artistId, artistUserId)
+      .then((rows) => {
+        if (!active) return;
+        setAlertRows(rows);
+        setPage(1);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setAlertRows([]);
+        setAlertsError(errorMessage(error, "Watch Out alerts could not be loaded."));
+      })
+      .finally(() => {
+        if (active) setAlertsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [artistId, artistUserId, reloadAlerts]);
+
   async function markAlertResolved(alert: DashboardAlert) {
     setSavingAlertId(alert.id);
     try {
@@ -2411,7 +2506,6 @@ function WatchOutSection({
           7000,
         );
         if (error) throw error;
-        setNotifications(notifications.map((item) => item.id === notificationId ? { ...item, read_at: readAt } : item));
       }
       setResolvedIds((current) => new Set(current).add(alert.id));
       toast.success("Watch Out item resolved");
@@ -2429,12 +2523,12 @@ function WatchOutSection({
       const schedule = parseScheduledRelease(value);
       if (item.kind === "track") {
         const updated = await updateReleaseSchedule("tracks", item.id, artist.id, schedule, "id", cleanTitle);
-        setTracks(tracks.map((track) => track.id === item.id ? { ...track, ...updated } : track));
+        setTracks((tracks) => tracks.map((track) => track.id === item.id ? { ...track, ...updated } : track));
       } else {
         const updated = await updateReleaseSchedule("albums", item.id, artist.id, schedule, "id", cleanTitle);
         const childUpdate = await updateAlbumTrackSchedules(item.id, artist.id, schedule);
-        setAlbums(albums.map((album) => album.id === item.id ? { ...album, ...updated } : album));
-        setTracks(tracks.map((track) => track.album_id === item.id ? { ...track, ...childUpdate } : track));
+        setAlbums((albums) => albums.map((album) => album.id === item.id ? { ...album, ...updated } : album));
+        setTracks((tracks) => tracks.map((track) => track.album_id === item.id ? { ...track, ...childUpdate } : track));
       }
       toast.success("Scheduled release updated");
     } catch (error) {
@@ -2448,7 +2542,7 @@ function WatchOutSection({
         <div className="grid gap-3 sm:grid-cols-3">
           <Metric label="Open items" value={formatMetricNumber(alerts.filter((alert) => alert.status === "open").length)} icon={ShieldAlert} />
           <Metric label="Urgent" value={formatMetricNumber(alerts.filter((alert) => alert.status === "open" && alert.severity === "urgent").length)} icon={ShieldAlert} />
-          <Metric label="Scheduled releases" value={formatMetricNumber(upcoming.length)} icon={CalendarClock} />
+          <Metric label="Scheduled releases" value={formatMetricNumber(upcomingItems.length)} icon={CalendarClock} />
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           {ALERT_FILTERS.map((item) => (
@@ -2463,8 +2557,18 @@ function WatchOutSection({
           ))}
         </div>
         <div className="mt-4 space-y-3">
-          {visibleAlerts.length === 0 && <EmptyPanel text={filter === "all" ? "No current warnings or action items. Everything looks good." : "No Watch Out items match this filter."} />}
-          {visibleAlerts.map((alert) => (
+          {alertsLoading && <EmptyPanel text="Loading Watch Out alerts..." />}
+          {!alertsLoading && alertsError && (
+            <div className="rounded-lg bg-background/45 p-4 text-sm text-muted-foreground hairline">
+              <div>{alertsError}</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" className="mini-primary" onClick={() => setReloadAlerts((current) => current + 1)}>Try again</button>
+                <Link to="/dashboard" search={{ tab: "overview" }} className="mini-button">Return Overview</Link>
+              </div>
+            </div>
+          )}
+          {!alertsLoading && !alertsError && visibleAlerts.length === 0 && <EmptyPanel text={filter === "all" ? "No current warnings or action items. Everything looks good." : "No Watch Out items match this filter."} />}
+          {!alertsLoading && !alertsError && visibleAlerts.map((alert) => (
             <div key={alert.id} className="rounded-xl bg-background/45 p-4 hairline">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0">
@@ -2502,9 +2606,9 @@ function WatchOutSection({
       </Panel>
 
       <Panel title="Scheduled Release Editor" icon={<CalendarClock className="h-4 w-4" />}>
-        {upcoming.length === 0 && <EmptyPanel text="No releases found yet. Upload a song or album, then you can manage its go-live date here." />}
+        {upcomingItems.length === 0 && <EmptyPanel text="No releases found yet. Upload a song or album, then you can manage its go-live date here." />}
         <div className="grid gap-3 md:grid-cols-2">
-          {upcoming.map((item) => <EditableReleaseItem key={`${item.type}-${item.id}`} item={item} onSave={saveRelease} />)}
+          {upcomingItems.map((item) => <EditableReleaseItem key={`${item.type}-${item.id}`} item={item} onSave={saveRelease} />)}
         </div>
       </Panel>
     </div>
@@ -2752,13 +2856,125 @@ function StandaloneGiftsSection({ motivations, purchases, tracks, stats }: { mot
 }
 
 function StandaloneProfileSection() {
+  const { user, loading } = useAuth();
+  const loadedUserRef = useRef<string | null>(null);
+  const [existingArtist, setExistingArtist] = useState<ArtistRow | null>(null);
+  const [checking, setChecking] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    display_name: "",
+    country: "",
+    bio: "",
+    contact_email: user?.email ?? "",
+    public_phone: "",
+    preferred_payment_method: "",
+  });
+
+  useEffect(() => {
+    if (loading) return;
+    if (!user?.id) {
+      setChecking(false);
+      setLoadError("Sign in with an artist account to create an artist profile.");
+      return;
+    }
+    if (loadedUserRef.current === user.id) return;
+    loadedUserRef.current = user.id;
+
+    let active = true;
+    setChecking(true);
+    setLoadError(null);
+
+    loadArtistProfile({ userId: user.id })
+      .then((profile) => {
+        if (!active) return;
+        setExistingArtist(profile);
+        setForm((current) => ({ ...current, contact_email: current.contact_email || user.email || "" }));
+      })
+      .catch((error) => {
+        if (active) setLoadError(errorMessage(error, "Could not check your artist profile."));
+      })
+      .finally(() => {
+        if (active) setChecking(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [loading, user?.email, user?.id]);
+
+  async function createProfile() {
+    if (!user?.id) {
+      toast.error("Sign in before creating an artist profile.");
+      return;
+    }
+    const displayName = form.display_name.trim();
+    if (!displayName) {
+      toast.error("Artist / songwriter name is required.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const insertRow = {
+        user_id: user.id,
+        display_name: displayName,
+        slug: slugifyArtistName(displayName),
+        bio: form.bio.trim() || null,
+        country: form.country.trim() || null,
+        contact_email: form.contact_email.trim() || user.email || null,
+        public_phone: form.public_phone.trim() || null,
+        preferred_payment_method: form.preferred_payment_method.trim() || null,
+      };
+      let { data, error } = await withTimeout<DbResult>(
+        (supabase as any).from("artists").insert(insertRow).select(ARTIST_SELECT).single(),
+        "Create artist profile",
+        10000,
+      );
+      if (error && isOptionalArtistColumnError(error)) {
+        const { public_phone: _publicPhone, preferred_payment_method: _paymentMethod, ...baseRow } = insertRow;
+        ({ data, error } = await withTimeout<DbResult>(
+          (supabase as any).from("artists").insert(baseRow).select(ARTIST_BASE_SELECT).single(),
+          "Create artist profile base",
+          10000,
+        ));
+      }
+      if (error) throw error;
+      const profile = normalizeArtistRow(data);
+      if (!profile) throw new Error("Artist profile was created but SHY could not read it back.");
+      setExistingArtist(profile);
+      toast.success("Artist profile created");
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not create your artist profile."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (existingArtist) {
+    return <ProfileSection artist={existingArtist} setArtist={(profile) => setExistingArtist(profile)} />;
+  }
+
   return (
     <Panel title="Artist Profile Manager" icon={<UserCog className="h-4 w-4" />}>
-      <div className="grid gap-3 md:grid-cols-2">
-        <InfoTile icon={UserCog} title="Profile setup" text="Finish artist setup to unlock full profile editing, social links, biography, profile image, and banner controls." />
-        <InfoTile icon={CreditCard} title="Payment details" text="Mobile money and payout details connect to your artist profile and motivation button." />
-      </div>
-      <Link to="/become-artist" className="mt-4 inline-flex rounded-full bg-gradient-primary px-4 py-2 text-sm font-medium text-primary-foreground">Finish artist setup</Link>
+      {checking && <EmptyPanel text="Checking artist profile..." />}
+      {!checking && loadError && <EmptyPanel text={loadError} />}
+      {!checking && !loadError && (
+        <div className="space-y-4">
+          <div className="rounded-lg bg-background/45 p-4 text-sm text-muted-foreground hairline">
+            Create your artist profile here. SHY will not redirect you away from this page while you type.
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Artist / songwriter name"><input className="input-lite" value={form.display_name} onChange={(event) => setForm((current) => ({ ...current, display_name: event.target.value }))} placeholder="Your public artist name" /></Field>
+            <Field label="Country"><input className="input-lite" value={form.country} onChange={(event) => setForm((current) => ({ ...current, country: event.target.value }))} placeholder="Zambia" /></Field>
+            <Field label="Public email"><input className="input-lite" value={form.contact_email} onChange={(event) => setForm((current) => ({ ...current, contact_email: event.target.value }))} placeholder="artist@example.com" /></Field>
+            <Field label="Public phone / WhatsApp"><input className="input-lite" value={form.public_phone} onChange={(event) => setForm((current) => ({ ...current, public_phone: event.target.value }))} placeholder="+260..." /></Field>
+            <Field label="Preferred payment method"><select className="input-lite" value={form.preferred_payment_method} onChange={(event) => setForm((current) => ({ ...current, preferred_payment_method: event.target.value }))}><option value="">Not set</option>{PAYMENT_METHODS.map((method) => <option key={method} value={method}>{method}</option>)}</select></Field>
+          </div>
+          <Field label="Biography"><textarea className="input-lite min-h-28" value={form.bio} onChange={(event) => setForm((current) => ({ ...current, bio: event.target.value }))} placeholder="Tell fans and buyers who you are." /></Field>
+          <button className="mini-primary" type="button" disabled={saving} onClick={createProfile}><Save className="h-3.5 w-3.5" /> {saving ? "Creating" : "Create profile"}</button>
+        </div>
+      )}
     </Panel>
   );
 }
@@ -3115,23 +3331,15 @@ function MessagesSection({ notifications, purchases }: { notifications: Notifica
 function ProfileSection({ artist, setArtist }: { artist: ArtistRow; setArtist: (artist: ArtistRow) => void }) {
   const avatarRef = useRef<HTMLInputElement>(null);
   const bannerRef = useRef<HTMLInputElement>(null);
-  const [form, setForm] = useState({
-    display_name: artist.display_name,
-    bio: artist.bio ?? "",
-    country: artist.country ?? "",
-    avatar_url: artist.avatar_url ?? "",
-    banner_url: artist.banner_url ?? "",
-    contact_email: artist.contact_email ?? "",
-    public_phone: artist.public_phone ?? artist.mobile_money_number ?? "",
-    preferred_payment_method: artist.preferred_payment_method ?? "",
-    instagram_url: artist.instagram_url ?? "",
-    facebook_url: artist.facebook_url ?? "",
-    twitter_url: artist.twitter_url ?? "",
-    tiktok_url: artist.tiktok_url ?? "",
-    youtube_url: artist.youtube_url ?? "",
-  });
+  const [form, setForm] = useState(() => artistProfileForm(artist));
+  const [imageUrls, setImageUrls] = useState(() => artistProfileImageUrls(artist));
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState<"avatar" | "banner" | null>(null);
+
+  useEffect(() => {
+    setForm(artistProfileForm(artist));
+    setImageUrls(artistProfileImageUrls(artist));
+  }, [artist]);
 
   async function saveProfile() {
     if (!form.display_name.trim()) {
@@ -3197,11 +3405,9 @@ function ProfileSection({ artist, setArtist }: { artist: ArtistRow; setArtist: (
       );
       if (error) throw error;
       setForm((current) => ({ ...current, [field]: path }));
+      setImageUrls((current) => ({ ...current, [kind]: url }));
       setArtist({ ...artist, ...(data as ArtistRow) });
       toast.success(kind === "avatar" ? "Profile image updated" : "Cover image updated");
-      if (url) {
-        setForm((current) => ({ ...current, [field]: path }));
-      }
     } catch (error) {
       toast.error(errorMessage(error, "Could not upload this profile image."));
     } finally {
@@ -3215,12 +3421,12 @@ function ProfileSection({ artist, setArtist }: { artist: ArtistRow; setArtist: (
     <Panel title="Artist Profile Manager" icon={<UserCog className="h-4 w-4" />}>
       <div className="mb-4 grid gap-3 md:grid-cols-[160px_1fr]">
         <div className="space-y-2">
-          <DashboardArtwork src={resolveArtworkUrl(form.avatar_url, "avatars")} seed={artist.id} alt={`${artist.display_name} profile image`} className="aspect-square w-full rounded-full" />
+          <DashboardArtwork src={imageUrls.avatar} seed={artist.id} alt={`${artist.display_name} profile image`} className="aspect-square w-full rounded-full" />
           <button type="button" className="mini-button w-full justify-center" disabled={uploading === "avatar"} onClick={() => avatarRef.current?.click()}><Camera className="h-3.5 w-3.5" /> {uploading === "avatar" ? "Uploading" : "Profile image"}</button>
           <input ref={avatarRef} className="hidden" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadProfileImage("avatar", file); }} />
         </div>
         <div className="space-y-2">
-          <DashboardArtwork src={resolveArtworkUrl(form.banner_url, "banners")} seed={`${artist.id}-banner`} alt={`${artist.display_name} cover image`} className="aspect-[3/1] w-full" />
+          <DashboardArtwork src={imageUrls.banner} seed={`${artist.id}-banner`} alt={`${artist.display_name} cover image`} className="aspect-[3/1] w-full" />
           <button type="button" className="mini-button" disabled={uploading === "banner"} onClick={() => bannerRef.current?.click()}><Camera className="h-3.5 w-3.5" /> {uploading === "banner" ? "Uploading" : "Cover image"}</button>
           <input ref={bannerRef} className="hidden" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadProfileImage("banner", file); }} />
         </div>
