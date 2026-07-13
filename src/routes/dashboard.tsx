@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Album,
   BarChart3,
@@ -968,7 +968,7 @@ function StandaloneArtistToolsDataSection({ active, isAdmin }: { active: Dashboa
 }
 
 function StandaloneWatchOutSection({ isAdmin, allowSavedLoad = true }: { isAdmin: boolean; allowSavedLoad?: boolean }) {
-  const [items, setItems] = useState<ScheduledReleaseItem[]>(() => demoScheduleItems());
+  const [items, setItems] = useState<ScheduledReleaseItem[]>([]);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -976,7 +976,7 @@ function StandaloneWatchOutSection({ isAdmin, allowSavedLoad = true }: { isAdmin
 
     async function load() {
       if (!allowSavedLoad) {
-        setItems(demoScheduleItems());
+        setItems([]);
         setMessage("Checking your sign-in. Saved releases will appear after SHY confirms artist access.");
         return;
       }
@@ -989,16 +989,15 @@ function StandaloneWatchOutSection({ isAdmin, allowSavedLoad = true }: { isAdmin
         const trackRows = trackResult.status === "fulfilled" ? trackResult.value : [];
         const albumRows = albumResult.status === "fulfilled" ? albumResult.value : [];
         const releases = buildScheduleItems(trackRows, albumRows);
-        const visibleReleases = releases.length ? releases : demoScheduleItems();
         if (alive) {
-          setItems(visibleReleases);
-          setMessage(releases.length ? null : "No saved releases were found yet. These sample rows show where scheduled releases will appear after upload.");
+          setItems(releases);
+          setMessage(releases.length ? null : "No scheduled releases were found yet. Upload a song or album with a go-live date, then edit it here.");
         }
       } catch (error) {
         console.error("[dashboard] standalone Watch Out failed", error);
         if (alive) {
-          setItems(demoScheduleItems());
-          setMessage(isAdmin ? "Could not load saved releases yet. The editor remains available with sample rows." : "Saved releases could not load yet. The editor remains available with sample rows.");
+          setItems([]);
+          setMessage(isAdmin ? "Could not load scheduled releases yet. Check artist access or try again." : "Saved releases could not load yet. Try again after your artist profile finishes setup.");
         }
       }
     }
@@ -1504,22 +1503,26 @@ function ReleaseItem({ item }: { item: ScheduledReleaseItem }) {
 }
 
 function EditableReleaseItem({ item, onSave }: { item: ScheduledReleaseItem; onSave: (item: ScheduledReleaseItem, title: string, value: string) => Promise<void> }) {
-  const syncedTitle = item.title;
-  const syncedValue = scheduleInputValue(item);
-  const [title, setTitle] = useState(syncedTitle);
-  const [value, setValue] = useState(syncedValue);
+  const titleRef = useRef<HTMLInputElement>(null);
+  const dateRef = useRef<HTMLInputElement>(null);
+  const timeRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const itemSyncKey = `${item.kind}:${item.id}:${item.title}:${item.release_at ?? item.release_date}`;
+  const initialSchedule = scheduleInputParts(item);
 
   useEffect(() => {
-    setTitle(syncedTitle);
-    setValue(syncedValue);
-  }, [itemSyncKey, syncedTitle, syncedValue]);
+    if (titleRef.current) titleRef.current.value = item.title;
+    if (dateRef.current) dateRef.current.value = initialSchedule.date;
+    if (timeRef.current) timeRef.current.value = initialSchedule.time;
+  }, [itemSyncKey, item.title, initialSchedule.date, initialSchedule.time]);
 
   async function save() {
+    const nextTitle = titleRef.current?.value ?? item.title;
+    const nextDate = dateRef.current?.value ?? initialSchedule.date;
+    const nextTime = timeRef.current?.value || "12:00";
     setSaving(true);
     try {
-      await onSave(item, title, value);
+      await onSave(item, nextTitle, `${nextDate}T${nextTime}`);
     } finally {
       setSaving(false);
     }
@@ -1530,17 +1533,20 @@ function EditableReleaseItem({ item, onSave }: { item: ScheduledReleaseItem; onS
       <div className="flex items-center gap-3">
         <Cover src={item.cover_url} seed={item.id} size={48} shape="rounded" />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium">{title || item.title}</div>
+          <div className="truncate text-sm font-medium">{item.title}</div>
           <div className="text-xs text-muted-foreground">{item.type} - {timeUntilRelease(item)}</div>
         </div>
         <StatusPill label={item.localOnly ? "Sample" : formatReleaseSchedule(item)} />
       </div>
-      <div className="mt-3 grid gap-2 lg:grid-cols-[1.2fr_1fr_auto] lg:items-end">
+      <div className="mt-3 grid gap-2 lg:grid-cols-[1.2fr_0.9fr_0.7fr_auto] lg:items-end">
         <Field label="Title">
-          <input className="input-lite" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Release title" />
+          <input ref={titleRef} className="input-lite" defaultValue={item.title} placeholder="Release title" />
         </Field>
-        <Field label="Go live date and time">
-          <input className="input-lite" type="datetime-local" min={minimumScheduleInput()} value={value} onChange={(event) => setValue(event.target.value)} />
+        <Field label="Go live date">
+          <input ref={dateRef} className="input-lite" type="date" min={minimumScheduleDate()} defaultValue={initialSchedule.date} />
+        </Field>
+        <Field label="Go live time">
+          <input ref={timeRef} className="input-lite" type="time" defaultValue={initialSchedule.time} />
         </Field>
         <button className="mini-primary justify-center" type="button" disabled={saving} onClick={save}>
           <Save className="h-3.5 w-3.5" /> {saving ? "Saving" : "Save"}
@@ -1643,8 +1649,14 @@ function scheduleInputValue(item: { release_date: string; release_at?: string | 
   return toDateTimeLocalValue(source);
 }
 
-function minimumScheduleInput() {
-  return toDateTimeLocalValue(new Date(Date.now() + 5 * 60 * 1000));
+function scheduleInputParts(item: { release_date: string; release_at?: string | null }) {
+  const value = scheduleInputValue(item);
+  const [date, time] = value.split("T");
+  return { date, time: time || "12:00" };
+}
+
+function minimumScheduleDate() {
+  return toDateTimeLocalValue(new Date(Date.now() + 5 * 60 * 1000)).slice(0, 10);
 }
 
 function toDateTimeLocalValue(date: Date) {
