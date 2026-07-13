@@ -26,6 +26,7 @@ import { Cover } from "@/components/Cover";
 import { supabase } from "@/integrations/supabase/client";
 import { fmtCount } from "@/lib/format";
 import { useAuth } from "@/contexts/AuthContext";
+import { subscribeToStreamCounts } from "@/hooks/useTrackStreams";
 
 const REQUEST_TIMEOUT_MS = 6000;
 const DASHBOARD_TABS = ["overview", "songs", "albums", "watch", "sales", "gifts", "analytics", "messages", "profile", "settings"] as const;
@@ -292,6 +293,26 @@ function ArtistDashboardPage() {
       alive = false;
     };
   }, [authLoading, user]);
+
+  const trackIdsKey = useMemo(() => tracks.map((track) => track.id).join("|"), [tracks]);
+
+  useEffect(() => {
+    if (!artist || !trackIdsKey) return;
+    const trackIds = new Set(trackIdsKey.split("|"));
+    return subscribeToStreamCounts((counts) => {
+      setTracks((currentTracks) => {
+        let changed = false;
+        const nextTracks = currentTracks.map((track) => {
+          if (!trackIds.has(track.id)) return track;
+          const liveCount = counts.get(track.id);
+          if (typeof liveCount !== "number" || liveCount === track.plays_count) return track;
+          changed = true;
+          return { ...track, plays_count: liveCount };
+        });
+        return changed ? nextTracks : currentTracks;
+      });
+    });
+  }, [artist, trackIdsKey]);
 
   const stats = useMemo(() => buildStats(tracks, albums, purchases, motivations, notifications), [tracks, albums, purchases, motivations, notifications]);
   const upcoming = useMemo(() => {

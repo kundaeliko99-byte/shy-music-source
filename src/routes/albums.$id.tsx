@@ -11,6 +11,7 @@ import { DownloadButton } from "@/components/DownloadButton";
 import { EmptyState, Skeleton } from "@/components/HorizontalRow";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePlayer } from "@/contexts/PlayerContext";
+import { useLiveStreamCount, useLiveStreamCounts } from "@/hooks/useTrackStreams";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchAlbumById, fetchAlbumTracks, toPlayerTrack, type AlbumDetail, type TrackRow } from "@/lib/api";
 import { copyText } from "@/lib/clipboard";
@@ -109,6 +110,8 @@ function AlbumDetailPage() {
     () => tracks.map((track) => toPlayerTrack(track, streamUrls[track.id])),
     [tracks, streamUrls],
   );
+  const liveCounts = useLiveStreamCounts(tracks);
+  const totalPlays = tracks.reduce((sum, track) => sum + (liveCounts.get(track.id) ?? track.plays_count ?? 0), 0);
 
   if (loading) {
     return (
@@ -126,7 +129,6 @@ function AlbumDetailPage() {
     );
   }
 
-  const totalPlays = tracks.reduce((sum, track) => sum + (track.plays_count ?? 0), 0);
   const isActiveAlbum = current?.album_id === album.id;
 
   return (
@@ -230,6 +232,7 @@ function AlbumSongRow({
   const { current, isPlaying, togglePlay, addToQueue } = usePlayer();
   const [saved, setSaved] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const liveStreams = useLiveStreamCount(track.id, track.plays_count);
   const isCurrent = current?.id === track.id;
   const playerTrack = toPlayerTrack(track, streamUrl);
 
@@ -338,7 +341,7 @@ function AlbumSongRow({
             {track.artists.display_name}
           </div>
         )}
-        <div className="mt-1 text-[11px] text-muted-foreground">{fmtCount(track.plays_count)} streams</div>
+        <div className="mt-1 text-[11px] text-muted-foreground">{fmtCount(liveStreams)} streams</div>
       </div>
       <div className="col-span-3 flex flex-wrap items-center gap-2 sm:col-span-1 sm:justify-end">
         <button

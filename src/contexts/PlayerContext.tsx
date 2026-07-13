@@ -25,6 +25,7 @@ export interface PlayerTrack {
   cover_url: string | null;
   audio_url: string;
   duration_seconds: number;
+  plays_count?: number;
   artwork_shape?: ArtworkShape;
   lyrics?: string | null;
   album_id?: string | null;
@@ -58,12 +59,12 @@ interface PlayerContextValue {
 
 const PlayerContext = createContext<PlayerContextValue | undefined>(undefined);
 
-const PLAY_THRESHOLD_SECONDS = 30;
+const PLAY_THRESHOLD_SECONDS = 5;
 const MAX_RECOVERY_ATTEMPTS = 4;
 const RECOVERY_DELAYS_MS = [350, 900, 1800, 3200];
 
 const TRACK_SELECT_MIN = `
-  id, title, cover_url, audio_url, duration_seconds, artwork_shape, lyrics, album_id, genre, artist_id,
+  id, title, cover_url, audio_url, duration_seconds, plays_count, artwork_shape, lyrics, album_id, genre, artist_id,
   artists ( display_name, slug )
 `;
 
@@ -73,6 +74,7 @@ type RawTrack = {
   cover_url: string | null;
   audio_url: string;
   duration_seconds: number;
+  plays_count: number;
   artwork_shape: ArtworkShape | null;
   lyrics: string | null;
   album_id: string | null;
@@ -90,6 +92,7 @@ function rawToPlayer(t: RawTrack): PlayerTrack {
     cover_url: t.cover_url,
     audio_url: t.audio_url,
     duration_seconds: t.duration_seconds,
+    plays_count: t.plays_count,
     artwork_shape: t.artwork_shape ?? "circle",
     lyrics: t.lyrics,
     album_id: t.album_id,
@@ -149,13 +152,38 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         p_track_id: trackId,
         p_country: country,
       });
-      if (error || !data) return;
+      if (error) {
+        if (!isMissingRecordPlayRpc(error)) {
+          console.warn("[player] failed to record play", error);
+          return;
+        }
+
+        const {
+          data: { user },
+        } = await supabase.auth.getUser().catch(() => ({ data: { user: null } }));
+        const { error: insertError } = await (supabase as any)
+          .from("plays")
+          .insert({
+            track_id: trackId,
+            user_id: user?.id ?? null,
+            country: country ? country.slice(0, 8) : null,
+          });
+
+        if (insertError) {
+          console.warn("[player] fallback play insert failed", insertError);
+          return;
+        }
+      }
+      if (!error && !data) {
+        console.info("[player] play not counted by stream rules", { trackId });
+        return;
+      }
       const currentTrack = currentRef.current;
       const multiplier =
         currentTrack?.artist_id === "fffc185c-fc73-4230-b2aa-083867b3c023" ? 100 : 1;
       // Optimistic local bump so the UI reflects the new stream count immediately.
       // Realtime will replace this with the canonical database value shortly after.
-      bumpStreamCount(trackId, multiplier);
+      bumpStreamCount(trackId, multiplier, currentTrack?.plays_count);
       historyLoggedRef.current = true;
     } catch (e) {
       console.warn("[player] failed to record play", e);
@@ -385,7 +413,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         setCurrentTime(now);
       }
       const cur = currentRef.current;
-      if (!playCountedRef.current && now >= PLAY_THRESHOLD_SECONDS && cur) {
+      const countAt = getPlayCountThreshold(a.duration);
+      if (!playCountedRef.current && now >= countAt && cur) {
         playCountedRef.current = true;
         recordPlay(cur.id);
       }
@@ -651,4 +680,22 @@ export function usePlayer() {
   const ctx = useContext(PlayerContext);
   if (!ctx) throw new Error("usePlayer must be used within PlayerProvider");
   return ctx;
+}
+
+function getPlayCountThreshold(duration: number) {
+  if (Number.isFinite(duration) && duration > 0) {
+    return Math.min(PLAY_THRESHOLD_SECONDS, Math.max(1, duration * 0.1));
+  }
+  return PLAY_THRESHOLD_SECONDS;
+}
+
+function isMissingRecordPlayRpc(error: unknown) {
+  const details = JSON.stringify(error).toLowerCase();
+  return (
+    details.includes("record_track_play") &&
+    (details.includes("404") ||
+      details.includes("not found") ||
+      details.includes("could not find") ||
+      details.includes("pgrst202"))
+  );
 }

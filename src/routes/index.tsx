@@ -9,6 +9,7 @@ import { ShyLogo } from "@/components/ShyLogo";
 import { HorizontalRow, EmptyState, Skeleton } from "@/components/HorizontalRow";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { useLiveStreamCount } from "@/hooks/useTrackStreams";
 import {
   fetchNewThisWeek,
   fetchTopTrack,
@@ -45,6 +46,7 @@ function HomePage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const { playTrack } = usePlayer();
   const { isArtist } = useAuth();
+  const liveTopStreams = useLiveStreamCount(top?.id, top?.plays_count ?? 0);
 
   useEffect(() => {
     let alive = true;
@@ -134,7 +136,7 @@ function HomePage() {
               </button>
             </div>
             <div className="text-right shrink-0">
-              <div className="text-2xl font-semibold text-primary-glow">{fmtCount(top.plays_count)}</div>
+              <div className="text-2xl font-semibold text-primary-glow">{fmtCount(liveTopStreams)}</div>
               <div className="text-[11px] text-muted-foreground">total streams</div>
             </div>
           </div>
@@ -237,7 +239,7 @@ function HomePage() {
                   ) : (
                     "Unknown artist"
                   )}{" "}
-                  - {fmtCount(top.plays_count)} fan plays
+                  - {fmtCount(liveTopStreams)} fan plays
                 </div>
               </div>
               <button

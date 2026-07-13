@@ -13,7 +13,7 @@ import { Skeleton } from "@/components/HorizontalRow";
 import { MotivateButton, networkLabel } from "@/components/MotivateButton";
 import { DownloadButton } from "@/components/DownloadButton";
 import { useMotivationCount } from "@/hooks/useMotivate";
-import { useLiveStreamCount } from "@/hooks/useTrackStreams";
+import { useLiveStreamCount, useLiveStreamCounts } from "@/hooks/useTrackStreams";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -70,6 +70,8 @@ function ArtistPage() {
   const isOwner = !!user && !!artist && artist.user_id === user.id;
   const isBestFan = qualifiesForBestFan(bestFanWeekPlays);
   const { count: motivationCount, bump: bumpMotivation } = useMotivationCount(artist?.id);
+  const liveTrackCounts = useLiveStreamCounts(tracks);
+  const totalStreams = tracks.reduce((sum, track) => sum + (liveTrackCounts.get(track.id) ?? track.plays_count ?? 0), 0);
 
   useEffect(() => {
     setLoading(true);
@@ -236,7 +238,7 @@ function ArtistPage() {
             </div>
             {/* Stats */}
             <div className="flex flex-wrap gap-2 mt-3">
-              <StatChip icon={<Headphones className="w-3 h-3" />} label="streams" value={fmtCount(tracks.reduce((s, t) => s + (t.plays_count ?? 0), 0))} />
+              <StatChip icon={<Headphones className="w-3 h-3" />} label="streams" value={fmtCount(totalStreams)} />
               <StatChip icon={<MusicIcon className="w-3 h-3" />} label={tracks.length === 1 ? "song" : "songs"} value={String(tracks.length)} />
               <StatChip icon={<Disc3 className="w-3 h-3" />} label={albums.length === 1 ? "album" : "albums"} value={String(albums.length)} />
             </div>

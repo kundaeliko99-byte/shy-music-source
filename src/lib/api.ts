@@ -86,6 +86,7 @@ export function toPlayerTrack(t: TrackRow, streamUrl?: string | number): PlayerT
     cover_url: t.cover_url,
     audio_url: t.audio_url,
     duration_seconds: t.duration_seconds,
+    plays_count: t.plays_count,
     artwork_shape: t.artwork_shape ?? "circle",
     lyrics: t.lyrics,
     album_id: t.album_id,
