@@ -345,6 +345,7 @@ function ArtistDashboardPage() {
         .map((album) => ({ kind: "album" as const, type: "Album" as const, id: album.id, title: album.title, release_date: album.release_date, release_at: album.release_at, cover_url: album.cover_url })),
     ].sort((a, b) => releaseTime(a) - releaseTime(b));
   }, [albums, tracks]);
+  const releaseEditorItems = useMemo(() => buildScheduleItems(tracks, albums), [albums, tracks]);
 
   if (!authLoading && !user) {
     return (
@@ -368,6 +369,16 @@ function ArtistDashboardPage() {
   }
 
   if (!artist) {
+    if (active === "watch") {
+      return (
+        <AppShell>
+          <DashboardFrame active={active}>
+            <StandaloneWatchOutSection isAdmin={isAdmin} />
+          </DashboardFrame>
+        </AppShell>
+      );
+    }
+
     return (
       <AppShell>
         <DashboardFrame active={active}>
@@ -384,7 +395,7 @@ function ArtistDashboardPage() {
         {active === "overview" && <OverviewSection stats={stats} tracks={tracks} purchases={purchases} motivations={motivations} notifications={notifications} upcoming={upcoming} />}
         {active === "songs" && <SongsSection artist={artist} tracks={tracks} setTracks={setTracks} />}
         {active === "albums" && <AlbumsSection artist={artist} albums={albums} setAlbums={setAlbums} tracks={tracks} />}
-        {active === "watch" && <WatchOutSection artist={artist} upcoming={upcoming} tracks={tracks} albums={albums} setTracks={setTracks} setAlbums={setAlbums} />}
+        {active === "watch" && <WatchOutSection artist={artist} upcoming={releaseEditorItems} tracks={tracks} albums={albums} setTracks={setTracks} setAlbums={setAlbums} />}
         {active === "sales" && <SalesSection purchases={purchases} setPurchases={setPurchases} tracks={tracks} />}
         {active === "gifts" && <GiftsSection motivations={motivations} stats={stats} artist={artist} />}
         {active === "analytics" && <AnalyticsSection tracks={tracks} albums={albums} countries={countries} stats={stats} />}
@@ -445,6 +456,51 @@ async function loadArtistAlbums(artistId: string): Promise<AlbumRow[]> {
   }
   if (error) throw error;
   return (data ?? []) as AlbumRow[];
+}
+
+async function loadScheduleTracks(): Promise<TrackRow[]> {
+  const query = (select: string) =>
+    (supabase as any)
+      .from("tracks")
+      .select(select)
+      .order("release_date", { ascending: true })
+      .limit(100);
+
+  let { data, error } = await query(TRACK_SELECT_WITH_RELEASE_AT);
+  if (error && isMissingColumn(error, "release_at")) {
+    ({ data, error } = await query(TRACK_SELECT));
+  }
+  if (error) throw error;
+  return (data ?? []) as TrackRow[];
+}
+
+async function loadScheduleAlbums(): Promise<AlbumRow[]> {
+  const query = (select: string) =>
+    (supabase as any)
+      .from("albums")
+      .select(select)
+      .order("release_date", { ascending: true })
+      .limit(60);
+
+  let { data, error } = await query(ALBUM_SELECT_WITH_RELEASE_AT);
+  if (error && isMissingColumn(error, "release_at")) {
+    ({ data, error } = await query(ALBUM_SELECT));
+  }
+  if (error) throw error;
+  return (data ?? []) as AlbumRow[];
+}
+
+function buildScheduleItems(tracks: TrackRow[], albums: AlbumRow[]) {
+  const now = Date.now();
+  const futureTracks = tracks.filter((track) => releaseTime(track) > now);
+  const futureAlbums = albums.filter((album) => releaseTime(album) > now);
+  const sourceTracks = futureTracks.length || futureAlbums.length ? futureTracks : tracks;
+  const sourceAlbums = futureTracks.length || futureAlbums.length ? futureAlbums : albums;
+
+  return [
+    ...sourceTracks.map((track) => ({ kind: "track" as const, type: "Song" as const, id: track.id, title: track.title, release_date: track.release_date, release_at: track.release_at, cover_url: track.cover_url })),
+    ...sourceAlbums.map((album) => ({ kind: "album" as const, type: "Album" as const, id: album.id, title: album.title, release_date: album.release_date, release_at: album.release_at, cover_url: album.cover_url })),
+  ].sort((a, b) => releaseTime(a) - releaseTime(b));
 }
 
 function buildStats(tracks: TrackRow[], albums: AlbumRow[], purchases: PurchaseRow[], motivations: MotivationRow[], notifications: NotificationRow[]) {
@@ -735,10 +791,79 @@ function WatchOutSection({
 
   return (
     <Panel title="Watch Out: Upcoming Releases" icon={<CalendarClock className="h-4 w-4" />}>
-      {upcoming.length === 0 && <EmptyPanel text="No upcoming releases. Future-dated songs and albums will appear here with countdowns." />}
+      {upcoming.length === 0 && <EmptyPanel text="No releases found yet. Upload a song or album, then you can manage its go-live date here." />}
       <div className="grid gap-3 md:grid-cols-2">
         {upcoming.map((item) => <EditableReleaseItem key={`${item.type}-${item.id}`} item={item} onSave={saveRelease} />)}
       </div>
+    </Panel>
+  );
+}
+
+function StandaloneWatchOutSection({ isAdmin }: { isAdmin: boolean }) {
+  const [items, setItems] = useState<ScheduledReleaseItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function load() {
+      setLoading(true);
+      setMessage(null);
+      try {
+        const [trackRows, albumRows] = await Promise.all([
+          loadScheduleTracks(),
+          loadScheduleAlbums(),
+        ]);
+        const releases = buildScheduleItems(trackRows, albumRows);
+        if (alive) {
+          setItems(releases);
+          if (!releases.length) setMessage("No scheduled releases were found yet. Upload a song or album with a future date, then it will appear here.");
+        }
+      } catch (error) {
+        console.error("[dashboard] standalone Watch Out failed", error);
+        if (alive) {
+          setItems([]);
+          setMessage(isAdmin ? "Could not load scheduled releases. Check release table permissions in Supabase." : "Create your artist profile first, then scheduled releases will appear here.");
+        }
+      } finally {
+        if (alive) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      alive = false;
+    };
+  }, [isAdmin]);
+
+  async function saveRelease(item: ScheduledReleaseItem, value: string) {
+    try {
+      const schedule = parseScheduledRelease(value);
+      const updated = await updateReleaseSchedule(item.kind === "track" ? "tracks" : "albums", item.id, undefined, schedule);
+      if (item.kind === "album") {
+        await updateAlbumTrackSchedules(item.id, undefined, schedule);
+      }
+      setItems((current) =>
+        current
+          .map((release) => release.id === item.id && release.kind === item.kind ? { ...release, ...updated } : release)
+          .sort((a, b) => releaseTime(a) - releaseTime(b)),
+      );
+      toast.success("Scheduled release updated");
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not update this scheduled release."));
+    }
+  }
+
+  return (
+    <Panel title="Watch Out: Scheduled Release Editor" icon={<CalendarClock className="h-4 w-4" />}>
+      {loading && <EmptyPanel text="Loading scheduled releases..." />}
+      {!loading && message && <EmptyPanel text={message} />}
+      {!loading && items.length > 0 && (
+        <div className="grid gap-3 md:grid-cols-2">
+          {items.map((item) => <EditableReleaseItem key={`${item.kind}-${item.id}`} item={item} onSave={saveRelease} />)}
+        </div>
+      )}
     </Panel>
   );
 }
@@ -1075,21 +1200,22 @@ function trackTitle(tracks: TrackRow[], id: string) {
   return tracks.find((track) => track.id === id)?.title ?? "a song";
 }
 
-async function updateAlbumTrackSchedules(albumId: string, artistId: string, schedule: Date) {
+async function updateAlbumTrackSchedules(albumId: string, artistId: string | undefined, schedule: Date) {
   return updateReleaseSchedule("tracks", albumId, artistId, schedule, "album_id");
 }
 
-async function updateReleaseSchedule(table: "tracks" | "albums", id: string, artistId: string, schedule: Date, idColumn = "id") {
+async function updateReleaseSchedule(table: "tracks" | "albums", id: string, artistId: string | undefined, schedule: Date, idColumn = "id") {
   const patch = schedulePatch(schedule);
-  let request = (supabase as any).from(table).update(patch).eq(idColumn, id).eq("artist_id", artistId);
+  const scopedUpdate = (nextPatch: Record<string, unknown>) => {
+    let request = (supabase as any).from(table).update(nextPatch).eq(idColumn, id);
+    if (artistId) request = request.eq("artist_id", artistId);
+    return request;
+  };
+  let request = scopedUpdate(patch);
   let { error } = await withTimeout<DbResult>(request, "Release schedule update", 10000);
 
   if (error && isMissingColumn(error, "release_at")) {
-    request = (supabase as any)
-      .from(table)
-      .update({ release_date: patch.release_date })
-      .eq(idColumn, id)
-      .eq("artist_id", artistId);
+    request = scopedUpdate({ release_date: patch.release_date });
     ({ error } = await withTimeout<DbResult>(request, "Release date update", 10000));
   }
 
