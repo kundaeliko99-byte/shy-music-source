@@ -161,6 +161,15 @@ type ScheduledReleaseItem = {
   localOnly?: boolean;
 };
 
+type StandaloneToolData = {
+  tracks: TrackRow[];
+  albums: AlbumRow[];
+  purchases: PurchaseRow[];
+  motivations: MotivationRow[];
+  notifications: NotificationRow[];
+  countries: Array<{ country: string; plays: number }>;
+};
+
 const MENU: Array<{ id: DashboardTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: "overview", label: "Overview", icon: BarChart3 },
   { id: "songs", label: "My Songs", icon: Music2 },
@@ -360,11 +369,11 @@ function ArtistDashboardPage() {
     );
   }
 
-  if (loading && active === "watch" && !authLoading) {
+  if (loading && !authLoading) {
     return (
       <AppShell>
         <DashboardFrame active={active}>
-          <StandaloneWatchOutSection isAdmin={isAdmin} />
+          <StandaloneArtistToolsSection active={active} isAdmin={isAdmin} />
         </DashboardFrame>
       </AppShell>
     );
@@ -384,20 +393,10 @@ function ArtistDashboardPage() {
   }
 
   if (!artist) {
-    if (active === "watch") {
-      return (
-        <AppShell>
-          <DashboardFrame active={active}>
-            <StandaloneWatchOutSection isAdmin={isAdmin} />
-          </DashboardFrame>
-        </AppShell>
-      );
-    }
-
     return (
       <AppShell>
         <DashboardFrame active={active}>
-          <ArtistSetupNotice />
+          <StandaloneArtistToolsSection active={active} isAdmin={isAdmin} />
         </DashboardFrame>
       </AppShell>
     );
@@ -811,14 +810,16 @@ function WatchOutSection({
   setTracks: (tracks: TrackRow[]) => void;
   setAlbums: (albums: AlbumRow[]) => void;
 }) {
-  async function saveRelease(item: ScheduledReleaseItem, value: string) {
+  async function saveRelease(item: ScheduledReleaseItem, title: string, value: string) {
     try {
+      const cleanTitle = title.trim();
+      if (!cleanTitle) throw new Error("Title is required.");
       const schedule = parseScheduledRelease(value);
       if (item.kind === "track") {
-        const updated = await updateReleaseSchedule("tracks", item.id, artist.id, schedule);
+        const updated = await updateReleaseSchedule("tracks", item.id, artist.id, schedule, "id", cleanTitle);
         setTracks(tracks.map((track) => track.id === item.id ? { ...track, ...updated } : track));
       } else {
-        const updated = await updateReleaseSchedule("albums", item.id, artist.id, schedule);
+        const updated = await updateReleaseSchedule("albums", item.id, artist.id, schedule, "id", cleanTitle);
         const childUpdate = await updateAlbumTrackSchedules(item.id, artist.id, schedule);
         setAlbums(albums.map((album) => album.id === item.id ? { ...album, ...updated } : album));
         setTracks(tracks.map((track) => track.album_id === item.id ? { ...track, ...childUpdate } : track));
@@ -836,6 +837,112 @@ function WatchOutSection({
         {upcoming.map((item) => <EditableReleaseItem key={`${item.type}-${item.id}`} item={item} onSave={saveRelease} />)}
       </div>
     </Panel>
+  );
+}
+
+function StandaloneArtistToolsSection({ active, isAdmin }: { active: DashboardTab; isAdmin: boolean }) {
+  const [data, setData] = useState<StandaloneToolData>({ tracks: [], albums: [], purchases: [], motivations: [], notifications: [], countries: [] });
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function load() {
+      setLoading(true);
+      setMessage(null);
+      try {
+        const [trackResult, albumResult, purchaseResult, motivationResult, notificationResult] = await Promise.allSettled([
+          withTimeout<TrackRow[]>(loadScheduleTracks(), "Songs", 6500),
+          withTimeout<AlbumRow[]>(loadScheduleAlbums(), "Albums", 6500),
+          withTimeout<DbResult>(
+            (supabase as any)
+              .from("song_purchase_requests")
+              .select("id, track_id, artist_id, buyer_name, buyer_contact, proposed_price, currency, message, status, created_at")
+              .order("created_at", { ascending: false })
+              .limit(30),
+            "Purchase requests",
+            4500,
+          ).catch((): DbResult => ({ data: [] })),
+          withTimeout<DbResult>(
+            (supabase as any)
+              .from("motivations")
+              .select("id, artist_id, fan_id, created_at")
+              .order("created_at", { ascending: false })
+              .limit(30),
+            "Gifts",
+            4500,
+          ).catch((): DbResult => ({ data: [] })),
+          withTimeout<DbResult>(
+            (supabase as any)
+              .from("notifications")
+              .select("id, title, body, link, read_at, created_at")
+              .order("created_at", { ascending: false })
+              .limit(20),
+            "Notifications",
+            4500,
+          ).catch((): DbResult => ({ data: [] })),
+        ]);
+
+        const tracks = trackResult.status === "fulfilled" ? trackResult.value : [];
+        const albums = albumResult.status === "fulfilled" ? albumResult.value : [];
+        const trackIds = tracks.map((track) => track.id).slice(0, 60);
+        let countries: Array<{ country: string; plays: number }> = [];
+        if (trackIds.length) {
+          const { data: playRows } = await withTimeout<DbResult>(
+            (supabase as any).from("plays").select("country").in("track_id", trackIds).limit(500),
+            "Listener countries",
+            3500,
+          ).catch((): DbResult => ({ data: [] }));
+          countries = countCountries((playRows ?? []) as Array<{ country?: string | null }>);
+        }
+
+        if (alive) {
+          setData({
+            tracks,
+            albums,
+            purchases: pickData<PurchaseRow>(purchaseResult),
+            motivations: pickData<MotivationRow>(motivationResult),
+            notifications: pickData<NotificationRow>(notificationResult),
+            countries,
+          });
+        }
+      } catch (error) {
+        console.error("[dashboard] standalone tools failed", error);
+        if (alive) setMessage(isAdmin ? "Could not load every artist tool. The editor remains available with the data SHY can access." : "Some artist tools could not load yet. Try again after your artist profile finishes setup.");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      alive = false;
+    };
+  }, [isAdmin]);
+
+  if (loading) {
+    return <Panel title={MENU.find((item) => item.id === active)?.label ?? "Artist Tools"} icon={<Settings className="h-4 w-4" />}><EmptyPanel text="Loading artist tools..." /></Panel>;
+  }
+
+  const stats = buildStats(data.tracks, data.albums, data.purchases, data.motivations, data.notifications);
+  const scheduleItems = buildScheduleItems(data.tracks, data.albums);
+  const visibleScheduleItems = scheduleItems.length ? scheduleItems : demoScheduleItems();
+
+  return (
+    <>
+      {message && <EmptyPanel text={message} />}
+      {active === "overview" && <OverviewSection stats={stats} tracks={data.tracks} purchases={data.purchases} motivations={data.motivations} notifications={data.notifications} upcoming={visibleScheduleItems} />}
+      {active === "songs" && <StandaloneSongsSection tracks={data.tracks} setTracks={(tracks) => setData((current) => ({ ...current, tracks }))} />}
+      {active === "albums" && <StandaloneAlbumsSection albums={data.albums} setAlbums={(albums) => setData((current) => ({ ...current, albums }))} tracks={data.tracks} />}
+      {active === "watch" && <StandaloneWatchOutEditor initialItems={visibleScheduleItems} />}
+      {active === "sales" && <StandaloneSalesSection purchases={data.purchases} setPurchases={(purchases) => setData((current) => ({ ...current, purchases }))} tracks={data.tracks} />}
+      {active === "gifts" && <StandaloneGiftsSection motivations={data.motivations} stats={stats} />}
+      {active === "analytics" && <AnalyticsSection tracks={data.tracks} albums={data.albums} countries={data.countries} stats={stats} />}
+      {active === "messages" && <MessagesSection notifications={data.notifications} purchases={data.purchases} />}
+      {active === "profile" && <StandaloneProfileSection />}
+      {active === "settings" && <StandaloneSettingsSection />}
+    </>
   );
 }
 
@@ -878,16 +985,18 @@ function StandaloneWatchOutSection({ isAdmin }: { isAdmin: boolean }) {
     };
   }, [isAdmin]);
 
-  async function saveRelease(item: ScheduledReleaseItem, value: string) {
+  async function saveRelease(item: ScheduledReleaseItem, title: string, value: string) {
     try {
+      const cleanTitle = title.trim();
+      if (!cleanTitle) throw new Error("Title is required.");
       const schedule = parseScheduledRelease(value);
       if (item.localOnly) {
-        const updated = schedulePatch(schedule);
+        const updated = { ...schedulePatch(schedule), title: cleanTitle };
         setItems((current) => current.map((release) => release.id === item.id ? { ...release, ...updated } : release));
         toast.info("Upload a release first, then SHY will save schedule changes here.");
         return;
       }
-      const updated = await updateReleaseSchedule(item.kind === "track" ? "tracks" : "albums", item.id, undefined, schedule);
+      const updated = await updateReleaseSchedule(item.kind === "track" ? "tracks" : "albums", item.id, undefined, schedule, "id", cleanTitle);
       if (item.kind === "album") {
         await updateAlbumTrackSchedules(item.id, undefined, schedule);
       }
@@ -911,6 +1020,221 @@ function StandaloneWatchOutSection({ isAdmin }: { isAdmin: boolean }) {
           {items.map((item) => <EditableReleaseItem key={`${item.kind}-${item.id}`} item={item} onSave={saveRelease} />)}
         </div>
       )}
+    </Panel>
+  );
+}
+
+function StandaloneWatchOutEditor({ initialItems }: { initialItems: ScheduledReleaseItem[] }) {
+  const [items, setItems] = useState(initialItems);
+
+  useEffect(() => {
+    setItems(initialItems);
+  }, [initialItems]);
+
+  async function saveRelease(item: ScheduledReleaseItem, title: string, value: string) {
+    try {
+      const cleanTitle = title.trim();
+      if (!cleanTitle) throw new Error("Title is required.");
+      const schedule = parseScheduledRelease(value);
+      if (item.localOnly) {
+        setItems((current) => current.map((release) => release.id === item.id ? { ...release, title: cleanTitle, ...schedulePatch(schedule) } : release));
+        toast.info("Upload a release first, then SHY will save schedule changes here.");
+        return;
+      }
+      const updated = await updateReleaseSchedule(item.kind === "track" ? "tracks" : "albums", item.id, undefined, schedule, "id", cleanTitle);
+      if (item.kind === "album") await updateAlbumTrackSchedules(item.id, undefined, schedule);
+      setItems((current) => current.map((release) => release.id === item.id && release.kind === item.kind ? { ...release, ...updated } : release).sort((a, b) => releaseTime(a) - releaseTime(b)));
+      toast.success("Scheduled release updated");
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not update this scheduled release."));
+    }
+  }
+
+  return (
+    <Panel title="Watch Out: Scheduled Release Editor" icon={<CalendarClock className="h-4 w-4" />}>
+      <div className="grid gap-3 md:grid-cols-2">
+        {items.map((item) => <EditableReleaseItem key={`${item.kind}-${item.id}`} item={item} onSave={saveRelease} />)}
+      </div>
+    </Panel>
+  );
+}
+
+function StandaloneSongsSection({ tracks, setTracks }: { tracks: TrackRow[]; setTracks: (tracks: TrackRow[]) => void }) {
+  async function saveTrack(track: TrackRow) {
+    if (!track.title.trim()) {
+      toast.error("Song title is required");
+      return;
+    }
+    const { error } = await (supabase as any)
+      .from("tracks")
+      .update({
+        title: track.title.trim(),
+        genre: track.genre,
+        release_date: track.release_date,
+        lyrics: track.lyrics || null,
+        explicit: track.explicit,
+      })
+      .eq("id", track.id);
+
+    if (error) toast.error(error.message);
+    else toast.success("Song saved");
+  }
+
+  return (
+    <Panel title="My Songs" icon={<Music2 className="h-4 w-4" />} action={<Link to="/upload" className="mini-primary"><Plus className="h-3.5 w-3.5" /> Upload song</Link>}>
+      <div className="space-y-3">
+        {tracks.length === 0 && <EmptyPanel text="No songs were found yet. Uploaded songs will appear here for editing." />}
+        {tracks.map((track) => (
+          <div key={track.id} className="rounded-xl bg-background/45 p-3 hairline">
+            <div className="grid gap-3 xl:grid-cols-[56px_1.4fr_1fr_150px_120px] xl:items-center">
+              <Cover src={track.cover_url} seed={track.id} size={56} shape={track.artwork_shape ?? "rounded"} />
+              <Field label="Song title">
+                <input className="input-lite" value={track.title} onChange={(e) => patchTrack(track.id, { title: e.target.value }, tracks, setTracks)} />
+              </Field>
+              <Field label="Genre">
+                <select className="input-lite" value={track.genre} onChange={(e) => patchTrack(track.id, { genre: e.target.value }, tracks, setTracks)}>
+                  {GENRES.map((genre) => <option key={genre} value={genre}>{pretty(genre)}</option>)}
+                </select>
+              </Field>
+              <Field label="Release date">
+                <input className="input-lite" type="date" value={track.release_date} onChange={(e) => patchTrack(track.id, { release_date: e.target.value }, tracks, setTracks)} />
+              </Field>
+              <div className="space-y-1">
+                <div className="text-[11px] text-muted-foreground">Status</div>
+                <StatusPill label={trackStatus(track)} />
+              </div>
+            </div>
+            <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+              <Field label="Lyrics / private notes">
+                <textarea className="input-lite min-h-20" value={track.lyrics ?? ""} onChange={(e) => patchTrack(track.id, { lyrics: e.target.value }, tracks, setTracks)} placeholder="Lyrics, notes, contributors, or private writing details" />
+              </Field>
+              <button className="mini-button" onClick={() => saveTrack(track)}><Save className="h-3.5 w-3.5" /> Save</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function StandaloneAlbumsSection({ albums, setAlbums, tracks }: { albums: AlbumRow[]; setAlbums: (albums: AlbumRow[]) => void; tracks: TrackRow[] }) {
+  async function saveAlbum(album: AlbumRow) {
+    if (!album.title.trim()) {
+      toast.error("Album title is required");
+      return;
+    }
+    const { error } = await (supabase as any)
+      .from("albums")
+      .update({
+        title: album.title.trim(),
+        cover_url: album.cover_url || null,
+        release_date: album.release_date,
+        album_type: album.album_type,
+      })
+      .eq("id", album.id);
+
+    if (error) toast.error(error.message);
+    else toast.success("Album saved");
+  }
+
+  return (
+    <Panel title="My Albums" icon={<Album className="h-4 w-4" />}>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {albums.length === 0 && <EmptyPanel text="No albums were found yet. Album and EP releases will appear here." />}
+        {albums.map((album) => (
+          <div key={album.id} className="rounded-xl bg-background/45 p-3 hairline">
+            <Cover src={album.cover_url} seed={album.id} className="aspect-square w-full rounded-lg" shape="rounded" glow />
+            <div className="mt-3 grid gap-2">
+              <Field label="Album title">
+                <input className="input-lite" value={album.title} onChange={(e) => setAlbums(albums.map((item) => item.id === album.id ? { ...item, title: e.target.value } : item))} />
+              </Field>
+              <Field label="Release date">
+                <input className="input-lite" type="date" value={album.release_date} onChange={(e) => setAlbums(albums.map((item) => item.id === album.id ? { ...item, release_date: e.target.value } : item))} />
+              </Field>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs text-muted-foreground">{tracks.filter((track) => track.album_id === album.id).length} songs attached</span>
+                <button className="mini-button" onClick={() => saveAlbum(album)}><Save className="h-3.5 w-3.5" /> Save</button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function StandaloneSalesSection({ purchases, setPurchases, tracks }: { purchases: PurchaseRow[]; setPurchases: (rows: PurchaseRow[]) => void; tracks: TrackRow[] }) {
+  async function updateStatus(row: PurchaseRow, status: "new" | "contacted" | "closed") {
+    const { error } = await (supabase as any).from("song_purchase_requests").update({ status }).eq("id", row.id);
+    if (error) toast.error(error.message);
+    else {
+      setPurchases(purchases.map((item) => item.id === row.id ? { ...item, status } : item));
+      toast.success("Request updated");
+    }
+  }
+
+  return (
+    <Panel title="Sales & Contracts" icon={<ShoppingBag className="h-4 w-4" />}>
+      {purchases.length === 0 && <EmptyPanel text="No purchase requests yet. Buyer offers will appear here." />}
+      <div className="space-y-3">
+        {purchases.map((row) => (
+          <div key={row.id} className="rounded-xl bg-background/45 p-3 hairline">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div className="font-semibold">{trackTitle(tracks, row.track_id)}</div>
+                <div className="text-xs text-muted-foreground">{row.buyer_name || "Buyer"} - {row.buyer_contact || "No contact"} - {row.currency || "USD"} {row.proposed_price ?? "negotiable"}</div>
+                {row.message && <p className="mt-2 text-sm text-muted-foreground">{row.message}</p>}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <StatusPill label={pretty(row.status)} />
+                <button className="mini-button" onClick={() => updateStatus(row, "contacted")}>Negotiate</button>
+                <button className="mini-button" onClick={() => updateStatus(row, "closed")}>Mark sold</button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function StandaloneGiftsSection({ motivations, stats }: { motivations: MotivationRow[]; stats: ReturnType<typeof buildStats> }) {
+  return (
+    <Panel title="Gifts & Earnings" icon={<Gift className="h-4 w-4" />}>
+      <div className="grid gap-3 md:grid-cols-3">
+        <Metric label="Gifts received" value={stats.gifts} icon={Gift} />
+        <Metric label="Available balance" value="Pending provider" icon={CreditCard} />
+        <Metric label="Payment setup" value="Profile settings" icon={CreditCard} />
+      </div>
+      <div className="mt-4 space-y-2">
+        {motivations.length === 0 && <EmptyPanel text="No gifts yet. Fan motivations will appear here." />}
+        {motivations.map((row) => <ActivityItem key={row.id} text="Fan motivation received" time={row.created_at} />)}
+      </div>
+    </Panel>
+  );
+}
+
+function StandaloneProfileSection() {
+  return (
+    <Panel title="Artist Profile Manager" icon={<UserCog className="h-4 w-4" />}>
+      <div className="grid gap-3 md:grid-cols-2">
+        <InfoTile icon={UserCog} title="Profile setup" text="Finish artist setup to unlock full profile editing, social links, biography, profile image, and banner controls." />
+        <InfoTile icon={CreditCard} title="Payment details" text="Mobile money and payout details connect to your artist profile and motivation button." />
+      </div>
+      <Link to="/become-artist" className="mt-4 inline-flex rounded-full bg-gradient-primary px-4 py-2 text-sm font-medium text-primary-foreground">Finish artist setup</Link>
+    </Panel>
+  );
+}
+
+function StandaloneSettingsSection() {
+  return (
+    <Panel title="Account & Security" icon={<Settings className="h-4 w-4" />}>
+      <div className="grid gap-3 md:grid-cols-2">
+        <InfoTile icon={Lock} title="Login and recovery" text="Manage sign-in, password recovery, and security from your SHY account." />
+        <InfoTile icon={Bell} title="Notification settings" text="Artist alerts for gifts, messages, sales, releases, and security will live here." />
+        <InfoTile icon={ShieldAlert} title="Security alerts" text="Suspicious sign-ins, copyright reports, and payment disputes should be reviewed here." />
+        <InfoTile icon={CreditCard} title="Payout details" text="Connect payout details from the artist profile setup flow." />
+      </div>
     </Panel>
   );
 }
@@ -1184,14 +1508,20 @@ function ReleaseItem({ item }: { item: ScheduledReleaseItem }) {
   );
 }
 
-function EditableReleaseItem({ item, onSave }: { item: ScheduledReleaseItem; onSave: (item: ScheduledReleaseItem, value: string) => Promise<void> }) {
+function EditableReleaseItem({ item, onSave }: { item: ScheduledReleaseItem; onSave: (item: ScheduledReleaseItem, title: string, value: string) => Promise<void> }) {
+  const [title, setTitle] = useState(item.title);
   const [value, setValue] = useState(scheduleInputValue(item));
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setTitle(item.title);
+    setValue(scheduleInputValue(item));
+  }, [item.id, item.kind, item.title, item.release_at, item.release_date]);
 
   async function save() {
     setSaving(true);
     try {
-      await onSave(item, value);
+      await onSave(item, title, value);
     } finally {
       setSaving(false);
     }
@@ -1202,12 +1532,15 @@ function EditableReleaseItem({ item, onSave }: { item: ScheduledReleaseItem; onS
       <div className="flex items-center gap-3">
         <Cover src={item.cover_url} seed={item.id} size={48} shape="rounded" />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium">{item.title}</div>
+          <div className="truncate text-sm font-medium">{title || item.title}</div>
           <div className="text-xs text-muted-foreground">{item.type} - {timeUntilRelease(item)}</div>
         </div>
         <StatusPill label={item.localOnly ? "Sample" : formatReleaseSchedule(item)} />
       </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+      <div className="mt-3 grid gap-2 lg:grid-cols-[1.2fr_1fr_auto] lg:items-end">
+        <Field label="Title">
+          <input className="input-lite" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Release title" />
+        </Field>
         <Field label="Go live date and time">
           <input className="input-lite" type="datetime-local" min={minimumScheduleInput()} value={value} onChange={(event) => setValue(event.target.value)} />
         </Field>
@@ -1265,23 +1598,25 @@ async function updateAlbumTrackSchedules(albumId: string, artistId: string | und
   return updateReleaseSchedule("tracks", albumId, artistId, schedule, "album_id");
 }
 
-async function updateReleaseSchedule(table: "tracks" | "albums", id: string, artistId: string | undefined, schedule: Date, idColumn = "id") {
+async function updateReleaseSchedule(table: "tracks" | "albums", id: string, artistId: string | undefined, schedule: Date, idColumn = "id", title?: string) {
   const patch = schedulePatch(schedule);
+  const cleanTitle = title?.trim();
+  const fullPatch = cleanTitle ? { ...patch, title: cleanTitle } : patch;
   const scopedUpdate = (nextPatch: Record<string, unknown>) => {
     let request = (supabase as any).from(table).update(nextPatch).eq(idColumn, id);
     if (artistId) request = request.eq("artist_id", artistId);
     return request;
   };
-  let request = scopedUpdate(patch);
+  let request = scopedUpdate(fullPatch);
   let { error } = await withTimeout<DbResult>(request, "Release schedule update", 10000);
 
   if (error && isMissingColumn(error, "release_at")) {
-    request = scopedUpdate({ release_date: patch.release_date });
+    request = scopedUpdate(cleanTitle ? { release_date: patch.release_date, title: cleanTitle } : { release_date: patch.release_date });
     ({ error } = await withTimeout<DbResult>(request, "Release date update", 10000));
   }
 
   if (error) throw error;
-  return patch;
+  return cleanTitle ? { ...patch, title: cleanTitle } : patch;
 }
 
 function schedulePatch(schedule: Date) {
