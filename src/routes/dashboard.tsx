@@ -158,6 +158,7 @@ type ScheduledReleaseItem = {
   release_date: string;
   release_at?: string | null;
   cover_url: string | null;
+  localOnly?: boolean;
 };
 
 const MENU: Array<{ id: DashboardTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
@@ -369,20 +370,11 @@ function ArtistDashboardPage() {
   }
 
   if (!artist) {
-    if (active === "watch") {
-      return (
-        <AppShell>
-          <DashboardFrame active={active}>
-            <StandaloneWatchOutSection isAdmin={isAdmin} />
-          </DashboardFrame>
-        </AppShell>
-      );
-    }
-
     return (
       <AppShell>
         <DashboardFrame active={active}>
-          <ArtistSetupNotice />
+          <StandaloneWatchOutSection isAdmin={isAdmin} />
+          <ArtistSetupNotice compact />
         </DashboardFrame>
       </AppShell>
     );
@@ -501,6 +493,31 @@ function buildScheduleItems(tracks: TrackRow[], albums: AlbumRow[]) {
     ...sourceTracks.map((track) => ({ kind: "track" as const, type: "Song" as const, id: track.id, title: track.title, release_date: track.release_date, release_at: track.release_at, cover_url: track.cover_url })),
     ...sourceAlbums.map((album) => ({ kind: "album" as const, type: "Album" as const, id: album.id, title: album.title, release_date: album.release_date, release_at: album.release_at, cover_url: album.cover_url })),
   ].sort((a, b) => releaseTime(a) - releaseTime(b));
+}
+
+function demoScheduleItems(): ScheduledReleaseItem[] {
+  const first = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const second = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  return [
+    {
+      kind: "track",
+      type: "Song",
+      id: "demo-song",
+      title: "Scheduled song",
+      cover_url: null,
+      localOnly: true,
+      ...schedulePatch(first),
+    },
+    {
+      kind: "album",
+      type: "Album",
+      id: "demo-album",
+      title: "Scheduled album / EP",
+      cover_url: null,
+      localOnly: true,
+      ...schedulePatch(second),
+    },
+  ];
 }
 
 function buildStats(tracks: TrackRow[], albums: AlbumRow[], purchases: PurchaseRow[], motivations: MotivationRow[], notifications: NotificationRow[]) {
@@ -816,9 +833,10 @@ function StandaloneWatchOutSection({ isAdmin }: { isAdmin: boolean }) {
           loadScheduleAlbums(),
         ]);
         const releases = buildScheduleItems(trackRows, albumRows);
+        const visibleReleases = releases.length ? releases : demoScheduleItems();
         if (alive) {
-          setItems(releases);
-          if (!releases.length) setMessage("No scheduled releases were found yet. Upload a song or album with a future date, then it will appear here.");
+          setItems(visibleReleases);
+          if (!releases.length) setMessage("No saved releases were found yet. These sample rows show where scheduled releases will appear after upload.");
         }
       } catch (error) {
         console.error("[dashboard] standalone Watch Out failed", error);
@@ -840,6 +858,12 @@ function StandaloneWatchOutSection({ isAdmin }: { isAdmin: boolean }) {
   async function saveRelease(item: ScheduledReleaseItem, value: string) {
     try {
       const schedule = parseScheduledRelease(value);
+      if (item.localOnly) {
+        const updated = schedulePatch(schedule);
+        setItems((current) => current.map((release) => release.id === item.id ? { ...release, ...updated } : release));
+        toast.info("Upload a release first, then SHY will save schedule changes here.");
+        return;
+      }
       const updated = await updateReleaseSchedule(item.kind === "track" ? "tracks" : "albums", item.id, undefined, schedule);
       if (item.kind === "album") {
         await updateAlbumTrackSchedules(item.id, undefined, schedule);
@@ -1053,7 +1077,21 @@ function ArtistOnlyNotice() {
   );
 }
 
-function ArtistSetupNotice() {
+function ArtistSetupNotice({ compact = false }: { compact?: boolean }) {
+  if (compact) {
+    return (
+      <div className="rounded-xl bg-surface p-4 hairline">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold">Artist profile still needs setup</h2>
+            <p className="mt-1 text-sm text-muted-foreground">You can still manage scheduled releases above. Finish setup later to unlock the full songwriter dashboard.</p>
+          </div>
+          <Link to="/become-artist" className="inline-flex w-fit rounded-full bg-gradient-primary px-4 py-2 text-sm font-medium text-primary-foreground">Finish setup</Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-xl rounded-xl bg-surface p-6 text-center hairline">
       <UserCog className="mx-auto h-8 w-8 text-primary-glow" />
@@ -1144,7 +1182,7 @@ function EditableReleaseItem({ item, onSave }: { item: ScheduledReleaseItem; onS
           <div className="truncate text-sm font-medium">{item.title}</div>
           <div className="text-xs text-muted-foreground">{item.type} - {timeUntilRelease(item)}</div>
         </div>
-        <StatusPill label={formatReleaseSchedule(item)} />
+        <StatusPill label={item.localOnly ? "Sample" : formatReleaseSchedule(item)} />
       </div>
       <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
         <Field label="Go live date and time">
