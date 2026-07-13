@@ -175,6 +175,7 @@ const MENU: Array<{ id: DashboardTab; label: string; icon: React.ComponentType<{
 
 const GENRES = ["afrobeats", "amapiano", "hiphop", "zed_hiphop", "gospel", "rnb", "dancehall", "pop", "afropop", "afrofusion", "kalindula", "traditional", "world", "cinematic"];
 const PAYMENT_METHODS = ["Airtel Money", "MTN Mobile Money", "Visa", "Payoneer"];
+const ARTIST_SELECT = "id, user_id, display_name, slug, bio, country, avatar_url, banner_url, monthly_listeners, contact_email, mobile_money_number, mobile_money_network, public_phone, preferred_payment_method, instagram_url, facebook_url, twitter_url, tiktok_url, youtube_url";
 const TRACK_SELECT = "id, title, cover_url, audio_url, duration_seconds, genre, mood, ai_tool, lyrics, explicit, plays_count, release_date, album_id, position_in_album, artwork_shape";
 const TRACK_SELECT_WITH_RELEASE_AT = `${TRACK_SELECT}, release_at`;
 const ALBUM_SELECT = "id, title, cover_url, release_date, album_type, producer, ai_tool";
@@ -182,7 +183,7 @@ const ALBUM_SELECT_WITH_RELEASE_AT = `${ALBUM_SELECT}, release_at`;
 
 function ArtistDashboardPage() {
   const navigate = useNavigate();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, isAdmin } = useAuth();
   const { tab: active } = Route.useSearch();
   const [artist, setArtist] = useState<ArtistRow | null>(null);
   const [tracks, setTracks] = useState<TrackRow[]>([]);
@@ -214,19 +215,37 @@ function ArtistDashboardPage() {
         const { data: artistData, error: artistError } = await withTimeout<DbResult>(
           (supabase as any)
             .from("artists")
-            .select("id, user_id, display_name, slug, bio, country, avatar_url, banner_url, monthly_listeners, contact_email, mobile_money_number, mobile_money_network, public_phone, preferred_payment_method, instagram_url, facebook_url, twitter_url, tiktok_url, youtube_url")
+            .select(ARTIST_SELECT)
             .eq("user_id", user.id)
             .maybeSingle(),
           "Artist profile",
         );
 
         if (artistError) throw artistError;
-        if (!artistData) {
+        let artistRow = artistData as ArtistRow | null;
+
+        if (!artistRow && isAdmin) {
+          const { data: adminArtist, error: adminArtistError } = await withTimeout<DbResult>(
+            (supabase as any)
+              .from("artists")
+              .select(ARTIST_SELECT)
+              .order("display_name", { ascending: true })
+              .limit(1)
+              .maybeSingle(),
+            "Admin artist fallback",
+          );
+          if (adminArtistError) throw adminArtistError;
+          artistRow = adminArtist as ArtistRow | null;
+          if (artistRow) {
+            setWarning(`Admin view: managing ${artistRow.display_name}.`);
+          }
+        }
+
+        if (!artistRow) {
           if (alive) setArtist(null);
           return;
         }
 
-        const artistRow = artistData as ArtistRow;
         if (!alive) return;
         setArtist(artistRow);
 
@@ -292,7 +311,7 @@ function ArtistDashboardPage() {
     return () => {
       alive = false;
     };
-  }, [authLoading, user]);
+  }, [authLoading, user, isAdmin]);
 
   const trackIdsKey = useMemo(() => tracks.map((track) => track.id).join("|"), [tracks]);
 
