@@ -841,15 +841,24 @@ function WatchOutSection({
 }
 
 function StandaloneArtistToolsSection({ active, isAdmin }: { active: DashboardTab; isAdmin: boolean }) {
+  if (active === "watch") {
+    return <StandaloneWatchOutSection isAdmin={isAdmin} />;
+  }
+
+  return <StandaloneArtistToolsDataSection active={active} isAdmin={isAdmin} />;
+}
+
+function StandaloneArtistToolsDataSection({ active, isAdmin }: { active: DashboardTab; isAdmin: boolean }) {
   const [data, setData] = useState<StandaloneToolData>({ tracks: [], albums: [], purchases: [], motivations: [], notifications: [], countries: [] });
-  const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
+    const fallbackId = window.setTimeout(() => {
+      if (alive) setMessage("Showing artist tools. Some live data is still loading in the background.");
+    }, 5000);
 
     async function load() {
-      setLoading(true);
       setMessage(null);
       try {
         const [trackResult, albumResult, purchaseResult, motivationResult, notificationResult] = await Promise.allSettled([
@@ -898,6 +907,7 @@ function StandaloneArtistToolsSection({ active, isAdmin }: { active: DashboardTa
         }
 
         if (alive) {
+          window.clearTimeout(fallbackId);
           setData({
             tracks,
             albums,
@@ -910,20 +920,15 @@ function StandaloneArtistToolsSection({ active, isAdmin }: { active: DashboardTa
       } catch (error) {
         console.error("[dashboard] standalone tools failed", error);
         if (alive) setMessage(isAdmin ? "Could not load every artist tool. The editor remains available with the data SHY can access." : "Some artist tools could not load yet. Try again after your artist profile finishes setup.");
-      } finally {
-        if (alive) setLoading(false);
       }
     }
 
     load();
     return () => {
       alive = false;
+      window.clearTimeout(fallbackId);
     };
   }, [isAdmin]);
-
-  if (loading) {
-    return <Panel title={MENU.find((item) => item.id === active)?.label ?? "Artist Tools"} icon={<Settings className="h-4 w-4" />}><EmptyPanel text="Loading artist tools..." /></Panel>;
-  }
 
   const stats = buildStats(data.tracks, data.albums, data.purchases, data.motivations, data.notifications);
   const scheduleItems = buildScheduleItems(data.tracks, data.albums);
@@ -947,35 +952,33 @@ function StandaloneArtistToolsSection({ active, isAdmin }: { active: DashboardTa
 }
 
 function StandaloneWatchOutSection({ isAdmin }: { isAdmin: boolean }) {
-  const [items, setItems] = useState<ScheduledReleaseItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<ScheduledReleaseItem[]>(() => demoScheduleItems());
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
 
     async function load() {
-      setLoading(true);
       setMessage(null);
       try {
-        const [trackRows, albumRows] = await Promise.all([
-          loadScheduleTracks(),
-          loadScheduleAlbums(),
+        const [trackResult, albumResult] = await Promise.allSettled([
+          withTimeout<TrackRow[]>(loadScheduleTracks(), "Scheduled songs", 6500),
+          withTimeout<AlbumRow[]>(loadScheduleAlbums(), "Scheduled albums", 6500),
         ]);
+        const trackRows = trackResult.status === "fulfilled" ? trackResult.value : [];
+        const albumRows = albumResult.status === "fulfilled" ? albumResult.value : [];
         const releases = buildScheduleItems(trackRows, albumRows);
         const visibleReleases = releases.length ? releases : demoScheduleItems();
         if (alive) {
           setItems(visibleReleases);
-          if (!releases.length) setMessage("No saved releases were found yet. These sample rows show where scheduled releases will appear after upload.");
+          setMessage(releases.length ? null : "No saved releases were found yet. These sample rows show where scheduled releases will appear after upload.");
         }
       } catch (error) {
         console.error("[dashboard] standalone Watch Out failed", error);
         if (alive) {
-          setItems([]);
-          setMessage(isAdmin ? "Could not load scheduled releases. Check release table permissions in Supabase." : "Create your artist profile first, then scheduled releases will appear here.");
+          setItems(demoScheduleItems());
+          setMessage(isAdmin ? "Could not load saved releases yet. The editor remains available with sample rows." : "Saved releases could not load yet. The editor remains available with sample rows.");
         }
-      } finally {
-        if (alive) setLoading(false);
       }
     }
 
@@ -1013,23 +1016,21 @@ function StandaloneWatchOutSection({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <Panel title="Watch Out: Scheduled Release Editor" icon={<CalendarClock className="h-4 w-4" />}>
-      {loading && <EmptyPanel text="Loading scheduled releases..." />}
-      {!loading && message && <EmptyPanel text={message} />}
-      {!loading && items.length > 0 && (
-        <div className="grid gap-3 md:grid-cols-2">
-          {items.map((item) => <EditableReleaseItem key={`${item.kind}-${item.id}`} item={item} onSave={saveRelease} />)}
-        </div>
-      )}
+      {message && <EmptyPanel text={message} />}
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        {items.map((item) => <EditableReleaseItem key={`${item.kind}-${item.id}`} item={item} onSave={saveRelease} />)}
+      </div>
     </Panel>
   );
 }
 
 function StandaloneWatchOutEditor({ initialItems }: { initialItems: ScheduledReleaseItem[] }) {
   const [items, setItems] = useState(initialItems);
+  const initialItemsKey = useMemo(() => initialItems.map((item) => `${item.kind}:${item.id}:${item.title}:${item.release_at ?? item.release_date}`).join("|"), [initialItems]);
 
   useEffect(() => {
     setItems(initialItems);
-  }, [initialItems]);
+  }, [initialItemsKey]);
 
   async function saveRelease(item: ScheduledReleaseItem, title: string, value: string) {
     try {
