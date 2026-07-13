@@ -99,6 +99,7 @@ type TrackRow = {
   explicit: boolean;
   plays_count: number;
   release_date: string;
+  release_at?: string | null;
   album_id: string | null;
   position_in_album?: number | null;
   artwork_shape?: "circle" | "rounded" | "diamond" | "hexagon";
@@ -109,6 +110,7 @@ type AlbumRow = {
   title: string;
   cover_url: string | null;
   release_date: string;
+  release_at?: string | null;
   album_type: string;
   producer: string | null;
   ai_tool: string | null;
@@ -148,6 +150,16 @@ type DbResult = {
   error?: { message?: string } | null;
 };
 
+type ScheduledReleaseItem = {
+  kind: "track" | "album";
+  type: "Song" | "Album";
+  id: string;
+  title: string;
+  release_date: string;
+  release_at?: string | null;
+  cover_url: string | null;
+};
+
 const MENU: Array<{ id: DashboardTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { id: "overview", label: "Overview", icon: BarChart3 },
   { id: "songs", label: "My Songs", icon: Music2 },
@@ -163,6 +175,10 @@ const MENU: Array<{ id: DashboardTab; label: string; icon: React.ComponentType<{
 
 const GENRES = ["afrobeats", "amapiano", "hiphop", "zed_hiphop", "gospel", "rnb", "dancehall", "pop", "afropop", "afrofusion", "kalindula", "traditional", "world", "cinematic"];
 const PAYMENT_METHODS = ["Airtel Money", "MTN Mobile Money", "Visa", "Payoneer"];
+const TRACK_SELECT = "id, title, cover_url, audio_url, duration_seconds, genre, mood, ai_tool, lyrics, explicit, plays_count, release_date, album_id, position_in_album, artwork_shape";
+const TRACK_SELECT_WITH_RELEASE_AT = `${TRACK_SELECT}, release_at`;
+const ALBUM_SELECT = "id, title, cover_url, release_date, album_type, producer, ai_tool";
+const ALBUM_SELECT_WITH_RELEASE_AT = `${ALBUM_SELECT}, release_at`;
 
 function ArtistDashboardPage() {
   const navigate = useNavigate();
@@ -215,24 +231,8 @@ function ArtistDashboardPage() {
         setArtist(artistRow);
 
         const [trackResult, albumResult, purchaseResult, motivationResult, notificationResult] = await Promise.allSettled([
-          withTimeout<DbResult>(
-            (supabase as any)
-              .from("tracks")
-              .select("id, title, cover_url, audio_url, duration_seconds, genre, mood, ai_tool, lyrics, explicit, plays_count, release_date, album_id, position_in_album, artwork_shape")
-              .eq("artist_id", artistRow.id)
-              .order("release_date", { ascending: false })
-              .limit(80),
-            "Songs",
-          ),
-          withTimeout<DbResult>(
-            (supabase as any)
-              .from("albums")
-              .select("id, title, cover_url, release_date, album_type, producer, ai_tool")
-              .eq("artist_id", artistRow.id)
-              .order("release_date", { ascending: false })
-              .limit(40),
-            "Albums",
-          ),
+          withTimeout<TrackRow[]>(loadArtistTracks(artistRow.id), "Songs"),
+          withTimeout<AlbumRow[]>(loadArtistAlbums(artistRow.id), "Albums"),
           withTimeout<DbResult>(
             (supabase as any)
               .from("song_purchase_requests")
@@ -262,8 +262,8 @@ function ArtistDashboardPage() {
           ).catch((): DbResult => ({ data: [] })),
         ]);
 
-        const trackRows = pickData<TrackRow>(trackResult);
-        const albumRows = pickData<AlbumRow>(albumResult);
+        const trackRows = trackResult.status === "fulfilled" ? trackResult.value : [];
+        const albumRows = albumResult.status === "fulfilled" ? albumResult.value : [];
         if (!alive) return;
         setTracks(trackRows);
         setAlbums(albumRows);
@@ -315,12 +315,16 @@ function ArtistDashboardPage() {
   }, [artist, trackIdsKey]);
 
   const stats = useMemo(() => buildStats(tracks, albums, purchases, motivations, notifications), [tracks, albums, purchases, motivations, notifications]);
-  const upcoming = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
+  const upcoming = useMemo<ScheduledReleaseItem[]>(() => {
+    const now = Date.now();
     return [
-      ...tracks.filter((track) => track.release_date > today).map((track) => ({ type: "Song", id: track.id, title: track.title, release_date: track.release_date, cover_url: track.cover_url })),
-      ...albums.filter((album) => album.release_date > today).map((album) => ({ type: "Album", id: album.id, title: album.title, release_date: album.release_date, cover_url: album.cover_url })),
-    ].sort((a, b) => a.release_date.localeCompare(b.release_date));
+      ...tracks
+        .filter((track) => releaseTime(track) > now)
+        .map((track) => ({ kind: "track" as const, type: "Song" as const, id: track.id, title: track.title, release_date: track.release_date, release_at: track.release_at, cover_url: track.cover_url })),
+      ...albums
+        .filter((album) => releaseTime(album) > now)
+        .map((album) => ({ kind: "album" as const, type: "Album" as const, id: album.id, title: album.title, release_date: album.release_date, release_at: album.release_at, cover_url: album.cover_url })),
+    ].sort((a, b) => releaseTime(a) - releaseTime(b));
   }, [albums, tracks]);
 
   if (!authLoading && !user) {
@@ -361,7 +365,7 @@ function ArtistDashboardPage() {
         {active === "overview" && <OverviewSection stats={stats} tracks={tracks} purchases={purchases} motivations={motivations} notifications={notifications} upcoming={upcoming} />}
         {active === "songs" && <SongsSection artist={artist} tracks={tracks} setTracks={setTracks} />}
         {active === "albums" && <AlbumsSection artist={artist} albums={albums} setAlbums={setAlbums} tracks={tracks} />}
-        {active === "watch" && <WatchOutSection upcoming={upcoming} />}
+        {active === "watch" && <WatchOutSection artist={artist} upcoming={upcoming} tracks={tracks} albums={albums} setTracks={setTracks} setAlbums={setAlbums} />}
         {active === "sales" && <SalesSection purchases={purchases} setPurchases={setPurchases} tracks={tracks} />}
         {active === "gifts" && <GiftsSection motivations={motivations} stats={stats} artist={artist} />}
         {active === "analytics" && <AnalyticsSection tracks={tracks} albums={albums} countries={countries} stats={stats} />}
@@ -390,10 +394,44 @@ function countCountries(rows: Array<{ country?: string | null }>) {
     .slice(0, 8);
 }
 
+async function loadArtistTracks(artistId: string): Promise<TrackRow[]> {
+  const query = (select: string) =>
+    (supabase as any)
+      .from("tracks")
+      .select(select)
+      .eq("artist_id", artistId)
+      .order("release_date", { ascending: false })
+      .limit(80);
+
+  let { data, error } = await query(TRACK_SELECT_WITH_RELEASE_AT);
+  if (error && isMissingColumn(error, "release_at")) {
+    ({ data, error } = await query(TRACK_SELECT));
+  }
+  if (error) throw error;
+  return (data ?? []) as TrackRow[];
+}
+
+async function loadArtistAlbums(artistId: string): Promise<AlbumRow[]> {
+  const query = (select: string) =>
+    (supabase as any)
+      .from("albums")
+      .select(select)
+      .eq("artist_id", artistId)
+      .order("release_date", { ascending: false })
+      .limit(40);
+
+  let { data, error } = await query(ALBUM_SELECT_WITH_RELEASE_AT);
+  if (error && isMissingColumn(error, "release_at")) {
+    ({ data, error } = await query(ALBUM_SELECT));
+  }
+  if (error) throw error;
+  return (data ?? []) as AlbumRow[];
+}
+
 function buildStats(tracks: TrackRow[], albums: AlbumRow[], purchases: PurchaseRow[], motivations: MotivationRow[], notifications: NotificationRow[]) {
-  const today = new Date().toISOString().slice(0, 10);
+  const now = Date.now();
   const totalPlays = tracks.reduce((sum, track) => sum + Number(track.plays_count ?? 0), 0);
-  const upcomingCount = tracks.filter((track) => track.release_date > today).length + albums.filter((album) => album.release_date > today).length;
+  const upcomingCount = tracks.filter((track) => releaseTime(track) > now).length + albums.filter((album) => releaseTime(album) > now).length;
   const sold = purchases.filter((row) => row.status === "closed");
   const earnings = sold.reduce((sum, row) => sum + Number(row.proposed_price ?? 0), 0);
   return {
@@ -484,7 +522,7 @@ function OverviewSection({
   purchases: PurchaseRow[];
   motivations: MotivationRow[];
   notifications: NotificationRow[];
-  upcoming: Array<{ type: string; id: string; title: string; release_date: string; cover_url: string | null }>;
+  upcoming: ScheduledReleaseItem[];
 }) {
   const activity = [
     ...purchases.slice(0, 3).map((row) => ({ id: `purchase-${row.id}`, text: `${row.buyer_name || "A buyer"} requested rights for ${trackTitle(tracks, row.track_id)}.`, time: row.created_at })),
@@ -643,12 +681,44 @@ function AlbumsSection({ artist, albums, setAlbums, tracks }: { artist: ArtistRo
   );
 }
 
-function WatchOutSection({ upcoming }: { upcoming: Array<{ type: string; id: string; title: string; release_date: string; cover_url: string | null }> }) {
+function WatchOutSection({
+  artist,
+  upcoming,
+  tracks,
+  albums,
+  setTracks,
+  setAlbums,
+}: {
+  artist: ArtistRow;
+  upcoming: ScheduledReleaseItem[];
+  tracks: TrackRow[];
+  albums: AlbumRow[];
+  setTracks: (tracks: TrackRow[]) => void;
+  setAlbums: (albums: AlbumRow[]) => void;
+}) {
+  async function saveRelease(item: ScheduledReleaseItem, value: string) {
+    try {
+      const schedule = parseScheduledRelease(value);
+      if (item.kind === "track") {
+        const updated = await updateReleaseSchedule("tracks", item.id, artist.id, schedule);
+        setTracks(tracks.map((track) => track.id === item.id ? { ...track, ...updated } : track));
+      } else {
+        const updated = await updateReleaseSchedule("albums", item.id, artist.id, schedule);
+        const childUpdate = await updateAlbumTrackSchedules(item.id, artist.id, schedule);
+        setAlbums(albums.map((album) => album.id === item.id ? { ...album, ...updated } : album));
+        setTracks(tracks.map((track) => track.album_id === item.id ? { ...track, ...childUpdate } : track));
+      }
+      toast.success("Scheduled release updated");
+    } catch (error) {
+      toast.error(errorMessage(error, "Could not update this scheduled release."));
+    }
+  }
+
   return (
     <Panel title="Watch Out: Upcoming Releases" icon={<CalendarClock className="h-4 w-4" />}>
       {upcoming.length === 0 && <EmptyPanel text="No upcoming releases. Future-dated songs and albums will appear here with countdowns." />}
       <div className="grid gap-3 md:grid-cols-2">
-        {upcoming.map((item) => <ReleaseItem key={`${item.type}-${item.id}`} item={item} />)}
+        {upcoming.map((item) => <EditableReleaseItem key={`${item.type}-${item.id}`} item={item} onSave={saveRelease} />)}
       </div>
     </Panel>
   );
@@ -896,15 +966,50 @@ function ActivityItem({ text, time }: { text: string; time: string }) {
   );
 }
 
-function ReleaseItem({ item }: { item: { type: string; id: string; title: string; release_date: string; cover_url: string | null } }) {
+function ReleaseItem({ item }: { item: ScheduledReleaseItem }) {
   return (
     <div className="flex items-center gap-3 rounded-lg bg-background/45 p-3 hairline">
       <Cover src={item.cover_url} seed={item.id} size={44} shape="rounded" />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{item.title}</div>
-        <div className="text-xs text-muted-foreground">{item.type} - {daysUntil(item.release_date)}</div>
+        <div className="text-xs text-muted-foreground">{item.type} - {timeUntilRelease(item)}</div>
       </div>
-      <StatusPill label={new Date(item.release_date).toLocaleDateString()} />
+      <StatusPill label={formatReleaseSchedule(item)} />
+    </div>
+  );
+}
+
+function EditableReleaseItem({ item, onSave }: { item: ScheduledReleaseItem; onSave: (item: ScheduledReleaseItem, value: string) => Promise<void> }) {
+  const [value, setValue] = useState(scheduleInputValue(item));
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await onSave(item, value);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="rounded-lg bg-background/45 p-3 hairline">
+      <div className="flex items-center gap-3">
+        <Cover src={item.cover_url} seed={item.id} size={48} shape="rounded" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium">{item.title}</div>
+          <div className="text-xs text-muted-foreground">{item.type} - {timeUntilRelease(item)}</div>
+        </div>
+        <StatusPill label={formatReleaseSchedule(item)} />
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+        <Field label="Go live date and time">
+          <input className="input-lite" type="datetime-local" min={minimumScheduleInput()} value={value} onChange={(event) => setValue(event.target.value)} />
+        </Field>
+        <button className="mini-primary justify-center" type="button" disabled={saving} onClick={save}>
+          <Save className="h-3.5 w-3.5" /> {saving ? "Saving" : "Save"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -951,11 +1056,92 @@ function trackTitle(tracks: TrackRow[], id: string) {
   return tracks.find((track) => track.id === id)?.title ?? "a song";
 }
 
-function daysUntil(date: string) {
-  const diff = Math.ceil((new Date(date).getTime() - Date.now()) / 86400000);
+async function updateAlbumTrackSchedules(albumId: string, artistId: string, schedule: Date) {
+  return updateReleaseSchedule("tracks", albumId, artistId, schedule, "album_id");
+}
+
+async function updateReleaseSchedule(table: "tracks" | "albums", id: string, artistId: string, schedule: Date, idColumn = "id") {
+  const patch = schedulePatch(schedule);
+  let request = (supabase as any).from(table).update(patch).eq(idColumn, id).eq("artist_id", artistId);
+  let { error } = await withTimeout<DbResult>(request, "Release schedule update", 10000);
+
+  if (error && isMissingColumn(error, "release_at")) {
+    request = (supabase as any)
+      .from(table)
+      .update({ release_date: patch.release_date })
+      .eq(idColumn, id)
+      .eq("artist_id", artistId);
+    ({ error } = await withTimeout<DbResult>(request, "Release date update", 10000));
+  }
+
+  if (error) throw error;
+  return patch;
+}
+
+function schedulePatch(schedule: Date) {
+  return {
+    release_date: toDateTimeLocalValue(schedule).slice(0, 10),
+    release_at: schedule.toISOString(),
+  };
+}
+
+function parseScheduledRelease(value: string) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) throw new Error("Choose a valid release date and time.");
+  if (date.getTime() < Date.now() + 5 * 60 * 1000) {
+    throw new Error("Schedule the release at least 5 minutes from now.");
+  }
+  return date;
+}
+
+function releaseTime(item: { release_date: string; release_at?: string | null }) {
+  const date = item.release_at ? new Date(item.release_at) : new Date(`${item.release_date}T00:00:00`);
+  return Number.isFinite(date.getTime()) ? date.getTime() : 0;
+}
+
+function scheduleInputValue(item: { release_date: string; release_at?: string | null }) {
+  const source = item.release_at ? new Date(item.release_at) : new Date(`${item.release_date}T12:00:00`);
+  return toDateTimeLocalValue(source);
+}
+
+function minimumScheduleInput() {
+  return toDateTimeLocalValue(new Date(Date.now() + 5 * 60 * 1000));
+}
+
+function toDateTimeLocalValue(date: Date) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function timeUntilRelease(item: { release_date: string; release_at?: string | null }) {
+  const diff = releaseTime(item) - Date.now();
   if (diff <= 0) return "Live now";
-  if (diff === 1) return "1 day remaining";
-  return `${diff} days remaining`;
+  const minutes = Math.ceil(diff / 60000);
+  if (minutes < 60) return `${minutes} min remaining`;
+  const hours = Math.ceil(diff / 3600000);
+  if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"} remaining`;
+  const days = Math.ceil(diff / 86400000);
+  return `${days} days remaining`;
+}
+
+function formatReleaseSchedule(item: { release_date: string; release_at?: string | null }) {
+  return new Date(releaseTime(item)).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function isMissingColumn(error: unknown, column: string) {
+  const details = JSON.stringify(error).toLowerCase();
+  return details.includes(column.toLowerCase()) && (details.includes("column") || details.includes("schema cache") || details.includes("pgrst204") || details.includes("could not find"));
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) return error.message;
+  const message = typeof error === "object" && error && "message" in error ? String((error as { message?: unknown }).message) : "";
+  return message || fallback;
 }
 
 function pretty(value: string) {
