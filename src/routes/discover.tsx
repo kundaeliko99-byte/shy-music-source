@@ -5,6 +5,7 @@ import { AppShell } from "@/components/AppShell";
 import { TrackCard } from "@/components/TrackCard";
 import { EmptyState, Skeleton } from "@/components/HorizontalRow";
 import { fetchAllTracks, type TrackRow } from "@/lib/api";
+import { MOOD_OPTIONS, moodLabel } from "@/lib/moods";
 import { VIBES, prettyGenre } from "@/lib/vibes";
 import {
   Sheet,
@@ -18,7 +19,6 @@ const GENRES = [
   "ambient","electronic","hiphop","afrobeats","classical","pop","lofi","experimental","cinematic","world",
   "kalindula","traditional","zed_hiphop","dancehall","amapiano","afrobeat","afropop","rnb","gospel","folk",
 ] as const;
-const MOODS = ["chill","energetic","focus","melancholy","uplifting","dark"] as const;
 const TOOLS = ["suno","udio","stable_audio","custom_model","other"] as const;
 
 function parseList(v: unknown): string[] {
@@ -174,7 +174,7 @@ function DiscoverPage() {
           {search.genres.map((g: string) => (
             <ActivePill key={`g-${g}`} label={prettyGenre(g)} onRemove={() => toggleList("genres", g)} />
           ))}
-          {search.mood && <ActivePill label={cap(search.mood)} onRemove={() => setSingle("mood", search.mood)} />}
+          {search.mood && <ActivePill label={moodLabel(search.mood)} onRemove={() => setSingle("mood", search.mood)} />}
           {search.ai_tool && <ActivePill label={prettyTool(search.ai_tool)} onRemove={() => setSingle("ai_tool", search.ai_tool)} />}
         </div>
       )}
@@ -190,7 +190,7 @@ function DiscoverPage() {
         />
         <FilterRow label="Genre" options={GENRES} active={search.genres} onClick={(v) => toggleList("genres", v)} pretty={prettyGenre} />
       </div>
-      <FilterRow label="Mood" options={MOODS} active={search.mood ? [search.mood] : []} onClick={(v) => setSingle("mood", v)} pretty={cap} />
+      <FilterRow label="Mood" options={MOOD_OPTIONS.map((mood) => mood.value)} active={search.mood ? [search.mood] : []} onClick={(v) => setSingle("mood", v)} pretty={moodLabel} />
       <FilterRow label="AI Tool" options={TOOLS} active={search.ai_tool ? [search.ai_tool] : []} onClick={(v) => setSingle("ai_tool", v)} pretty={prettyTool} />
 
       <div className="mt-6">

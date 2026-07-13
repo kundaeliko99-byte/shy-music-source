@@ -839,12 +839,67 @@ export type Database = {
         | "mbube"
       mobile_money_network: "mtn" | "airtel" | "zamtel"
       mood:
-        | "chill"
+        | "happy"
+        | "joyful"
+        | "cheerful"
+        | "uplifting"
         | "energetic"
+        | "exciting"
+        | "playful"
+        | "fun"
+        | "hopeful"
+        | "motivational"
+        | "confident"
+        | "powerful"
+        | "triumphant"
+        | "peaceful"
+        | "calm"
+        | "relaxing"
+        | "dreamy"
+        | "gentle"
+        | "romantic"
+        | "passionate"
+        | "flirty"
+        | "sensual"
+        | "emotional"
+        | "heartfelt"
+        | "nostalgic"
+        | "sentimental"
+        | "reflective"
+        | "thoughtful"
+        | "melancholic"
+        | "sad"
+        | "heartbroken"
+        | "lonely"
+        | "regretful"
+        | "dark"
+        | "mysterious"
+        | "haunting"
+        | "suspenseful"
+        | "angry"
+        | "aggressive"
+        | "rebellious"
+        | "intense"
+        | "anxious"
+        | "tense"
+        | "spiritual"
+        | "inspirational"
+        | "carefree"
+        | "chill"
+        | "groovy"
+        | "euphoric"
+        | "bittersweet"
+        | "cinematic"
+        | "epic"
+        | "adventurous"
+        | "festive"
+        | "romantic_sad"
+        | "calm_emotional"
+        | "dark_energetic"
+        | "nostalgic_hopeful"
+        | "dreamy_peaceful"
         | "focus"
         | "melancholy"
-        | "uplifting"
-        | "dark"
       subscription_period: "monthly" | "yearly" | "lifetime"
       subscription_status: "pending" | "active" | "rejected"
     }
@@ -1037,7 +1092,69 @@ export const Constants = {
         "mbube",
       ],
       mobile_money_network: ["mtn", "airtel", "zamtel"],
-      mood: ["chill", "energetic", "focus", "melancholy", "uplifting", "dark"],
+      mood: [
+        "happy",
+        "joyful",
+        "cheerful",
+        "uplifting",
+        "energetic",
+        "exciting",
+        "playful",
+        "fun",
+        "hopeful",
+        "motivational",
+        "confident",
+        "powerful",
+        "triumphant",
+        "peaceful",
+        "calm",
+        "relaxing",
+        "dreamy",
+        "gentle",
+        "romantic",
+        "passionate",
+        "flirty",
+        "sensual",
+        "emotional",
+        "heartfelt",
+        "nostalgic",
+        "sentimental",
+        "reflective",
+        "thoughtful",
+        "melancholic",
+        "sad",
+        "heartbroken",
+        "lonely",
+        "regretful",
+        "dark",
+        "mysterious",
+        "haunting",
+        "suspenseful",
+        "angry",
+        "aggressive",
+        "rebellious",
+        "intense",
+        "anxious",
+        "tense",
+        "spiritual",
+        "inspirational",
+        "carefree",
+        "chill",
+        "groovy",
+        "euphoric",
+        "bittersweet",
+        "cinematic",
+        "epic",
+        "adventurous",
+        "festive",
+        "romantic_sad",
+        "calm_emotional",
+        "dark_energetic",
+        "nostalgic_hopeful",
+        "dreamy_peaceful",
+        "focus",
+        "melancholy",
+      ],
       subscription_period: ["monthly", "yearly", "lifetime"],
       subscription_status: ["pending", "active", "rejected"],
     },

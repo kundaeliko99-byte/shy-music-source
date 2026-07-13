@@ -6,6 +6,7 @@ import { Disc3, Home, LayoutDashboard, Music, UploadCloud } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { assertAudioFile, assertImageFile, safeMediaExtension } from "@/lib/media";
+import { MOOD_OPTIONS, MOOD_VALUES } from "@/lib/moods";
 import { withTimeout } from "@/lib/request";
 import { prettyGenre } from "@/lib/vibes";
 
@@ -69,14 +70,13 @@ const GENRES = [
   "mbube",
 ] as const;
 
-const MOODS = ["chill", "energetic", "focus", "melancholy", "uplifting", "dark"] as const;
 const TOOLS = ["suno", "udio", "stable_audio", "custom_model", "other"] as const;
 const SHAPES = ["rounded", "circle", "diamond", "hexagon"] as const;
 
 const trackSchema = z.object({
   title: z.string().trim().min(1, "Add a title.").max(100, "Title is too long."),
   genre: z.enum(GENRES),
-  mood: z.enum(MOODS).optional(),
+  mood: z.enum(MOOD_VALUES).optional(),
   ai_tool: z.enum(TOOLS),
   lyrics: z.string().trim().max(5000, "Lyrics are too long.").optional(),
   explicit: z.boolean(),
@@ -88,7 +88,7 @@ const albumSchema = z.object({
   title: z.string().trim().min(1, "Add a project title.").max(100, "Project title is too long."),
   album_type: z.enum(["album", "ep", "mixtape"]),
   genre: z.enum(GENRES),
-  mood: z.enum(MOODS).optional(),
+  mood: z.enum(MOOD_VALUES).optional(),
   ai_tool: z.enum(TOOLS),
   artwork_shape: z.enum(SHAPES),
   release_at: z.string().trim().min(1, "Choose when this project should go live."),
@@ -833,7 +833,7 @@ function genreOptions() {
 }
 
 function moodOptions(includeEmpty = false) {
-  return `${includeEmpty ? '<option value="">No mood</option>' : ""}${MOODS.map((mood) => `<option value="${mood}">${mood}</option>`).join("")}`;
+  return `${includeEmpty ? '<option value="">No mood</option>' : ""}${MOOD_OPTIONS.map((mood) => `<option value="${mood.value}">${mood.label}</option>`).join("")}`;
 }
 
 function toolOptions() {
@@ -948,33 +948,34 @@ async function insertScheduledAlbum(payload: TrackInsertPayload, label: string):
 }
 
 async function insertWithScheduleFallback(table: "tracks" | "albums", payload: TrackInsertPayload, label: string): Promise<ScheduledInsertResult> {
-  const request = () =>
+  const request = (nextPayload: TrackInsertPayload) =>
     withTimeout<ScheduledInsertResult>(
       (supabase as any)
         .from(table)
-        .insert(payload)
+        .insert(nextPayload)
         .select("id")
         .single(),
       label,
       12000,
     );
 
-  const result = await request();
-  if (!result.error || !isMissingReleaseAtColumn(result.error)) return result;
+  let nextPayload = { ...payload };
+  let result = await request(nextPayload);
+  if (!result.error) return result;
 
-  const fallbackPayload = { ...payload };
-  delete fallbackPayload.release_at;
-  fallbackPayload.release_date = legacyFallbackReleaseDate(new Date(payload.release_at ?? payload.release_date));
+  if (isMissingReleaseAtColumn(result.error)) {
+    delete nextPayload.release_at;
+    nextPayload.release_date = legacyFallbackReleaseDate(new Date(payload.release_at ?? payload.release_date));
+    result = await request(nextPayload);
+    if (!result.error) return result;
+  }
 
-  return withTimeout<ScheduledInsertResult>(
-    (supabase as any)
-      .from(table)
-      .insert(fallbackPayload)
-      .select("id")
-      .single(),
-    `${label} fallback`,
-    12000,
-  );
+  if (isInvalidMoodEnum(result.error) && "mood" in nextPayload) {
+    nextPayload = { ...nextPayload, mood: null };
+    result = await request(nextPayload);
+  }
+
+  return result;
 }
 
 function isMissingReleaseAtColumn(error: unknown) {
@@ -986,6 +987,11 @@ function isMissingReleaseAtColumn(error: unknown) {
       details.includes("pgrst204") ||
       details.includes("could not find"))
   );
+}
+
+function isInvalidMoodEnum(error: unknown) {
+  const details = JSON.stringify(error).toLowerCase();
+  return details.includes("mood") && details.includes("invalid input value for enum");
 }
 
 async function getDuration(file: File): Promise<number> {

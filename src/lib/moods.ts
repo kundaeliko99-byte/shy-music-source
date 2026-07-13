@@ -1,0 +1,72 @@
+export const MOOD_OPTIONS = [
+  { value: "happy", label: "Happy" },
+  { value: "joyful", label: "Joyful" },
+  { value: "cheerful", label: "Cheerful" },
+  { value: "uplifting", label: "Uplifting" },
+  { value: "energetic", label: "Energetic" },
+  { value: "exciting", label: "Exciting" },
+  { value: "playful", label: "Playful" },
+  { value: "fun", label: "Fun" },
+  { value: "hopeful", label: "Hopeful" },
+  { value: "motivational", label: "Motivational" },
+  { value: "confident", label: "Confident" },
+  { value: "powerful", label: "Powerful" },
+  { value: "triumphant", label: "Triumphant" },
+  { value: "peaceful", label: "Peaceful" },
+  { value: "calm", label: "Calm" },
+  { value: "relaxing", label: "Relaxing" },
+  { value: "dreamy", label: "Dreamy" },
+  { value: "gentle", label: "Gentle" },
+  { value: "romantic", label: "Romantic" },
+  { value: "passionate", label: "Passionate" },
+  { value: "flirty", label: "Flirty" },
+  { value: "sensual", label: "Sensual" },
+  { value: "emotional", label: "Emotional" },
+  { value: "heartfelt", label: "Heartfelt" },
+  { value: "nostalgic", label: "Nostalgic" },
+  { value: "sentimental", label: "Sentimental" },
+  { value: "reflective", label: "Reflective" },
+  { value: "thoughtful", label: "Thoughtful" },
+  { value: "melancholic", label: "Melancholic" },
+  { value: "sad", label: "Sad" },
+  { value: "heartbroken", label: "Heartbroken" },
+  { value: "lonely", label: "Lonely" },
+  { value: "regretful", label: "Regretful" },
+  { value: "dark", label: "Dark" },
+  { value: "mysterious", label: "Mysterious" },
+  { value: "haunting", label: "Haunting" },
+  { value: "suspenseful", label: "Suspenseful" },
+  { value: "angry", label: "Angry" },
+  { value: "aggressive", label: "Aggressive" },
+  { value: "rebellious", label: "Rebellious" },
+  { value: "intense", label: "Intense" },
+  { value: "anxious", label: "Anxious" },
+  { value: "tense", label: "Tense" },
+  { value: "spiritual", label: "Spiritual" },
+  { value: "inspirational", label: "Inspirational" },
+  { value: "carefree", label: "Carefree" },
+  { value: "chill", label: "Chill" },
+  { value: "groovy", label: "Groovy" },
+  { value: "euphoric", label: "Euphoric" },
+  { value: "bittersweet", label: "Bittersweet" },
+  { value: "cinematic", label: "Cinematic" },
+  { value: "epic", label: "Epic" },
+  { value: "adventurous", label: "Adventurous" },
+  { value: "festive", label: "Festive" },
+  { value: "romantic_sad", label: "Romantic and sad" },
+  { value: "calm_emotional", label: "Calm and emotional" },
+  { value: "dark_energetic", label: "Dark and energetic" },
+  { value: "nostalgic_hopeful", label: "Nostalgic and hopeful" },
+  { value: "dreamy_peaceful", label: "Dreamy and peaceful" },
+] as const;
+
+export type MoodValue = (typeof MOOD_OPTIONS)[number]["value"];
+
+export const MOOD_VALUES = MOOD_OPTIONS.map((mood) => mood.value) as [MoodValue, ...MoodValue[]];
+
+const MOOD_LABELS = new Map<string, string>(MOOD_OPTIONS.map((mood) => [mood.value, mood.label]));
+
+export function moodLabel(value: string | null | undefined) {
+  if (!value) return "";
+  return MOOD_LABELS.get(value) ?? value;
+}

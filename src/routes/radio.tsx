@@ -28,6 +28,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { toPlayerTrack, type TrackRow } from "@/lib/api";
+import { MOOD_OPTIONS } from "@/lib/moods";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,14 +56,13 @@ interface Station {
   gradient: string;
 }
 
-const MOODS: Station[] = [
-  { key: "chill", label: "Chill", kind: "mood", icon: Snowflake, gradient: "from-sky-500 to-cyan-400" },
-  { key: "energetic", label: "Energetic", kind: "mood", icon: Zap, gradient: "from-orange-500 to-rose-500" },
-  { key: "focus", label: "Focus", kind: "mood", icon: Brain, gradient: "from-emerald-500 to-teal-500" },
-  { key: "melancholy", label: "Melancholy", kind: "mood", icon: CloudRain, gradient: "from-slate-500 to-indigo-600" },
-  { key: "uplifting", label: "Uplifting", kind: "mood", icon: Sun, gradient: "from-amber-400 to-yellow-500" },
-  { key: "dark", label: "Dark", kind: "mood", icon: Moon, gradient: "from-zinc-700 to-slate-900" },
-];
+const MOODS: Station[] = MOOD_OPTIONS.map((mood) => ({
+  key: mood.value,
+  label: mood.label,
+  kind: "mood",
+  icon: moodIcon(mood.value),
+  gradient: moodGradient(mood.value),
+}));
 
 const GENRES: Station[] = [
   { key: "ambient", label: "Ambient", kind: "genre", icon: Waves, gradient: "from-blue-400 to-violet-500" },
@@ -78,6 +78,36 @@ const GENRES: Station[] = [
 ];
 
 const ALL: Station[] = [...MOODS, ...GENRES];
+
+function moodIcon(value: string): typeof RadioIcon {
+  if (["energetic", "exciting", "powerful", "intense", "dark_energetic"].includes(value)) return Zap;
+  if (["sad", "heartbroken", "lonely", "regretful", "melancholic", "romantic_sad"].includes(value)) return CloudRain;
+  if (["dark", "mysterious", "haunting", "suspenseful"].includes(value)) return Moon;
+  if (["calm", "peaceful", "relaxing", "gentle", "dreamy_peaceful"].includes(value)) return Waves;
+  if (["romantic", "passionate", "flirty", "sensual", "heartfelt", "emotional", "calm_emotional"].includes(value)) return Heart;
+  if (["spiritual", "inspirational", "motivational", "hopeful", "nostalgic_hopeful"].includes(value)) return Sparkles;
+  if (["cinematic", "epic", "adventurous"].includes(value)) return Film;
+  if (["groovy", "euphoric", "festive", "playful", "fun"].includes(value)) return Music2;
+  if (["thoughtful", "reflective", "nostalgic", "sentimental", "bittersweet"].includes(value)) return Brain;
+  if (["angry", "aggressive", "rebellious", "anxious", "tense"].includes(value)) return FlaskConical;
+  if (["chill", "carefree"].includes(value)) return Snowflake;
+  return Sun;
+}
+
+function moodGradient(value: string) {
+  if (["energetic", "exciting", "powerful", "intense", "dark_energetic"].includes(value)) return "from-orange-500 to-rose-500";
+  if (["sad", "heartbroken", "lonely", "regretful", "melancholic", "romantic_sad"].includes(value)) return "from-slate-500 to-indigo-600";
+  if (["dark", "mysterious", "haunting", "suspenseful"].includes(value)) return "from-zinc-700 to-slate-900";
+  if (["calm", "peaceful", "relaxing", "gentle", "dreamy_peaceful"].includes(value)) return "from-blue-400 to-violet-500";
+  if (["romantic", "passionate", "flirty", "sensual", "heartfelt", "emotional", "calm_emotional"].includes(value)) return "from-pink-400 to-fuchsia-500";
+  if (["spiritual", "inspirational", "motivational", "hopeful", "nostalgic_hopeful"].includes(value)) return "from-amber-400 to-yellow-500";
+  if (["cinematic", "epic", "adventurous"].includes(value)) return "from-red-500 to-rose-700";
+  if (["groovy", "euphoric", "festive", "playful", "fun"].includes(value)) return "from-fuchsia-500 to-purple-600";
+  if (["thoughtful", "reflective", "nostalgic", "sentimental", "bittersweet"].includes(value)) return "from-emerald-500 to-teal-500";
+  if (["angry", "aggressive", "rebellious", "anxious", "tense"].includes(value)) return "from-yellow-500 to-orange-600";
+  if (["chill", "carefree"].includes(value)) return "from-sky-500 to-cyan-400";
+  return "from-amber-400 to-yellow-500";
+}
 
 const SKIP_LIMIT = 5;
 const SKIP_WINDOW_MS = 60 * 60 * 1000;

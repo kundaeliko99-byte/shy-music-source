@@ -19,6 +19,7 @@ import {
   type TrackRow,
 } from "@/lib/api";
 import { fmtCount, fmtTime } from "@/lib/format";
+import { moodLabel } from "@/lib/moods";
 import { useLiveStreamCount } from "@/hooks/useTrackStreams";
 
 const SITE = "https://shymusic.lovable.app";
@@ -157,7 +158,7 @@ function TrackPage() {
           )}
           <div className="flex flex-wrap gap-2 mt-3">
             <Pill>{prettyGenre(track.genre)}</Pill>
-            {track.mood && <Pill>{track.mood}</Pill>}
+            {track.mood && <Pill>{moodLabel(track.mood)}</Pill>}
             <Pill className="bg-primary/15 text-primary-glow border-primary/30">Made with · {prettyTool(track.ai_tool)}</Pill>
             {track.explicit && <Pill className="bg-destructive/15 text-destructive border-destructive/30">E</Pill>}
           </div>
