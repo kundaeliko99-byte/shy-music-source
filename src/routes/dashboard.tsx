@@ -969,18 +969,21 @@ function StandaloneArtistToolsDataSection({ active, isAdmin }: { active: Dashboa
 
 function StandaloneWatchOutSection({ isAdmin, allowSavedLoad = true }: { isAdmin: boolean; allowSavedLoad?: boolean }) {
   const [items, setItems] = useState<ScheduledReleaseItem[]>([]);
-  const [message, setMessage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<string | null>("Loading scheduled releases...");
 
   useEffect(() => {
     let alive = true;
 
     async function load() {
+      setLoading(true);
       if (!allowSavedLoad) {
         setItems([]);
         setMessage("Checking your sign-in. Saved releases will appear after SHY confirms artist access.");
+        setLoading(false);
         return;
       }
-      setMessage(null);
+      setMessage("Loading scheduled releases...");
       try {
         const [trackResult, albumResult] = await Promise.allSettled([
           withTimeout<TrackRow[]>(loadScheduleTracks(), "Scheduled songs", 6500),
@@ -999,6 +1002,8 @@ function StandaloneWatchOutSection({ isAdmin, allowSavedLoad = true }: { isAdmin
           setItems([]);
           setMessage(isAdmin ? "Could not load scheduled releases yet. Check artist access or try again." : "Saved releases could not load yet. Try again after your artist profile finishes setup.");
         }
+      } finally {
+        if (alive) setLoading(false);
       }
     }
 
@@ -1035,8 +1040,13 @@ function StandaloneWatchOutSection({ isAdmin, allowSavedLoad = true }: { isAdmin
   }
 
   return (
-    <Panel title="Watch Out: Scheduled Release Editor" icon={<CalendarClock className="h-4 w-4" />}>
-      {message && <EmptyPanel text={message} />}
+    <Panel
+      title="Watch Out: Scheduled Release Editor"
+      icon={<CalendarClock className="h-4 w-4" />}
+      action={<Link to="/upload" className="mini-primary"><Upload className="h-3.5 w-3.5" /> Schedule release</Link>}
+    >
+      {loading && <EmptyPanel text="Loading scheduled releases..." />}
+      {!loading && message && <EmptyPanel text={message} />}
       <div className="mt-3 grid gap-3 md:grid-cols-2">
         {items.map((item) => <EditableReleaseItem key={`${item.kind}-${item.id}`} item={item} onSave={saveRelease} />)}
       </div>
