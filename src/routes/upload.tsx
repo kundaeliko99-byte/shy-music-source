@@ -305,15 +305,16 @@ function SingleUpload({ artistId, userId }: { artistId: string; userId: string }
     if (submit.busy) return;
 
     const { fields, files } = message;
-    const audio = asFile(files.audio);
-    if (!audio) {
-      toast.error("Add an audio file.");
-      return;
-    }
 
     try {
+      const audio = await normalizeUploadFile(files.audio, "single.mp3");
+      if (!audio) {
+        toast.error("Add an audio file.");
+        return;
+      }
+
       assertAudioFile(audio);
-      const cover = asFile(files.cover);
+      const cover = await normalizeUploadFile(files.cover, "cover.jpg");
       if (cover) assertImageFile(cover);
 
       const parsed = trackSchema.parse({
@@ -383,13 +384,14 @@ function AlbumUpload({ artistId, userId, artistSlug }: { artistId: string; userI
     if (submit.busy) return;
 
     const { fields, files, tracks: frameTracks = [] } = message;
-    const cover = asFile(files.cover);
-    if (!cover) {
-      toast.error("Add project artwork.");
-      return;
-    }
 
     try {
+      const cover = await normalizeUploadFile(files.cover, "cover.jpg");
+      if (!cover) {
+        toast.error("Add project artwork.");
+        return;
+      }
+
       assertImageFile(cover);
       const album = albumSchema.parse({
         title: fields.album_title ?? "",
@@ -402,14 +404,19 @@ function AlbumUpload({ artistId, userId, artistSlug }: { artistId: string; userI
       });
       const schedule = parseSchedule(album.release_at);
 
-      const tracks = frameTracks
-        .map((track) => ({
-          title: (track.title ?? "").trim(),
-          audio: asFile(track.audio),
-          lyrics: optionalField(track.lyrics),
-          explicit: track.explicit === "on",
-        }))
-        .filter((track) => track.title || track.audio);
+      const tracks: Array<{ title: string; audio: File | null; lyrics?: string; explicit: boolean }> = [];
+      for (const track of frameTracks) {
+        const title = (track.title ?? "").trim();
+        const audio = await normalizeUploadFile(track.audio, `${title || "track"}.mp3`);
+        if (title || audio) {
+          tracks.push({
+            title,
+            audio,
+            lyrics: optionalField(track.lyrics),
+            explicit: track.explicit === "on",
+          });
+        }
+      }
 
       if (tracks.length === 0) {
         toast.error("Add at least one track.");
@@ -889,6 +896,21 @@ function asFile(value: unknown): File | null {
   return null;
 }
 
+async function normalizeUploadFile(value: unknown, fallbackName: string): Promise<File | null> {
+  const file = asFile(value);
+  if (!file) return null;
+
+  if (typeof file.arrayBuffer !== "function") {
+    throw new Error("Could not read the selected file. Choose it again and publish.");
+  }
+
+  const name = typeof file.name === "string" && file.name.trim() ? file.name : fallbackName;
+  const type = typeof file.type === "string" ? file.type : "";
+  const lastModified = typeof file.lastModified === "number" ? file.lastModified : Date.now();
+  const buffer = await file.arrayBuffer();
+  return new File([buffer], name, { type, lastModified });
+}
+
 function optionalField(value: string | undefined) {
   const trimmed = value?.trim() ?? "";
   return trimmed ? trimmed : undefined;
@@ -896,6 +918,9 @@ function optionalField(value: string | undefined) {
 
 function errorMessage(error: unknown, fallback: string) {
   if (error instanceof z.ZodError) return error.issues[0]?.message ?? fallback;
+  if (error instanceof TypeError && /failed to fetch/i.test(error.message)) {
+    return "Upload connection failed while sending media. Check your connection and try again.";
+  }
   if (error instanceof Error) return error.message;
   return fallback;
 }
