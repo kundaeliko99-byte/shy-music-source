@@ -3020,18 +3020,92 @@ function AnalyticsSection({ tracks, albums, countries, stats }: { tracks: TrackR
 }
 
 function MessagesSection({ notifications, purchases }: { notifications: NotificationRow[]; purchases: PurchaseRow[] }) {
+  const conversations = useMemo(() => [
+    ...purchases.map((row) => ({
+      id: `purchase-${row.id}`,
+      title: row.buyer_name || "Buyer request",
+      subtitle: row.message || "Purchase request",
+      time: row.created_at,
+      body: row.message || "A buyer asked about this release.",
+      unread: row.status === "new",
+      kind: "Buyer",
+    })),
+    ...notifications.map((row) => ({
+      id: `notice-${row.id}`,
+      title: row.title || "Platform notice",
+      subtitle: row.body || "SHY notice",
+      time: row.created_at,
+      body: row.body || "SHY sent this notice to your account.",
+      unread: !row.read_at,
+      kind: "Notice",
+    })),
+  ].sort((a, b) => releaseTimeFromValue(b.time) - releaseTimeFromValue(a.time)), [notifications, purchases]);
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(conversations[0]?.id ?? null);
+  const [draft, setDraft] = useState("");
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return conversations.filter((item) => !term || item.title.toLowerCase().includes(term) || item.subtitle.toLowerCase().includes(term));
+  }, [conversations, search]);
+  const selected = filtered.find((item) => item.id === selectedId) ?? filtered[0] ?? null;
+
+  useEffect(() => {
+    if (!selectedId && filtered[0]) setSelectedId(filtered[0].id);
+  }, [filtered, selectedId]);
+
   return (
     <Panel title="Messages & Buyer Requests" icon={<MessageSquare className="h-4 w-4" />}>
-      <div className="grid gap-4 xl:grid-cols-2">
-        <div className="space-y-2">
-          <SectionTitle title="Purchases" />
-          {purchases.length === 0 && <EmptyPanel text="No buyer conversations yet." />}
-          {purchases.map((row) => <ActivityItem key={row.id} text={`${row.buyer_name || "Buyer"}: ${row.message || "Purchase request"}`} time={row.created_at} />)}
+      <div className="grid gap-4 xl:grid-cols-[320px_1fr]">
+        <div className="space-y-3">
+          <label className="relative block">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input className="input-lite pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search messages" />
+          </label>
+          <div className="rounded-lg bg-background/45 p-3 text-sm text-muted-foreground hairline">
+            {formatMetricNumber(conversations.filter((item) => item.unread).length)} unread
+          </div>
+          {filtered.length === 0 && <EmptyPanel text="You do not have any messages yet." />}
+          <div className="space-y-2">
+            {filtered.slice(0, 30).map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`w-full rounded-lg p-3 text-left hairline ${selected?.id === item.id ? "bg-primary/15" : "bg-background/45"}`}
+                onClick={() => setSelectedId(item.id)}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-sm font-semibold">{item.title}</span>
+                  {item.unread && <span className="h-2 w-2 rounded-full bg-primary" />}
+                </div>
+                <div className="mt-1 truncate text-xs text-muted-foreground">{item.subtitle}</div>
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="space-y-2">
-          <SectionTitle title="Platform notices" />
-          {notifications.length === 0 && <EmptyPanel text="No platform notices yet." />}
-          {notifications.map((row) => <ActivityItem key={row.id} text={row.title} time={row.created_at} />)}
+        <div className="rounded-xl bg-background/45 p-4 hairline">
+          {!selected ? (
+            <EmptyPanel text="Select a conversation to view messages." />
+          ) : (
+            <div className="flex min-h-[360px] flex-col">
+              <div className="border-b border-border/60 pb-3">
+                <div className="font-semibold">{selected.title}</div>
+                <div className="text-xs text-muted-foreground">{selected.kind} · {safeDashboardDate(selected.time)}</div>
+              </div>
+              <div className="flex-1 py-4">
+                <div className="max-w-[78%] rounded-xl bg-surface p-3 text-sm hairline">
+                  {selected.body}
+                  <div className="mt-2 text-[11px] text-muted-foreground">{new Date(selected.time).toLocaleString()}</div>
+                </div>
+              </div>
+              <div className="border-t border-border/60 pt-3">
+                <textarea className="input-lite min-h-20" value={draft} onChange={(event) => setDraft(event.target.value.slice(0, 1000))} placeholder="Reply when messaging backend is connected" />
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground">Direct replies are disabled until the messages backend is connected.</span>
+                  <button type="button" className="mini-button" disabled>Send</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </Panel>
