@@ -4,9 +4,11 @@ import { TrendingUp } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Cover } from "@/components/Cover";
 import { EmptyState, Skeleton } from "@/components/HorizontalRow";
+import { ShareMenu } from "@/components/ShareMenu";
 import { fetchChart, toPlayerTrack, type ChartEntry } from "@/lib/api";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { fmtCount } from "@/lib/format";
+import { trackShareUrl } from "@/lib/share";
 import { useLiveStreamCount } from "@/hooks/useTrackStreams";
 
 export const Route = createFileRoute("/charts")({
@@ -109,6 +111,14 @@ function ChartsPage() {
                     HOT
                   </span>
                 )}
+                <ShareMenu
+                  url={trackShareUrl(e.id)}
+                  title={e.title}
+                  artist={e.artists?.display_name}
+                  size="sm"
+                  label={`Share ${e.title}`}
+                  className="shrink-0"
+                />
               </div>
             );
           })

@@ -3,9 +3,11 @@ import { Headphones } from "lucide-react";
 import { Cover } from "./Cover";
 import { HoverPlayIcon } from "./HoverPlayIcon";
 import { MotivateButton } from "./MotivateButton";
+import { ShareMenu } from "./ShareMenu";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { toPlayerTrack, type TrackRow } from "@/lib/api";
 import { fmtCount } from "@/lib/format";
+import { trackShareUrl } from "@/lib/share";
 import { useLiveStreamCount } from "@/hooks/useTrackStreams";
 import { useMotivateArtist } from "@/hooks/useMotivate";
 
@@ -43,6 +45,15 @@ export function TrackCard({ track, queue }: TrackCardProps) {
             if (isCurrent) togglePlay();
             else playTrack(toPlayerTrack(track), (queue ?? [track]).map(toPlayerTrack));
           }}
+        />
+        <ShareMenu
+          url={trackShareUrl(track.id)}
+          title={track.title}
+          artist={track.artists?.display_name}
+          size="sm"
+          label={`Share ${track.title}`}
+          className="absolute right-2 top-2 z-10 opacity-100 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:focus-within:opacity-100"
+          buttonClassName="bg-background/80 backdrop-blur hover:bg-surface-elevated"
         />
       </div>
       <Link

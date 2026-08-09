@@ -20,9 +20,8 @@ import {
 } from "@/lib/api";
 import { fmtCount, fmtTime } from "@/lib/format";
 import { moodLabel } from "@/lib/moods";
+import { trackShareUrl } from "@/lib/share";
 import { useLiveStreamCount } from "@/hooks/useTrackStreams";
-
-const SITE = "https://shymusic.lovable.app";
 
 export const Route = createFileRoute("/tracks/$id")({
   loader: async ({ params }) => {
@@ -38,7 +37,7 @@ export const Route = createFileRoute("/tracks/$id")({
     };
   },
   head: ({ params, loaderData }) => {
-    const url = `${SITE}/tracks/${params.id}`;
+    const url = trackShareUrl(params.id);
     const m = loaderData?.meta;
     if (!m) {
       return {
@@ -182,7 +181,7 @@ function TrackPage() {
               <Plus className="w-4 h-4" />
             </button>
             <ShareMenu
-              url={`${SITE}/tracks/${track.id}`}
+              url={trackShareUrl(track.id)}
               title={track.title}
               artist={track.artists?.display_name}
             />

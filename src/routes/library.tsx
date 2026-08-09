@@ -5,12 +5,14 @@ import { AppShell } from "@/components/AppShell";
 import { AlbumCard } from "@/components/AlbumCard";
 import { Cover } from "@/components/Cover";
 import { HoverPlayIcon } from "@/components/HoverPlayIcon";
+import { ShareMenu } from "@/components/ShareMenu";
 import { EmptyState, Skeleton } from "@/components/HorizontalRow";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toPlayerTrack, type TrackRow } from "@/lib/api";
 import { fmtCount } from "@/lib/format";
+import { trackShareUrl } from "@/lib/share";
 
 const TRACK_SELECT = `
   id, title, cover_url, audio_url, duration_seconds, genre, mood, ai_tool,
@@ -167,9 +169,17 @@ function LibraryPage() {
         ) : (
           <div className="bg-surface hairline rounded-xl overflow-hidden">
             {liked.map((t, i) => (
-              <button
+              <div
                 key={t.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => playTrack(toPlayerTrack(t), liked.map(toPlayerTrack))}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    playTrack(toPlayerTrack(t), liked.map(toPlayerTrack));
+                  }
+                }}
                 aria-label={`Play song ${t.title}`}
                 className="group w-full flex items-center gap-3 px-3 py-2.5 hairline-b last:border-b-0 hover:bg-surface-elevated text-left"
               >
@@ -187,7 +197,15 @@ function LibraryPage() {
                   ) : <div className="text-xs text-muted-foreground truncate">Unknown</div>}
                 </div>
                 <div className="text-xs text-muted-foreground hidden sm:block">{fmtCount(t.plays_count)} streams</div>
-              </button>
+                <ShareMenu
+                  url={trackShareUrl(t.id)}
+                  title={t.title}
+                  artist={t.artists?.display_name}
+                  size="sm"
+                  label={`Share ${t.title}`}
+                  className="shrink-0"
+                />
+              </div>
             ))}
           </div>
         )
@@ -227,9 +245,17 @@ function LibraryPage() {
       ) : (
         <div className="bg-surface hairline rounded-xl overflow-hidden">
           {history.map((t, i) => (
-            <button
+            <div
               key={`${t.id}-${i}`}
+              role="button"
+              tabIndex={0}
               onClick={() => playTrack(toPlayerTrack(t), history.map(toPlayerTrack))}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  playTrack(toPlayerTrack(t), history.map(toPlayerTrack));
+                }
+              }}
               aria-label={`Play song ${t.title}`}
               className="group w-full flex items-center gap-3 px-3 py-2.5 hairline-b last:border-b-0 hover:bg-surface-elevated text-left"
             >
@@ -241,11 +267,19 @@ function LibraryPage() {
                 <div className="text-sm font-medium truncate">{t.title}</div>
                 {t.artists ? (
                   <Link to="/artists/$slug" params={{ slug: t.artists.slug }} onClick={(e) => e.stopPropagation()} className="text-xs text-muted-foreground truncate hover:text-primary-glow block">
-                    {t.artists.display_name}
-                  </Link>
-                ) : <div className="text-xs text-muted-foreground truncate">Unknown</div>}
+                  {t.artists.display_name}
+                </Link>
+              ) : <div className="text-xs text-muted-foreground truncate">Unknown</div>}
               </div>
-            </button>
+              <ShareMenu
+                url={trackShareUrl(t.id)}
+                title={t.title}
+                artist={t.artists?.display_name}
+                size="sm"
+                label={`Share ${t.title}`}
+                className="shrink-0"
+              />
+            </div>
           ))}
         </div>
       )}

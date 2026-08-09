@@ -8,6 +8,7 @@ import { Cover } from "@/components/Cover";
 import { HoverPlayIcon } from "@/components/HoverPlayIcon";
 import { BuySongButton } from "@/components/BuySongButton";
 import { DownloadButton } from "@/components/DownloadButton";
+import { ShareMenu } from "@/components/ShareMenu";
 import { EmptyState, Skeleton } from "@/components/HorizontalRow";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePlayer } from "@/contexts/PlayerContext";
@@ -18,6 +19,7 @@ import { copyText } from "@/lib/clipboard";
 import { fmtCount, fmtTime } from "@/lib/format";
 import { resolveAudioUrl } from "@/lib/media";
 import { withTimeout } from "@/lib/request";
+import { trackShareUrl } from "@/lib/share";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -195,7 +197,6 @@ function AlbumDetailPage() {
                 key={track.id}
                 track={track}
                 index={index}
-                queue={tracks}
                 userId={user?.id ?? null}
                 playlists={playlists}
                 setPlaylists={setPlaylists}
@@ -213,7 +214,6 @@ function AlbumDetailPage() {
 function AlbumSongRow({
   track,
   index,
-  queue,
   userId,
   playlists,
   setPlaylists,
@@ -222,7 +222,6 @@ function AlbumSongRow({
 }: {
   track: TrackRow;
   index: number;
-  queue: TrackRow[];
   userId: string | null;
   playlists: PlaylistOption[];
   setPlaylists: Dispatch<SetStateAction<PlaylistOption[]>>;
@@ -242,10 +241,10 @@ function AlbumSongRow({
   };
 
   const shareTrack = async () => {
-    const url = `${window.location.origin}/tracks/${track.id}`;
+    const url = trackShareUrl(track.id);
     try {
       await copyText(url);
-      toast.success("Track link copied");
+      toast.success("Song link copied");
     } catch {
       toast.info(url);
     }
@@ -367,6 +366,14 @@ function AlbumSongRow({
           playlists={playlists}
           onAddToPlaylist={saveToPlaylist}
           onShare={shareTrack}
+        />
+        <ShareMenu
+          url={trackShareUrl(track.id)}
+          title={track.title}
+          artist={track.artists?.display_name}
+          size="sm"
+          label={`Share ${track.title}`}
+          className="opacity-100 sm:opacity-0 sm:transition sm:group-hover:opacity-100 sm:focus-within:opacity-100"
         />
         <span className="min-w-10 text-right text-xs text-muted-foreground">{fmtTime(track.duration_seconds)}</span>
         <span onClick={(event) => event.stopPropagation()}>

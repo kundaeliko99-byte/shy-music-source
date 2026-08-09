@@ -5,9 +5,11 @@ import { usePlayer, type PlayerTrack } from "@/contexts/PlayerContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Cover } from "./Cover";
+import { ShareMenu } from "./ShareMenu";
 import { ShyLogo } from "./ShyLogo";
 import { Visualizer } from "./Visualizer";
 import { fmtTime } from "@/lib/format";
+import { trackShareUrl } from "@/lib/share";
 import { toast } from "sonner";
 
 export function MiniPlayer() {
@@ -145,7 +147,7 @@ export function MiniPlayer() {
                 >
                   {current.artist_name}
                 </Link>
-                <div className="mt-4 flex justify-center">
+                <div className="mt-4 flex justify-center gap-2">
                   <button
                     type="button"
                     onClick={toggleLike}
@@ -157,6 +159,13 @@ export function MiniPlayer() {
                   >
                     <Heart className={`h-5 w-5 ${liked ? "fill-current" : ""}`} />
                   </button>
+                  <ShareMenu
+                    url={trackShareUrl(current.id)}
+                    title={current.title}
+                    artist={current.artist_name}
+                    label={`Share ${current.title}`}
+                    menuPlacement="top"
+                  />
                 </div>
               </div>
 
@@ -274,6 +283,15 @@ export function MiniPlayer() {
               <div className="truncate text-[11px] text-muted-foreground">{current.artist_name}</div>
             </div>
             <Cover src={current.cover_url} seed={current.id} size={34} shape={current.artwork_shape ?? "circle"} />
+            <ShareMenu
+              url={trackShareUrl(current.id)}
+              title={current.title}
+              artist={current.artist_name}
+              size="sm"
+              label={`Share ${current.title}`}
+              className="hidden sm:block"
+              menuPlacement="top"
+            />
             <Volume2 className="hidden h-4 w-4 text-muted-foreground sm:block" />
             <input
               type="range"
