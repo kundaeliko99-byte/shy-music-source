@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { Users, Music2, Disc3, Play, Download, Heart, Crown, Activity, ShieldCheck, Ban, EyeOff, ShoppingBag, FileWarning, Settings, Save } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { Users, Music2, Disc3, Play, Download, Heart, Crown, Activity, ShieldCheck, Ban, EyeOff, ShoppingBag, FileWarning, Settings, Save, Search, UserCheck, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { fmtCount } from "@/lib/format";
@@ -33,6 +33,16 @@ interface AdminArtistRow { id: string; display_name: string; slug: string; verif
 interface AdminTrackRow { id: string; title: string; artist_id: string; plays_count: number; moderation_status?: string | null; artists?: { display_name: string } | null }
 interface PurchaseRow { id: string; track_id: string; artist_id: string; buyer_name: string | null; buyer_contact: string | null; proposed_price: number | null; currency: string | null; status: string; created_at: string }
 interface AuditLogRow { id: string; action: string; target_table: string; note: string | null; created_at: string }
+interface PremiumListenerRow {
+  user_id: string;
+  email: string;
+  display_name: string | null;
+  username: string | null;
+  is_premium: boolean;
+  is_artist: boolean;
+  is_admin: boolean;
+  created_at: string;
+}
 
 function emptyStats(): Stats {
   return {
@@ -75,6 +85,8 @@ function AdminOverview() {
   const [tracks, setTracks] = useState<AdminTrackRow[]>([]);
   const [purchases, setPurchases] = useState<PurchaseRow[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogRow[]>([]);
+  const [premiumRows, setPremiumRows] = useState<PremiumListenerRow[]>([]);
+  const [premiumSearch, setPremiumSearch] = useState("");
   const [busy, setBusy] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -189,6 +201,8 @@ function AdminOverview() {
         setTracks(trackRows ?? []);
         setPurchases(purchaseRows ?? []);
         setAuditLogs(logs ?? []);
+        const { data: premium } = await (supabase as any).rpc("admin_listener_premium_rows", { p_search: "", p_limit: 50 });
+        if (alive) setPremiumRows(premium ?? []);
       } catch (error) {
         console.warn("[admin] overview failed to load", error);
         if (!alive) return;
@@ -258,6 +272,35 @@ function AdminOverview() {
     toast.success(`Purchase request marked ${status}`);
   }
 
+  async function refreshPremiumRows(search = premiumSearch) {
+    const { data, error } = await (supabase as any).rpc("admin_listener_premium_rows", {
+      p_search: search,
+      p_limit: 50,
+    });
+    if (error) {
+      toast.error("Apply the premium listener migration before managing premium accounts.");
+      return;
+    }
+    setPremiumRows(data ?? []);
+  }
+
+  async function submitPremiumSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await refreshPremiumRows(premiumSearch);
+  }
+
+  async function togglePremium(email: string, premium: boolean) {
+    setBusy(`premium:${email}`);
+    const { error } = await (supabase as any).rpc("set_premium_listener_by_email", {
+      p_email: email,
+      p_premium: premium,
+    });
+    setBusy("");
+    if (error) return toast.error(error.message);
+    await refreshPremiumRows(premiumSearch);
+    toast.success(premium ? `${email} is now a premium listener` : `${email} is no longer premium`);
+  }
+
   if (loading && !s) return <div className="text-sm text-muted-foreground">Loading…</div>;
 
   const stats = s ?? emptyStats();
@@ -322,7 +365,12 @@ function AdminOverview() {
         tracks={tracks}
         purchases={purchases}
         auditLogs={auditLogs}
+        premiumRows={premiumRows}
+        premiumSearch={premiumSearch}
         busy={busy}
+        onPremiumSearchChange={setPremiumSearch}
+        onPremiumSearch={submitPremiumSearch}
+        onPremiumToggle={togglePremium}
         onUserStatus={updateUserStatus}
         onVerifyArtist={verifyArtist}
         onModerateTrack={moderateTrack}
@@ -356,7 +404,12 @@ function AdminControlCenter({
   tracks,
   purchases,
   auditLogs,
+  premiumRows,
+  premiumSearch,
   busy,
+  onPremiumSearchChange,
+  onPremiumSearch,
+  onPremiumToggle,
   onUserStatus,
   onVerifyArtist,
   onModerateTrack,
@@ -367,7 +420,12 @@ function AdminControlCenter({
   tracks: AdminTrackRow[];
   purchases: PurchaseRow[];
   auditLogs: AuditLogRow[];
+  premiumRows: PremiumListenerRow[];
+  premiumSearch: string;
   busy: string;
+  onPremiumSearchChange: (value: string) => void;
+  onPremiumSearch: (event: FormEvent<HTMLFormElement>) => void;
+  onPremiumToggle: (email: string, premium: boolean) => void;
   onUserStatus: (row: AdminUserRow, status: "active" | "suspended" | "banned") => void;
   onVerifyArtist: (row: AdminArtistRow, verified: boolean) => void;
   onModerateTrack: (row: AdminTrackRow, status: "active" | "hidden" | "removed") => void;
@@ -403,6 +461,69 @@ function AdminControlCenter({
                       <ActionButton disabled={busy === `user:${row.id}`} onClick={() => onUserStatus(row, "active")} label="Activate" />
                       <ActionButton disabled={busy === `user:${row.id}`} onClick={() => onUserStatus(row, "suspended")} label="Suspend" icon={<FileWarning className="h-3 w-3" />} />
                       <ActionButton disabled={busy === `user:${row.id}`} onClick={() => onUserStatus(row, "banned")} label="Ban" icon={<Ban className="h-3 w-3" />} />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </AdminPanel>
+
+      <AdminPanel title="Premium listeners and unlimited downloads" icon={<Crown className="h-4 w-4" />}>
+        <form onSubmit={onPremiumSearch} className="mb-3 flex flex-col gap-2 sm:flex-row">
+          <label className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={premiumSearch}
+              onChange={(event) => onPremiumSearchChange(event.target.value)}
+              className="h-10 w-full rounded-full bg-background pl-9 pr-3 text-sm hairline outline-none focus:border-primary"
+              placeholder="Search by email, name, or username"
+            />
+          </label>
+          <button type="submit" className="rounded-full bg-surface-elevated px-4 py-2 text-sm font-medium hairline hover:text-primary-glow">
+            Search
+          </button>
+        </form>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">Account</th>
+                <th className="px-3 py-2 text-left font-medium">Access</th>
+                <th className="px-3 py-2 text-right font-medium">Premium downloads</th>
+              </tr>
+            </thead>
+            <tbody>
+              {premiumRows.length === 0 && <tr><td colSpan={3} className="p-4 text-center text-muted-foreground">No matching accounts found.</td></tr>}
+              {premiumRows.map((row) => (
+                <tr key={row.user_id} className="border-t border-border/40">
+                  <td className="px-3 py-2">
+                    <div className="font-medium">{row.display_name || row.username || row.email}</div>
+                    <div className="text-[11px] text-muted-foreground">{row.email}</div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-wrap gap-1">
+                      {row.is_artist && <StatusPill value="artist" />}
+                      {row.is_admin && <StatusPill value="admin" />}
+                      {row.is_premium && <StatusPill value="premium" />}
+                      {!row.is_artist && !row.is_admin && !row.is_premium && <StatusPill value="listener" />}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex justify-end gap-1.5">
+                      <ActionButton
+                        disabled={busy === `premium:${row.email}` || row.is_premium}
+                        onClick={() => onPremiumToggle(row.email, true)}
+                        label="Grant premium"
+                        icon={<UserCheck className="h-3 w-3" />}
+                      />
+                      <ActionButton
+                        disabled={busy === `premium:${row.email}` || !row.is_premium}
+                        onClick={() => onPremiumToggle(row.email, false)}
+                        label="Remove premium"
+                        icon={<UserX className="h-3 w-3" />}
+                      />
                     </div>
                   </td>
                 </tr>
