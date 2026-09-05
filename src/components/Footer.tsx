@@ -33,7 +33,7 @@ export function Footer() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <nav className="flex flex-wrap gap-x-4 gap-y-2 text-[11px] text-zinc-400" aria-label="Legal links">
             {legalLinks.map((link) => (
-              <a key={link.href} href={link.href} className="hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50">
+              <a key={link.href} href={withBasePath(link.href)} className="hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50">
                 {link.label}
               </a>
             ))}

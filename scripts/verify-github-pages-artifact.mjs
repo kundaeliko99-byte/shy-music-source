@@ -42,6 +42,7 @@ check("Manifest scope uses the GitHub Pages base path", manifest.scope === norma
 check("Manifest icons use the GitHub Pages base path", manifest.icons.every((icon) => String(icon.src).startsWith(normalizedBase)));
 check("Static auth page does not offer disabled OAuth providers", !/Continue with Google|Continue with Facebook|Continue with Apple|signInWithOAuth/.test(auth));
 check("Static auth page keeps email and phone entry points", /Email/.test(auth) && /Phone number/.test(auth));
+check("Static shells do not contain root legal anchors", !/href=["']\/(legal|privacy|cookies|about-ads|safety-privacy|accessibility)\b/.test(`${index}\n${auth}`));
 
 const failed = checks.filter((item) => !item.ok);
 for (const item of checks) {
