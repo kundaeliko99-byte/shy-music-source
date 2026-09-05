@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ShyLogo } from "./ShyLogo";
 import { withBasePath } from "@/lib/assets";
+import { APP_VERSION } from "@/lib/appConfig";
 
 export function Footer() {
   const year = new Date().getFullYear();
@@ -38,10 +39,14 @@ export function Footer() {
             ))}
           </nav>
           <p className="text-[11px] text-zinc-500">
-            SHY - Songwriter marketplace. All rights reserved {year}.
+            SHY - Songwriter marketplace. All rights reserved {year}. Build {shortVersion(APP_VERSION)}.
           </p>
         </div>
       </div>
     </footer>
   );
+}
+
+function shortVersion(version: string) {
+  return version === "local" ? "local" : version.slice(0, 7);
 }

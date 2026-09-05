@@ -1,6 +1,5 @@
 import { withBasePath } from "@/lib/assets";
-
-const FALLBACK_PUBLIC_ORIGIN = "https://kundaeliko99-byte.github.io";
+import { configuredPublicSiteUrl, OFFICIAL_SITE_URL } from "@/lib/appConfig";
 
 export function appShareUrl(path: string) {
   const cleanPath = path.startsWith("/") ? path : `/${path}`;
@@ -10,19 +9,26 @@ export function appShareUrl(path: string) {
     return new URL(appPath, window.location.origin).toString();
   }
 
-  const configured = import.meta.env.VITE_PUBLIC_SITE_URL || import.meta.env.VITE_APP_URL || FALLBACK_PUBLIC_ORIGIN;
-  const origin = safeOrigin(configured);
-  return new URL(appPath, origin).toString();
+  const configured = safeSiteUrl(configuredPublicSiteUrl());
+  const configuredPath = configured.pathname.endsWith("/") ? configured.pathname : `${configured.pathname}/`;
+  const relativePath = appPath.startsWith(configuredPath)
+    ? appPath.slice(configuredPath.length)
+    : appPath.replace(/^\/+/, "");
+  return new URL(relativePath, configured).toString();
 }
 
 export function trackShareUrl(trackId: string) {
   return appShareUrl(`/tracks/${encodeURIComponent(trackId)}`);
 }
 
-function safeOrigin(value: string) {
+function safeSiteUrl(value: string) {
   try {
-    return new URL(value).origin;
+    const url = new URL(value);
+    if (!url.pathname.endsWith("/")) url.pathname = `${url.pathname}/`;
+    url.search = "";
+    url.hash = "";
+    return url;
   } catch {
-    return FALLBACK_PUBLIC_ORIGIN;
+    return new URL(OFFICIAL_SITE_URL);
   }
 }

@@ -6,6 +6,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { PlayerProvider } from "@/contexts/PlayerContext";
 import { Toaster } from "@/components/ui/sonner";
 import { withBasePath } from "@/lib/assets";
+import { OFFICIAL_SITE_URL } from "@/lib/appConfig";
 
 function NotFoundComponent() {
   return (
@@ -46,6 +47,7 @@ export const Route = createRootRoute({
       { property: "og:title", content: "SHYMusic Creative" },
       { property: "og:description", content: "SHYMusic Creative is a marketplace and creative platform for songwriters, song discovery, rights management, fan support, and music buyer opportunities." },
       { property: "og:type", content: "website" },
+      { property: "og:url", content: OFFICIAL_SITE_URL },
       { property: "og:image", content: withBasePath("/assets/brand/shy-logo.png") },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: "SHYMusic Creative" },

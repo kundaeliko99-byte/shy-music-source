@@ -9,6 +9,8 @@
     "build:dev": "vite build --mode development",
     "build:github": "vite build --config vite.github.config.ts && node scripts/prepare-github-pages.mjs",
     "preview": "vite preview",
+    "test:free-downloads": "node scripts/verify-free-downloads.mjs",
+    "test:hosting": "node scripts/verify-github-pages-artifact.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "android:sync": "cap sync android",

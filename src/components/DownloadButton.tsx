@@ -1,13 +1,8 @@
 import { useState } from "react";
-import { Crown, Download, X } from "lucide-react";
+import { Download } from "lucide-react";
 import { toast } from "sonner";
-import { useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
-import { useDownloadQuota } from "@/hooks/useDownloadQuota";
-import { useMotivateArtist } from "@/hooks/useMotivate";
-import { resolveAudioUrl } from "@/lib/media";
-import { MotivateButton } from "./MotivateButton";
+import { getAudioStoragePath, resolveAudioUrl } from "@/lib/media";
 
 interface Props {
   trackId: string;
@@ -17,130 +12,133 @@ interface Props {
   size?: "sm" | "md";
 }
 
+type DownloadState = "idle" | "preparing" | "downloading";
+
 function sanitize(name: string) {
   return name.replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "") || "track";
 }
 
-export function DownloadButton({ trackId, title, audioUrl, artistId, size = "md" }: Props) {
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  const { remaining, allowance, used, isPremium, refresh } = useDownloadQuota();
-  const motivateArtist = useMotivateArtist(artistId);
-  const [busy, setBusy] = useState(false);
-  const [showUpsell, setShowUpsell] = useState(false);
+function extensionFromContentType(contentType: string | null) {
+  if (!contentType) return "";
+  if (contentType.includes("mpeg") || contentType.includes("mp3")) return "mp3";
+  if (contentType.includes("wav")) return "wav";
+  if (contentType.includes("mp4") || contentType.includes("aac")) return "m4a";
+  if (contentType.includes("ogg")) return "ogg";
+  if (contentType.includes("webm")) return "webm";
+  return "";
+}
 
-  async function doDownload() {
-    setBusy(true);
+function extensionFromUrl(value: string) {
+  const path = getAudioStoragePath(value).split("?")[0];
+  const ext = path.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") ?? "";
+  return ext || "mp3";
+}
+
+function downloadSessionId() {
+  if (typeof window === "undefined") return null;
+  const key = "shy.download.session";
+  const id = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  try {
+    const existing = window.sessionStorage.getItem(key);
+    if (existing) return existing;
+    window.sessionStorage.setItem(key, id);
+  } catch {
+    return id;
+  }
+  return id;
+}
+
+function isAvailabilityError(error: { message?: string } | null | undefined) {
+  return /not available for public download/i.test(error?.message ?? "");
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string) {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = window.setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => {
+        window.clearTimeout(timeout);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timeout);
+        reject(error);
+      },
+    );
+  });
+}
+
+export function DownloadButton({ trackId, title, audioUrl, size = "md" }: Props) {
+  const [state, setState] = useState<DownloadState>("idle");
+  const busy = state !== "idle";
+  const isIcon = size === "sm";
+
+  async function handleClick(event: React.MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (busy) return;
+
+    setState("preparing");
     try {
-      const { error: claimError } = await (supabase as any).rpc("claim_download", {
-        p_track_id: trackId,
-      });
+      const { error: claimError } = await withTimeout<{ error: { message?: string } | null }>(
+        (supabase as any).rpc("claim_download", {
+          p_track_id: trackId,
+          p_session_id: downloadSessionId(),
+        }),
+        5000,
+        "Download analytics timed out",
+      ).catch((error) => ({ error }));
       if (claimError) {
-        setShowUpsell(true);
-        return;
+        if (isAvailabilityError(claimError)) throw claimError;
+        console.warn("[download] download analytics claim skipped", claimError);
       }
 
-      const signedUrl = await resolveAudioUrl(audioUrl, 300);
-      const res = await fetch(signedUrl);
-      if (!res.ok) throw new Error("fetch failed");
-      const blob = await res.blob();
+      const signedUrl = await withTimeout(resolveAudioUrl(audioUrl, 600), 10000, "Could not prepare download link");
+      setState("downloading");
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 45000);
+      const response = await fetch(signedUrl, { signal: controller.signal });
+      window.clearTimeout(timeout);
+      if (!response.ok) throw new Error(`Download failed with status ${response.status}`);
+
+      const blob = await response.blob();
+      const contentExt = extensionFromContentType(response.headers.get("content-type"));
+      const ext = contentExt || extensionFromUrl(audioUrl);
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${sanitize(title)}.mp3`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      await refresh();
-      toast.success(
-        isPremium
-          ? "Downloaded - premium unlimited"
-          : `Downloaded - ${Math.max(0, remaining - 1)} downloads left this month`,
-      );
-    } catch {
-      toast.error("Download failed. Try again.");
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${sanitize(title)}.${ext}`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+      toast.success("Download started");
+    } catch (error) {
+      console.warn("[download] free download failed", error);
+      toast.error("This song could not be downloaded. Check your connection and try again.");
     } finally {
-      setBusy(false);
+      setState("idle");
     }
   }
 
-  async function handleClick(e: React.MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!user) { navigate({ to: "/auth" }); return; }
-    if (!isPremium && remaining <= 0) { setShowUpsell(true); return; }
-    await doDownload();
-  }
-
-  const isIcon = size === "sm";
-
   return (
-    <>
-      <button
-        onClick={handleClick}
-        disabled={busy}
-        title={user ? (isPremium ? "Premium unlimited downloads" : `${used}/${allowance} downloads used this month`) : "Sign in to download"}
-        className={
-          isIcon
-            ? "w-9 h-9 rounded-full hairline flex items-center justify-center text-muted-foreground hover:bg-surface-elevated hover:text-foreground disabled:opacity-50"
-            : "inline-flex items-center gap-1.5 rounded-full hairline bg-surface px-4 py-2 text-xs font-medium hover:bg-surface-elevated disabled:opacity-50"
-        }
-        aria-label="Download MP3"
-      >
-        <Download className={isIcon ? "w-4 h-4" : "w-3.5 h-3.5"} />
-        {!isIcon && (busy ? "Downloading…" : "Download")}
-      </button>
-
-      {showUpsell && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm"
-          onClick={() => setShowUpsell(false)}
-        >
-          <div
-            className="relative w-full max-w-sm bg-surface hairline rounded-2xl p-6 shadow-glow text-center"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={() => setShowUpsell(false)}
-              className="absolute top-3 right-3 w-8 h-8 rounded-full bg-surface-elevated hairline flex items-center justify-center text-muted-foreground hover:text-foreground"
-              aria-label="Close"
-            >
-              <X className="w-4 h-4" />
-            </button>
-            <div className="w-14 h-14 rounded-full bg-gradient-primary text-primary-foreground inline-flex items-center justify-center shadow-glow-soft">
-              <Crown className="w-6 h-6" />
-            </div>
-            <h3 className="text-lg font-semibold mt-3">You've used your 10 free monthly downloads</h3>
-            <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-              Premium listeners get unlimited downloads. You can still motivate an artist
-              directly with mobile money to support the creators you love.
-            </p>
-
-            <div className="mt-5 flex flex-col items-center gap-3">
-              {motivateArtist ? (
-                <MotivateButton
-                  artist={motivateArtist}
-                  onMotivated={() => {
-                    refresh();
-                    toast.success("Motivation recorded. Thank you for supporting the artist.");
-                  }}
-                />
-              ) : (
-                <p className="text-[11px] text-muted-foreground">
-                  This artist hasn't set up motivation yet. Find another artist to motivate.
-                </p>
-              )}
-              <button
-                onClick={() => setShowUpsell(false)}
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={busy}
+      title="Download this song for free"
+      className={
+        isIcon
+          ? "w-9 h-9 rounded-full hairline flex items-center justify-center text-muted-foreground hover:bg-surface-elevated hover:text-foreground disabled:opacity-50"
+          : "inline-flex items-center gap-1.5 rounded-full hairline bg-surface px-4 py-2 text-xs font-medium hover:bg-surface-elevated disabled:opacity-50"
+      }
+      aria-label={busy ? `Preparing download for ${title}` : `Download ${title} for free`}
+      aria-busy={busy}
+    >
+      <Download className={isIcon ? "w-4 h-4" : "w-3.5 h-3.5"} />
+      {!isIcon && (state === "preparing" ? "Preparing..." : state === "downloading" ? "Downloading..." : "Download")}
+    </button>
   );
 }

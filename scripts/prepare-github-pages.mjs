@@ -90,10 +90,6 @@ function standaloneAuthHtml({ basePath, supabaseUrl, supabaseKey }) {
       .primary:disabled { background:#171522; color:#756e89; cursor:not-allowed; box-shadow:none; }
       .link { border:0; background:transparent; color:var(--glow); padding:0; cursor:pointer; font-weight:800; }
       .row { display:flex; align-items:center; gap:10px; margin-top:16px; color:var(--muted); font-size:14px; }
-      .divider { display:flex; align-items:center; gap:14px; color:var(--muted); font-size:12px; letter-spacing:.14em; margin:28px 0; }
-      .divider:before, .divider:after { content:""; height:1px; background:var(--line); flex:1; }
-      .oauth { display:grid; gap:10px; }
-      .outline { width:100%; border:1px solid var(--line); border-radius:999px; background:transparent; color:var(--text); padding:13px 16px; font-weight:850; cursor:pointer; }
       .notice { display:none; margin:16px 0; padding:12px 14px; border:1px solid rgba(189,162,255,.35); background:rgba(139,71,245,.12); color:var(--glow); border-radius:14px; font-size:13px; line-height:1.45; }
       .notice.show { display:block; }
       .hidden { display:none !important; }
@@ -128,12 +124,6 @@ function standaloneAuthHtml({ basePath, supabaseUrl, supabaseKey }) {
           </div>
           <label class="row"><input id="remember" type="checkbox" style="width:18px;height:18px;padding:0" /> Remember my email or phone on this device</label>
           <button class="primary" type="submit">Continue</button>
-          <div class="divider">OR</div>
-          <div class="oauth">
-            <button class="outline" data-oauth="google" type="button">Continue with Google</button>
-            <button class="outline" data-oauth="facebook" type="button">Continue with Facebook</button>
-            <button class="outline" data-oauth="apple" type="button">Continue with Apple</button>
-          </div>
         </form>
         <form id="password-form" class="hidden">
           <button class="link" data-back type="button">Back</button>
@@ -195,7 +185,6 @@ function standaloneAuthHtml({ basePath, supabaseUrl, supabaseKey }) {
       document.querySelectorAll("[data-back]").forEach(b => b.onclick = () => show(mode === "signup" ? "signup-form" : "signin-form"));
       document.querySelectorAll("[data-mode='signin']").forEach(b => b.onclick = () => $("tab-signin").click());
       document.querySelectorAll("[data-role]").forEach(b => b.onclick = () => { role = b.dataset.role; document.querySelectorAll("[data-role]").forEach(x => x.classList.toggle("active", x === b)); });
-      document.querySelectorAll("[data-oauth]").forEach(b => b.onclick = async () => { try { requireClient(); const { error } = await client.auth.signInWithOAuth({ provider: b.dataset.oauth, options: { redirectTo: location.origin + BASE_PATH } }); if (error) throw error; } catch (e) { showNotice(e.message || "Could not start social sign-in."); } });
       $("signin-form").onsubmit = (event) => { event.preventDefault(); const value = $("contact").value; const error = valid(value, method); if (error) return showNotice(error); identifier = normalize(value, method); if (failCount(method, identifier) >= MAX_FAILED_SIGNINS) return showNotice(supportMessage(identifier, method)); $("password-title").textContent = "Enter Your Password"; $("password-submit").textContent = "Log in"; $("forgot").classList.remove("hidden"); $("password").autocomplete = "current-password"; $("password").placeholder = "Enter your password"; if ($("remember").checked) localStorage.setItem("shy.auth.remembered", JSON.stringify({ contactMethod: method, contactValue: value })); $("password-id").textContent = mask(identifier); show("password-form"); $("password").focus(); };
       $("password-form").onsubmit = async (event) => { event.preventDefault(); try { requireClient(); const password = $("password").value; const args = method === "email" ? { email: identifier, password } : { phone: identifier, password }; const { error } = await client.auth.signInWithPassword(args); if (error) throw error; clearFail(method, identifier); location.href = BASE_PATH; } catch (e) { const attempts = bumpFail(method, identifier); const triesLeft = MAX_FAILED_SIGNINS - attempts; showNotice(attempts >= MAX_FAILED_SIGNINS ? supportMessage(identifier, method) : (e.message || "Could not sign in.") + " " + triesLeft + " " + (triesLeft === 1 ? "try" : "tries") + " left before support is required."); } };
       $("forgot").onclick = async () => { try { requireClient(); if (method === "email") { const { error } = await client.auth.resetPasswordForEmail(identifier, { redirectTo: location.origin + BASE_PATH + "auth/" }); if (error) throw error; showNotice("Password reset instructions have been sent to " + mask(identifier) + "."); return; } showNotice("Phone password reset is temporarily unavailable. Contact support at " + SUPPORT_EMAIL + "."); } catch (e) { showNotice(e.message || "Could not send reset instructions."); } };

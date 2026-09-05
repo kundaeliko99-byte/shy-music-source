@@ -30,6 +30,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ArtistsIndexRouteImport } from './routes/artists.index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as TracksIdRouteImport } from './routes/tracks.$id'
+import { Route as DashboardWatchOutRouteImport } from './routes/dashboard_.watch-out'
 import { Route as BecomeArtistSubscribeRouteImport } from './routes/become-artist_.subscribe'
 import { Route as ArtistsSlugRouteImport } from './routes/artists.$slug'
 import { Route as AlbumsIdRouteImport } from './routes/albums.$id'
@@ -140,6 +141,11 @@ const TracksIdRoute = TracksIdRouteImport.update({
   path: '/tracks/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardWatchOutRoute = DashboardWatchOutRouteImport.update({
+  id: '/dashboard_/watch-out',
+  path: '/dashboard/watch-out',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BecomeArtistSubscribeRoute = BecomeArtistSubscribeRouteImport.update({
   id: '/become-artist_/subscribe',
   path: '/become-artist/subscribe',
@@ -184,6 +190,7 @@ export interface FileRoutesByFullPath {
   '/albums/$id': typeof AlbumsIdRoute
   '/artists/$slug': typeof ArtistsSlugRoute
   '/become-artist/subscribe': typeof BecomeArtistSubscribeRoute
+  '/dashboard/watch-out': typeof DashboardWatchOutRoute
   '/tracks/$id': typeof TracksIdRoute
   '/admin/': typeof AdminIndexRoute
   '/artists/': typeof ArtistsIndexRoute
@@ -209,6 +216,7 @@ export interface FileRoutesByTo {
   '/albums/$id': typeof AlbumsIdRoute
   '/artists/$slug': typeof ArtistsSlugRoute
   '/become-artist/subscribe': typeof BecomeArtistSubscribeRoute
+  '/dashboard/watch-out': typeof DashboardWatchOutRoute
   '/tracks/$id': typeof TracksIdRoute
   '/admin': typeof AdminIndexRoute
   '/artists': typeof ArtistsIndexRoute
@@ -237,6 +245,7 @@ export interface FileRoutesById {
   '/albums/$id': typeof AlbumsIdRoute
   '/artists/$slug': typeof ArtistsSlugRoute
   '/become-artist_/subscribe': typeof BecomeArtistSubscribeRoute
+  '/dashboard_/watch-out': typeof DashboardWatchOutRoute
   '/tracks/$id': typeof TracksIdRoute
   '/admin/': typeof AdminIndexRoute
   '/artists/': typeof ArtistsIndexRoute
@@ -266,6 +275,7 @@ export interface FileRouteTypes {
     | '/albums/$id'
     | '/artists/$slug'
     | '/become-artist/subscribe'
+    | '/dashboard/watch-out'
     | '/tracks/$id'
     | '/admin/'
     | '/artists/'
@@ -291,6 +301,7 @@ export interface FileRouteTypes {
     | '/albums/$id'
     | '/artists/$slug'
     | '/become-artist/subscribe'
+    | '/dashboard/watch-out'
     | '/tracks/$id'
     | '/admin'
     | '/artists'
@@ -318,6 +329,7 @@ export interface FileRouteTypes {
     | '/albums/$id'
     | '/artists/$slug'
     | '/become-artist_/subscribe'
+    | '/dashboard_/watch-out'
     | '/tracks/$id'
     | '/admin/'
     | '/artists/'
@@ -344,6 +356,7 @@ export interface RootRouteChildren {
   UploadRoute: typeof UploadRoute
   AlbumsIdRoute: typeof AlbumsIdRoute
   BecomeArtistSubscribeRoute: typeof BecomeArtistSubscribeRoute
+  DashboardWatchOutRoute: typeof DashboardWatchOutRoute
   TracksIdRoute: typeof TracksIdRoute
 }
 
@@ -496,6 +509,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TracksIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dashboard_/watch-out': {
+      id: '/dashboard_/watch-out'
+      path: '/dashboard/watch-out'
+      fullPath: '/dashboard/watch-out'
+      preLoaderRoute: typeof DashboardWatchOutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/become-artist_/subscribe': {
       id: '/become-artist_/subscribe'
       path: '/become-artist/subscribe'
@@ -573,6 +593,7 @@ const rootRouteChildren: RootRouteChildren = {
   UploadRoute: UploadRoute,
   AlbumsIdRoute: AlbumsIdRoute,
   BecomeArtistSubscribeRoute: BecomeArtistSubscribeRoute,
+  DashboardWatchOutRoute: DashboardWatchOutRoute,
   TracksIdRoute: TracksIdRoute,
 }
 export const routeTree = rootRouteImport

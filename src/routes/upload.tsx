@@ -358,7 +358,7 @@ function SingleUpload({ artistId, userId }: { artistId: string; userId: string }
 
       setSubmit({ busy: false, text: "Done", progress: 100 });
       toast.success(`Track scheduled for ${formatSchedule(schedule)}.`);
-      navigate({ to: "/dashboard", search: { tab: "watch" } });
+      navigate({ to: "/dashboard/watch-out", search: { tab: "watch" } });
     } catch (error) {
       setSubmit({ busy: false, text: "", progress: 0 });
       toast.error(errorMessage(error, "Upload failed."));
@@ -479,7 +479,7 @@ function AlbumUpload({ artistId, userId, artistSlug }: { artistId: string; userI
 
       setSubmit({ busy: false, text: "Done", progress: 100 });
       toast.success(`Project scheduled for ${formatSchedule(schedule)}.`);
-      navigate({ to: "/dashboard", search: { tab: "watch" } });
+      navigate({ to: "/dashboard/watch-out", search: { tab: "watch" } });
     } catch (error) {
       setSubmit({ busy: false, text: "", progress: 0 });
       toast.error(errorMessage(error, "Project upload failed."));

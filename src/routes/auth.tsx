@@ -1,12 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowLeft,
-  Apple,
-  Facebook,
   Mail,
   Phone,
   ShieldCheck,
-  type LucideIcon,
 } from "lucide-react";
 import {
   useEffect,
@@ -300,21 +297,6 @@ function AuthPage() {
     }
   }
 
-  async function startOAuth(provider: "google" | "facebook" | "apple") {
-    setInlineError("");
-    setLoading(true);
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: { redirectTo: authRedirectUrl() },
-      });
-      if (error) throw error;
-    } catch (error) {
-      setInlineError(readErrorMessage(error, "Could not start social sign-in."));
-      setLoading(false);
-    }
-  }
-
   return (
     <AuthFrame>
       {!isMounted && (
@@ -353,7 +335,6 @@ function AuthPage() {
             setRememberMe(checked);
             if (!checked) window.localStorage.removeItem(REMEMBER_KEY);
           }}
-          onOAuth={startOAuth}
         />
       )}
 
@@ -462,7 +443,6 @@ function IdentifierGate({
   onContactMethodChange,
   onContactBlur,
   onRememberChange,
-  onOAuth,
 }: {
   contactMethod: ContactMethod;
   contactInputRef: RefObject<HTMLInputElement | null>;
@@ -477,7 +457,6 @@ function IdentifierGate({
   onContactMethodChange: (method: ContactMethod) => void;
   onContactBlur: (value: string) => void;
   onRememberChange: (checked: boolean) => void;
-  onOAuth: (provider: "google" | "facebook" | "apple") => void;
 }) {
   return (
     <form onSubmit={onSubmit} className="space-y-5">
@@ -525,9 +504,6 @@ function IdentifierGate({
       >
         Continue
       </PrimaryButton>
-
-      <OAuthDivider />
-      <OAuthButtons loading={loading} onOAuth={onOAuth} />
     </form>
   );
 }
@@ -832,71 +808,6 @@ function NewPasswordScreen({
         Set new password
       </PrimaryButton>
     </form>
-  );
-}
-
-function OAuthDivider() {
-  return (
-    <div className="flex items-center gap-3 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-      <span className="h-px flex-1 bg-border" />
-      or
-      <span className="h-px flex-1 bg-border" />
-    </div>
-  );
-}
-
-function OAuthButtons({
-  loading,
-  onOAuth,
-}: {
-  loading: boolean;
-  onOAuth: (provider: "google" | "facebook" | "apple") => void;
-}) {
-  return (
-    <div className="grid gap-2">
-      <OAuthButton
-        label="Continue with Google"
-        icon={Mail}
-        disabled={loading}
-        onClick={() => onOAuth("google")}
-      />
-      <OAuthButton
-        label="Continue with Facebook"
-        icon={Facebook}
-        disabled={loading}
-        onClick={() => onOAuth("facebook")}
-      />
-      <OAuthButton
-        label="Continue with Apple"
-        icon={Apple}
-        disabled={loading}
-        onClick={() => onOAuth("apple")}
-      />
-    </div>
-  );
-}
-
-function OAuthButton({
-  label,
-  icon: Icon,
-  disabled,
-  onClick,
-}: {
-  label: string;
-  icon: LucideIcon;
-  disabled: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="flex w-full items-center justify-center gap-2 rounded-full border border-border bg-transparent px-4 py-2.5 text-sm font-semibold text-foreground transition hover:border-primary/50 hover:bg-surface-elevated disabled:opacity-45"
-    >
-      <Icon className="h-4 w-4" />
-      {label}
-    </button>
   );
 }
 

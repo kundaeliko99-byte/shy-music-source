@@ -148,19 +148,10 @@ function RadioPage() {
   const [playlists, setPlaylists] = useState<Array<{ id: string; title: string }>>([]);
   const lastLoggedTrack = useRef<string | null>(null);
 
-  // Subscriber check (any active subscription tied to this user's artist)
+  // Signed-in listeners get full radio controls. Artist subscriptions are not
+  // used as a listener gate.
   useEffect(() => {
-    if (!user) { setIsSubscriber(false); return; }
-    (async () => {
-      const { data: artist } = await supabase.from("artists").select("id").eq("user_id", user.id).maybeSingle();
-      if (!artist) return;
-      const { data: sub } = await supabase
-        .from("subscriptions")
-        .select("id, expires_at")
-        .eq("artist_id", artist.id)
-        .maybeSingle();
-      if (sub && (!sub.expires_at || new Date(sub.expires_at) > new Date())) setIsSubscriber(true);
-    })();
+    setIsSubscriber(Boolean(user));
   }, [user]);
 
   // Load user playlists
@@ -259,7 +250,7 @@ function RadioPage() {
       const arr: number[] = raw ? JSON.parse(raw) : [];
       const recent = arr.filter((t) => now - t < SKIP_WINDOW_MS);
       if (recent.length >= SKIP_LIMIT) {
-        toast.error(`Skip limit reached (${SKIP_LIMIT}/hour). Subscribe for unlimited skips.`);
+        toast.error(`Preview skip limit reached (${SKIP_LIMIT}/hour). Sign in for unlimited skips.`);
         return;
       }
       recent.push(now);
@@ -400,7 +391,7 @@ function RadioPage() {
               </DropdownMenu>
               {!isSubscriber && (
                 <span className="text-[10px] text-muted-foreground ml-auto">
-                  Skip limit: {SKIP_LIMIT}/hr · <Link to="/become-artist" className="underline">Go unlimited</Link>
+                  Preview skip limit: {SKIP_LIMIT}/hr · <Link to="/auth" className="underline">Sign in free</Link>
                 </span>
               )}
             </div>

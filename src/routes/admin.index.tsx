@@ -339,7 +339,7 @@ function AdminOverview() {
       </Section>
 
       <div>
-        <h2 className="text-sm font-semibold mb-3 flex items-center gap-2"><Crown className="w-4 h-4 text-[#FFD166]" /> Active subscriptions</h2>
+        <h2 className="text-sm font-semibold mb-3 flex items-center gap-2"><Crown className="w-4 h-4 text-primary-glow" /> Active subscriptions</h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {stats.subsByPlan.map((p) => <Stat key={p.plan} label={p.plan} value={String(p.count)} />)}
         </div>
@@ -470,7 +470,7 @@ function AdminControlCenter({
         </div>
       </AdminPanel>
 
-      <AdminPanel title="Premium listeners and unlimited downloads" icon={<Crown className="h-4 w-4" />}>
+      <AdminPanel title="Premium listener status" icon={<Crown className="h-4 w-4" />}>
         <form onSubmit={onPremiumSearch} className="mb-3 flex flex-col gap-2 sm:flex-row">
           <label className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -491,7 +491,7 @@ function AdminControlCenter({
               <tr>
                 <th className="px-3 py-2 text-left font-medium">Account</th>
                 <th className="px-3 py-2 text-left font-medium">Access</th>
-                <th className="px-3 py-2 text-right font-medium">Premium downloads</th>
+                <th className="px-3 py-2 text-right font-medium">Premium status</th>
               </tr>
             </thead>
             <tbody>
